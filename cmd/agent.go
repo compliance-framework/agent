@@ -17,7 +17,6 @@ import (
 )
 
 func AgentCmd() *cobra.Command {
-	nc, _ := nats.Connect(nats.DefaultURL)
 	var agentCmd = &cobra.Command{
 		Use:   "agent",
 		Short: "long running agent for continuously checking policies against plugin data",
@@ -32,7 +31,7 @@ with plugins to ensure continuous compliance.`,
 			pluginRunner := AgentRunner{
 				logger: logger,
 			}
-			err := pluginRunner.Run(cmd, args, nc)
+			err := pluginRunner.Run(cmd, args)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -48,6 +47,9 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringArray("plugin", []string{}, "Plugin executable or directory")
 	agentCmd.MarkFlagsOneRequired("plugin")
 
+	agentCmd.Flags().String("natsServer", nats.DefaultURL, "NATS Server URL")
+	agentCmd.MarkFlagsOneRequired("natsServer")
+
 	// --once run the agent once and not on a schedule. Right now this is default.
 	// Actually run this as an agent on a schedule.
 
@@ -60,7 +62,7 @@ type AgentRunner struct {
 	queryBundles []*rego.Rego
 }
 
-func (ar AgentRunner) Run(cmd *cobra.Command, args []string, nc *nats.Conn) error {
+func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 	//ctx := context.TODO()
 
 	policyBundles, err := cmd.Flags().GetStringArray("policy")
@@ -71,6 +73,16 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string, nc *nats.Conn) erro
 	plugins, err := cmd.Flags().GetStringArray("plugin")
 	if err != nil {
 		return err
+	}
+
+	natsServer, err := cmd.Flags().GetString("natsServer")
+	if err != nil {
+		return err
+	}
+
+	nc, err := nats.Connect(natsServer)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	defer ar.closePluginClients()
@@ -119,7 +131,12 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string, nc *nats.Conn) erro
 			if err != nil {
 				return err
 			}
-			nc.Publish("topic!", data)
+			nc.Publish("findings", data)
+			data, err = json.Marshal(res.Observations)
+			if err != nil {
+				return err
+			}
+			nc.Publish("observations", data)
 
 			// fmt.Println(res.Findings)
 			// err = ioutil.WriteFile("Survey.txt", []byte(res.Findings)), 0644)
