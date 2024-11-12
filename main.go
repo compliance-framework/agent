@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/chris-cmsoft/concom/cmd"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 func main() {

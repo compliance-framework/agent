@@ -1,19 +1,23 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+
 	"github.com/chris-cmsoft/concom/runner"
 	"github.com/chris-cmsoft/concom/runner/proto"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	"github.com/nats-io/nats.go"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
-	"log"
-	"os"
-	"os/exec"
 )
 
 func AgentCmd() *cobra.Command {
+	nc, _ := nats.Connect(nats.DefaultURL)
 	var agentCmd = &cobra.Command{
 		Use:   "agent",
 		Short: "long running agent for continuously checking policies against plugin data",
@@ -28,7 +32,7 @@ with plugins to ensure continuous compliance.`,
 			pluginRunner := AgentRunner{
 				logger: logger,
 			}
-			err := pluginRunner.Run(cmd, args)
+			err := pluginRunner.Run(cmd, args, nc)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -56,7 +60,7 @@ type AgentRunner struct {
 	queryBundles []*rego.Rego
 }
 
-func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
+func (ar AgentRunner) Run(cmd *cobra.Command, args []string, nc *nats.Conn) error {
 	//ctx := context.TODO()
 
 	policyBundles, err := cmd.Flags().GetStringArray("policy")
@@ -110,6 +114,23 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 			fmt.Println("Findings:", res.Findings)
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
+
+			data, err := json.Marshal(res.Findings)
+			if err != nil {
+				return err
+			}
+			nc.Publish("topic!", data)
+
+			// fmt.Println(res.Findings)
+			// err = ioutil.WriteFile("Survey.txt", []byte(res.Findings)), 0644)
+			// if err != nil {
+			// 	log.Fatalf("error writing Survey.txt: %s", err)
+			// }
+
+			// pubsub.Publish(pubsub.Event{
+			// 	Type: pubsub.FindingsUpdated,
+			// 	Data: res.Findings,
+			// })
 
 			// Here we'll send the data back to NATS
 		}
