@@ -85,6 +85,8 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 		log.Fatal(err)
 	}
 
+	defer nc.Close()
+
 	defer ar.closePluginClients()
 
 	for _, path := range plugins {
@@ -127,29 +129,23 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
 
+			// Publish findings to nats subjects
 			data, err := json.Marshal(res.Findings)
 			if err != nil {
 				return err
 			}
-			nc.Publish("findings", data)
+			if err := nc.Publish("findings", data); err != nil {
+				return err
+			}
+
+			// Publish observations to nats subjects
 			data, err = json.Marshal(res.Observations)
 			if err != nil {
 				return err
 			}
-			nc.Publish("observations", data)
-
-			// fmt.Println(res.Findings)
-			// err = ioutil.WriteFile("Survey.txt", []byte(res.Findings)), 0644)
-			// if err != nil {
-			// 	log.Fatalf("error writing Survey.txt: %s", err)
-			// }
-
-			// pubsub.Publish(pubsub.Event{
-			// 	Type: pubsub.FindingsUpdated,
-			// 	Data: res.Findings,
-			// })
-
-			// Here we'll send the data back to NATS
+			if err := nc.Publish("observations", data); err != nil {
+				return err
+			}
 		}
 	}
 
