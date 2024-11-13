@@ -47,8 +47,8 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringArray("plugin", []string{}, "Plugin executable or directory")
 	agentCmd.MarkFlagsOneRequired("plugin")
 
-	agentCmd.Flags().String("natsServer", nats.DefaultURL, "NATS Server URL")
-	agentCmd.MarkFlagsOneRequired("natsServer")
+	agentCmd.Flags().String("nats-uri", nats.DefaultURL, "NATS Server URL")
+	agentCmd.MarkFlagRequired("nats-uri")
 
 	// --once run the agent once and not on a schedule. Right now this is default.
 	// Actually run this as an agent on a schedule.
@@ -74,12 +74,12 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	natsServer, err := cmd.Flags().GetString("natsServer")
+	natsUri, err := cmd.Flags().GetString("nats-uri")
 	if err != nil {
 		return err
 	}
 
-	nc, err := nats.Connect(natsServer)
+	nc, err := nats.Connect(natsUri)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,6 +125,7 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 			fmt.Println("Findings:", res.Findings)
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
+			fmt.Println("Risks:", res.Status)
 
 			// Publish findings to nats subjects
 			data, err := json.Marshal(res.Findings)

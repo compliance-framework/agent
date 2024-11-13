@@ -39,5 +39,5 @@ docker run --name nats --network nats --rm -p 4222:4222 -p 8222:8222 nats --http
 ## Usage
 
 ```shell
-go run main.go agent --policy PATH_TO_OPA_DIR_OR_BUNDLE --plugin PATH_TO_PLUGIN_EXECUTABLE --natsServer="nats://localhost:4222"
+go run main.go agent --policy PATH_TO_OPA_DIR_OR_BUNDLE --plugin PATH_TO_PLUGIN_EXECUTABLE --natsServer nats://localhost:4222
 ```
