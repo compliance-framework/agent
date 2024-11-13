@@ -26,8 +26,18 @@ the data it has collected, conforms with organisational policies.
 For each violation of the policies, the plugin will report findings and observations to the agent, which in turn will
 report these to the central configuration api. 
 
+## NATS
+
+Upon the plugin(s) running, they'll send the results of the Observatios and/or Findings to an event queue (-flag configured).
+
+To run a local instance of NATS run this docker command (note `-DVV` flag for verbosity): 
+
+```shell
+docker run --name nats --network nats --rm -p 4222:4222 -p 8222:8222 nats --http_port 8222 -DVV
+```
+
 ## Usage
 
 ```shell
-go run main.go agent --policy PATH_TO_OPA_DIR_OR_BUNDLE --plugin PATH_TO_PLUGIN_EXECUTABLE
+go run main.go agent --policy PATH_TO_OPA_DIR_OR_BUNDLE --plugin PATH_TO_PLUGIN_EXECUTABLE --natsServer="nats://localhost:4222"
 ```
