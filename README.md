@@ -28,7 +28,7 @@ report these to the central configuration api.
 
 ## NATS
 
-Upon the plugin(s) running, they'll send the results of the Observatios and/or Findings to an event queue (-flag configured).
+Upon the plugin(s) running, they'll send the results of the Observations and/or Findings to an event queue (-flag configured).
 
 To run a local instance of NATS run this [docker command](https://docs.nats.io/running-a-nats-service/nats_docker) (note `-DVV` flag for verbosity): 
 
