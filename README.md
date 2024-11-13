@@ -30,7 +30,7 @@ report these to the central configuration api.
 
 Upon the plugin(s) running, they'll send the results of the Observatios and/or Findings to an event queue (-flag configured).
 
-To run a local instance of NATS run this docker command (note `-DVV` flag for verbosity): 
+To run a local instance of NATS run this [docker command](https://docs.nats.io/running-a-nats-service/nats_docker) (note `-DVV` flag for verbosity): 
 
 ```shell
 docker run --name nats --network nats --rm -p 4222:4222 -p 8222:8222 nats --http_port 8222 -DVV
