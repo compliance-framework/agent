@@ -1,16 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+
 	"github.com/chris-cmsoft/concom/runner"
 	"github.com/chris-cmsoft/concom/runner/proto"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	"github.com/nats-io/nats.go"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
-	"log"
-	"os"
-	"os/exec"
 )
 
 func AgentCmd() *cobra.Command {
@@ -44,6 +47,9 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringArray("plugin", []string{}, "Plugin executable or directory")
 	agentCmd.MarkFlagsOneRequired("plugin")
 
+	agentCmd.Flags().String("nats-uri", nats.DefaultURL, "NATS Server URL")
+	agentCmd.MarkFlagRequired("nats-uri")
+
 	// --once run the agent once and not on a schedule. Right now this is default.
 	// Actually run this as an agent on a schedule.
 
@@ -57,7 +63,6 @@ type AgentRunner struct {
 }
 
 func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
-	//ctx := context.TODO()
 
 	policyBundles, err := cmd.Flags().GetStringArray("policy")
 	if err != nil {
@@ -69,7 +74,17 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	defer ar.closePluginClients()
+	natsUri, err := cmd.Flags().GetString("nats-uri")
+	if err != nil {
+		return err
+	}
+
+	nc, err := nats.Connect(natsUri)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer nc.Close()
 
 	for _, path := range plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
@@ -110,9 +125,27 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 			fmt.Println("Findings:", res.Findings)
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
+			fmt.Println("Risks:", res.Status)
 
-			// Here we'll send the data back to NATS
+			// Publish findings to nats subjects
+			data, err := json.Marshal(res.Findings)
+			if err != nil {
+				return err
+			}
+			if err := nc.Publish("findings", data); err != nil {
+				return err
+			}
+
+			// Publish observations to nats subjects
+			data, err = json.Marshal(res.Observations)
+			if err != nil {
+				return err
+			}
+			if err := nc.Publish("observations", data); err != nil {
+				return err
+			}
 		}
+
 	}
 
 	return nil
@@ -135,11 +168,15 @@ func (ar AgentRunner) GetRunnerInstance(logger hclog.Logger, path string) (runne
 		return nil, err
 	}
 
+	log.Println("RPC client created successfully.")
+
 	// Request the plugin
 	raw, err := rpcClient.Dispense("runner")
 	if err != nil {
+		log.Printf("Failed to dispense runner plugin: %v", err)
 		return nil, err
 	}
+	log.Println("Plugin dispensed successfully.")
 
 	// We should have a Greeter now! This feels like a normal interface
 	// implementation but is in fact over an RPC connection.
@@ -147,6 +184,6 @@ func (ar AgentRunner) GetRunnerInstance(logger hclog.Logger, path string) (runne
 	return runnerInstance, nil
 }
 
-func (ar AgentRunner) closePluginClients() {
-	plugin.CleanupClients()
-}
+// func (ar AgentRunner) closePluginClients() {
+// 	plugin.CleanupClients()
+// }
