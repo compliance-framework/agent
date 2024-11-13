@@ -63,7 +63,6 @@ type AgentRunner struct {
 }
 
 func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
-	//ctx := context.TODO()
 
 	policyBundles, err := cmd.Flags().GetStringArray("policy")
 	if err != nil {
@@ -86,8 +85,6 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	defer nc.Close()
-
-	defer ar.closePluginClients()
 
 	for _, path := range plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
@@ -147,6 +144,7 @@ func (ar AgentRunner) Run(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		}
+
 	}
 
 	return nil
@@ -169,11 +167,15 @@ func (ar AgentRunner) GetRunnerInstance(logger hclog.Logger, path string) (runne
 		return nil, err
 	}
 
+	log.Println("RPC client created successfully.")
+
 	// Request the plugin
 	raw, err := rpcClient.Dispense("runner")
 	if err != nil {
+		log.Printf("Failed to dispense runner plugin: %v", err)
 		return nil, err
 	}
+	log.Println("Plugin dispensed successfully.")
 
 	// We should have a Greeter now! This feels like a normal interface
 	// implementation but is in fact over an RPC connection.
@@ -181,6 +183,6 @@ func (ar AgentRunner) GetRunnerInstance(logger hclog.Logger, path string) (runne
 	return runnerInstance, nil
 }
 
-func (ar AgentRunner) closePluginClients() {
-	plugin.CleanupClients()
-}
+// func (ar AgentRunner) closePluginClients() {
+// 	plugin.CleanupClients()
+// }
