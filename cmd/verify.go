@@ -54,8 +54,6 @@ func VerifyPolicies(cmd *cobra.Command, args []string) {
 		log.Fatalf("Error reading policy-path flag: %v", err)
 	}
 
-	log.Println("Policy path is:", policyPath)
-
 	if policyPath == "" && config != nil {
 		policyPath = config.PolicyPath
 	}
@@ -64,7 +62,13 @@ func VerifyPolicies(cmd *cobra.Command, args []string) {
 		log.Fatal("Policy path is required, please set in config file or CLI arguments")
 	}
 
-	_, err = os.Stat(policyPath)
+	log.Println("Policy path is:", policyPath)
+
+	doVerifyPolicy(policyPath)
+}
+
+func doVerifyPolicy(policyPath string) {
+	_, err := os.Stat(policyPath)
 	internal.OnError(err, func(err error) {
 		if os.IsNotExist(err) {
 			log.Fatal("Policy path does not exist at specified policy-path")
