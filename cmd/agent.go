@@ -514,15 +514,21 @@ func (ar *AgentRunner) DownloadPolicies() error {
 	for source := range policySources {
 		ar.logger.Trace("Checking for policy source", "source", source)
 
+		// First we check if the source is a path that exists on the fs.
+		// If it does exist, it means we've been passed a binary, and we can just use it as is.
 		_, err := os.ReadFile(source)
 
 		if err == nil {
+			// The file exists. Just return it.
 			ar.logger.Debug("Found policy locally, using local file", "File", source)
+			// The file exists locally, so we use the local binary path.
 			ar.policyLocations[source] = source
 			continue
 		}
 
 		if !os.IsNotExist(err) {
+			// The error we've received is something other than not exists.
+			// Exit early with the error
 			return err
 		}
 
@@ -555,9 +561,12 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			if ar.policyLocations == nil {
 				ar.policyLocations = map[string]string{}
 			}
+			// Update the source in the agent configuration to the new path
 			ar.policyLocations[source] = policyFile
 		} else {
 			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
+
+			// TODO We should download artifacts too
 		}
 	}
 
