@@ -3,6 +3,16 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path"
+	"runtime"
+	"sync"
+	"syscall"
+	"time"
+
 	"github.com/chris-cmsoft/concom/internal"
 	"github.com/chris-cmsoft/concom/runner"
 	"github.com/chris-cmsoft/concom/runner/proto"
@@ -18,15 +28,6 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"log"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path"
-	"runtime"
-	"sync"
-	"syscall"
-	"time"
 )
 
 type natsConfig struct {
@@ -76,6 +77,7 @@ func (ac *agentConfig) validate() error {
 }
 
 const AgentPluginDir = ".compliance-framework/plugins"
+const AgentPolicyDir = ".compliance-framework/policies"
 
 func AgentCmd() *cobra.Command {
 	var agentCmd = &cobra.Command{
@@ -244,6 +246,8 @@ type AgentRunner struct {
 
 	pluginLocations map[string]string
 
+	policyLocations map[string]string
+
 	queryBundles []*rego.Rego
 }
 
@@ -310,6 +314,11 @@ func (ar *AgentRunner) runInstance(nc *nats.Conn) error {
 	defer ar.mu.Unlock()
 
 	defer ar.closePluginClients()
+
+	err := ar.DownloadPolicies()
+	if err != nil {
+		return err
+	}
 
 	for pluginName, pluginConfig := range ar.config.Plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
@@ -419,6 +428,8 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runn
 // We return any errors that occurred during the download process. TODO: What is the right
 // error handling here?
 func (ar *AgentRunner) DownloadPlugins() error {
+	ar.pluginLocations = make(map[string]string)
+
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
@@ -436,6 +447,7 @@ func (ar *AgentRunner) DownloadPlugins() error {
 		if err == nil {
 			// The file exists. Just return it.
 			ar.logger.Debug("Found plugin locally, using local binary", "Binary", source)
+			// The file exists locally, so we use the local binary path.
 			ar.pluginLocations[source] = source
 			continue
 		}
@@ -481,6 +493,71 @@ func (ar *AgentRunner) DownloadPlugins() error {
 			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
 
 			// TODO We should download artifacts too
+		}
+	}
+
+	return nil
+}
+
+func (ar *AgentRunner) DownloadPolicies() error {
+	ar.policyLocations = make(map[string]string)
+
+	// Build a set of unique policy sources
+	policySources := map[string]struct{}{}
+
+	for _, pluginConfig := range ar.config.Plugins {
+		for _, policy := range pluginConfig.Policies {
+			policySources[string(*policy)] = struct{}{}
+		}
+	}
+
+	for source := range policySources {
+		ar.logger.Trace("Checking for policy source", "source", source)
+
+		_, err := os.ReadFile(source)
+
+		if err == nil {
+			ar.logger.Debug("Found policy locally, using local file", "File", source)
+			ar.policyLocations[source] = source
+			continue
+		}
+
+		if !os.IsNotExist(err) {
+			return err
+		}
+
+		if internal.IsOCI(source) {
+			ar.logger.Debug("Policy looks like an OCI endpoint, attempting to download", "Source", source)
+			tag, err := name.NewTag(source)
+			if err != nil {
+				return err
+			}
+
+			destination := path.Join(AgentPolicyDir, tag.RepositoryStr(), tag.Identifier())
+
+			downloaderImpl, err := oci.NewDownloader(
+				tag,
+				destination,
+			)
+			if err != nil {
+				return err
+			}
+			err = downloaderImpl.Download(remote.WithPlatform(v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			}))
+			if err != nil {
+				return err
+			}
+			policyFile := path.Join(destination, "policy")
+			ar.logger.Debug("Policy downloaded successfully", "Destination", policyFile)
+
+			if ar.policyLocations == nil {
+				ar.policyLocations = map[string]string{}
+			}
+			ar.policyLocations[source] = policyFile
+		} else {
+			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
 		}
 	}
 
