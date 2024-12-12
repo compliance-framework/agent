@@ -354,8 +354,9 @@ func (ar *AgentRunner) runInstance(nc *nats.Conn) error {
 		}
 
 		for _, inputBundle := range pluginConfig.Policies {
+			policyPath := ar.policyLocations[string(*inputBundle)]
 			res, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: string(*inputBundle),
+				BundlePath: policyPath,
 			})
 			if err != nil {
 				return err
@@ -540,6 +541,10 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			}
 
 			destination := path.Join(AgentPolicyDir, tag.RepositoryStr(), tag.Identifier())
+			policiesDir := path.Join(destination, "policies")
+			if err := os.MkdirAll(policiesDir, 0755); err != nil {
+				return err
+			}
 
 			downloaderImpl, err := oci.NewDownloader(
 				tag,
@@ -548,14 +553,11 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			if err != nil {
 				return err
 			}
-			err = downloaderImpl.Download(remote.WithPlatform(v1.Platform{
-				Architecture: runtime.GOARCH,
-				OS:           runtime.GOOS,
-			}))
+			err = downloaderImpl.Download()
 			if err != nil {
 				return err
 			}
-			policyFile := path.Join(destination, "policy")
+			policyFile := policiesDir // Ensure the specific policy file name is used
 			ar.logger.Debug("Policy downloaded successfully", "Destination", policyFile)
 
 			if ar.policyLocations == nil {
