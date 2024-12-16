@@ -4,7 +4,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/chris-cmsoft/concom/internal"
+	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-hclog"

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/chris-cmsoft/concom/internal/event"
+	"github.com/compliance-framework/agent/internal/event"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"os"
@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chris-cmsoft/concom/internal"
-	"github.com/chris-cmsoft/concom/runner"
-	"github.com/chris-cmsoft/concom/runner/proto"
+	"github.com/compliance-framework/agent/internal"
+	"github.com/compliance-framework/agent/runner"
+	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/fsnotify/fsnotify"

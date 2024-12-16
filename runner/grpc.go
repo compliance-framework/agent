@@ -2,7 +2,7 @@ package runner
 
 import (
 	"context"
-	"github.com/chris-cmsoft/concom/runner/proto"
+	"github.com/compliance-framework/agent/runner/proto"
 )
 
 // GRPCClient is an implementation of KV that talks over RPC.

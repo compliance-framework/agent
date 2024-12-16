@@ -1,4 +1,4 @@
-module github.com/chris-cmsoft/concom
+module github.com/compliance-framework/agent
 
 go 1.23.2
 

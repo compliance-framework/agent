@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/chris-cmsoft/concom/cmd"
+	"github.com/compliance-framework/agent/cmd"
 	"github.com/spf13/cobra"
 	"os"
 )

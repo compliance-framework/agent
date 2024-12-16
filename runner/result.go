@@ -1,6 +1,6 @@
 package runner
 
-import "github.com/chris-cmsoft/concom/runner/proto"
+import "github.com/compliance-framework/agent/runner/proto"
 
 type Result struct {
 	Status       proto.ExecutionStatus `json:"status"`
