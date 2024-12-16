@@ -1,9 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path"
+	"runtime"
+	"sync"
+	"syscall"
+	"time"
+
 	"github.com/chris-cmsoft/concom/internal"
-	"github.com/chris-cmsoft/concom/internal/event"
 	"github.com/chris-cmsoft/concom/runner"
 	"github.com/chris-cmsoft/concom/runner/proto"
 	"github.com/compliance-framework/gooci/pkg/oci"
@@ -14,19 +24,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	"github.com/nats-io/nats.go"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"log"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path"
-	"runtime"
-	"sync"
-	"syscall"
-	"time"
 )
 
 type natsConfig struct {
@@ -38,10 +39,10 @@ type agentPolicy string
 type agentPluginConfig map[string]string
 
 type agentPlugin struct {
-	AssessmentPlanIds []string          `mapstructure:"assessment-plan-ids"`
-	Source            string            `mapstructure:"source"`
-	Policies          []agentPolicy     `mapstructure:"policies"`
-	Config            agentPluginConfig `mapstructure:"config"`
+	AssessmentPlanIds []*string         `json:"assessment_plan_ids"`
+	Source            *string           `json:"source"`
+	Policies          []*agentPolicy    `json:"policy"`
+	Config            agentPluginConfig `json:"config"`
 }
 
 type agentConfig struct {
@@ -76,6 +77,7 @@ func (ac *agentConfig) validate() error {
 }
 
 const AgentPluginDir = ".compliance-framework/plugins"
+const AgentPolicyDir = ".compliance-framework/policies"
 
 func AgentCmd() *cobra.Command {
 	var agentCmd = &cobra.Command{
@@ -159,7 +161,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	v.SetConfigFile(configPath)
 	v.AutomaticEnv()
 
-	loadConfig := func() (*agentConfig, error) {
+	loadConfig := func(configPath string) (*agentConfig, error) {
 		err := v.ReadInConfig()
 		if err != nil {
 			return nil, err
@@ -177,7 +179,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		return config, nil
 	}
 
-	config, err := loadConfig()
+	config, err := loadConfig(configPath)
 	if err != nil {
 		return err
 	}
@@ -191,9 +193,6 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	agentRunner := AgentRunner{
 		logger: logger,
 		config: *config,
-
-		natsBus:         event.NewNatsBus(logger),
-		pluginLocations: map[string]string{},
 	}
 
 	v.OnConfigChange(func(in fsnotify.Event) {
@@ -208,7 +207,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		// This will exit the whole process of the agent. This might not be ideal.
 		// Maybe a better strategy here is to re-use the old config and log an error, so the process can continue
 		// until the config is fixed ?
-		config, err := loadConfig()
+		config, err := loadConfig(configPath)
 		if err != nil {
 			logger.Error("Error downloading plugins", "error", err)
 			panic(err)
@@ -243,10 +242,11 @@ type AgentRunner struct {
 
 	mu sync.Mutex
 
-	config  agentConfig
-	natsBus *event.NatsBus
+	config agentConfig
 
 	pluginLocations map[string]string
+
+	policyLocations map[string]string
 
 	queryBundles []*rego.Rego
 }
@@ -254,12 +254,12 @@ type AgentRunner struct {
 func (ar *AgentRunner) Run() error {
 	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon, "nats_uri", ar.config.Nats.Url)
 
-	err := ar.natsBus.Connect(ar.config.Nats.Url)
+	nc, err := nats.Connect(ar.config.Nats.Url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer ar.natsBus.Close()
+	defer nc.Close()
 
 	err = ar.DownloadPlugins()
 	if err != nil {
@@ -267,16 +267,16 @@ func (ar *AgentRunner) Run() error {
 	}
 
 	if ar.config.Daemon == true {
-		ar.runDaemon()
+		ar.runDaemon(nc)
 		return nil
 	}
 
-	return ar.runInstance()
+	return ar.runInstance(nc)
 }
 
 // Should never return, either handles any error or panics.
 // TODO: We should take a cancellable context here, so the caller can cancel the daemon at any time, and continue to whatever is appropriate
-func (ar *AgentRunner) runDaemon() {
+func (ar *AgentRunner) runDaemon(nc *nats.Conn) {
 	sigs := make(chan os.Signal, 1)
 
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -292,7 +292,7 @@ func (ar *AgentRunner) runDaemon() {
 	go daemon.SdNotify(false, "READY=1")
 
 	for {
-		err := ar.runInstance()
+		err := ar.runInstance(nc)
 
 		if err != nil {
 			ar.logger.Error("error running instance", "error", err)
@@ -309,11 +309,16 @@ func (ar *AgentRunner) runDaemon() {
 //
 // Returns:
 // - error: any error that occurred during the run
-func (ar *AgentRunner) runInstance() error {
+func (ar *AgentRunner) runInstance(nc *nats.Conn) error {
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 
 	defer ar.closePluginClients()
+
+	err := ar.DownloadPolicies()
+	if err != nil {
+		return err
+	}
 
 	for pluginName, pluginConfig := range ar.config.Plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
@@ -322,18 +327,7 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
-		source := ar.pluginLocations[pluginConfig.Source]
-
-		assessmentPlanIds := []string{}
-		for _, assessmentPlanId := range pluginConfig.AssessmentPlanIds {
-			planIdObject, err := primitive.ObjectIDFromHex(assessmentPlanId)
-			if err != nil {
-				return err
-			}
-			assessmentPlanIds = append(assessmentPlanIds, planIdObject.Hex())
-		}
-
-		logger.Debug("Using assessment plan ids", "ids", assessmentPlanIds)
+		source := ar.pluginLocations[*pluginConfig.Source]
 
 		logger.Debug("Running plugin", "source", source)
 
@@ -351,38 +345,19 @@ func (ar *AgentRunner) runInstance() error {
 			Config: pluginConfig.Config,
 		})
 		if err != nil {
-			for _, assessmentPlanId := range assessmentPlanIds {
-				result := runner.ErrorResult(assessmentPlanId, err)
-				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-					logger.Error("Error publishing configure result", "error", pubErr)
-				}
-			}
 			return err
 		}
 
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
-			for _, assessmentPlanId := range assessmentPlanIds {
-				result := runner.ErrorResult(assessmentPlanId, err)
-				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-					logger.Error("Error publishing evaslutae result", "error", pubErr)
-				}
-			}
 			return err
 		}
 
 		for _, inputBundle := range pluginConfig.Policies {
 			res, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: string(inputBundle),
+				BundlePath: string(*inputBundle),
 			})
-
 			if err != nil {
-				for _, assessmentPlanId := range assessmentPlanIds {
-					result := runner.ErrorResult(assessmentPlanId, err)
-					if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-						logger.Error("Error publishing evaslutae result", "error", pubErr)
-					}
-				}
 				return err
 			}
 
@@ -391,21 +366,22 @@ func (ar *AgentRunner) runInstance() error {
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
 
-			for _, assessmentPlanId := range assessmentPlanIds {
-				result := runner.Result{
-					Status:       res.Status,
-					AssessmentId: assessmentPlanId,
-					Error:        err,
-					Observations: res.Observations,
-					Findings:     res.Findings,
-					Risks:        res.Risks,
-					Logs:         res.Logs,
-				}
+			// Publish findings to nats subjects
+			findings, err := json.Marshal(res.Findings)
+			if err != nil {
+				return err
+			}
+			if err := nc.Publish("Findings", findings); err != nil {
+				return err
+			}
 
-				// Publish findings to nats
-				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-					logger.Error("Error publishing result", "error", pubErr)
-				}
+			// Publish observations to nats subjects
+			observations, err := json.Marshal(res.Observations)
+			if err != nil {
+				return err
+			}
+			if err := nc.Publish("Observations", observations); err != nil {
+				return err
 			}
 		}
 	}
@@ -452,11 +428,13 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runn
 // We return any errors that occurred during the download process. TODO: What is the right
 // error handling here?
 func (ar *AgentRunner) DownloadPlugins() error {
+	ar.pluginLocations = make(map[string]string)
+
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
 	for _, pluginConfig := range ar.config.Plugins {
-		pluginSources[pluginConfig.Source] = struct{}{}
+		pluginSources[*pluginConfig.Source] = struct{}{}
 	}
 
 	for source := range pluginSources {
@@ -469,6 +447,7 @@ func (ar *AgentRunner) DownloadPlugins() error {
 		if err == nil {
 			// The file exists. Just return it.
 			ar.logger.Debug("Found plugin locally, using local binary", "Binary", source)
+			// The file exists locally, so we use the local binary path.
 			ar.pluginLocations[source] = source
 			continue
 		}
@@ -505,12 +484,80 @@ func (ar *AgentRunner) DownloadPlugins() error {
 			pluginBinary := path.Join(destination, "plugin")
 			ar.logger.Debug("Plugin downloaded successfully", "Destination", pluginBinary)
 
+			if ar.pluginLocations == nil {
+				ar.pluginLocations = map[string]string{}
+			}
 			// Update the source in the agent configuration to the new path
 			ar.pluginLocations[source] = pluginBinary
 		} else {
 			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
 
 			// TODO We should download artifacts too
+		}
+	}
+
+	return nil
+}
+
+func (ar *AgentRunner) DownloadPolicies() error {
+	ar.policyLocations = make(map[string]string)
+
+	// Build a set of unique policy sources
+	policySources := map[string]struct{}{}
+
+	for _, pluginConfig := range ar.config.Plugins {
+		for _, policy := range pluginConfig.Policies {
+			policySources[string(*policy)] = struct{}{}
+		}
+	}
+
+	for source := range policySources {
+		ar.logger.Trace("Checking for policy source", "source", source)
+
+		_, err := os.ReadFile(source)
+
+		if err == nil {
+			ar.logger.Debug("Found policy locally, using local file", "File", source)
+			ar.policyLocations[source] = source
+			continue
+		}
+
+		if !os.IsNotExist(err) {
+			return err
+		}
+
+		if internal.IsOCI(source) {
+			ar.logger.Debug("Policy looks like an OCI endpoint, attempting to download", "Source", source)
+			tag, err := name.NewTag(source)
+			if err != nil {
+				return err
+			}
+
+			destination := path.Join(AgentPolicyDir, tag.RepositoryStr(), tag.Identifier())
+
+			downloaderImpl, err := oci.NewDownloader(
+				tag,
+				destination,
+			)
+			if err != nil {
+				return err
+			}
+			err = downloaderImpl.Download(remote.WithPlatform(v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			}))
+			if err != nil {
+				return err
+			}
+			policyFile := path.Join(destination, "policy")
+			ar.logger.Debug("Policy downloaded successfully", "Destination", policyFile)
+
+			if ar.policyLocations == nil {
+				ar.policyLocations = map[string]string{}
+			}
+			ar.policyLocations[source] = policyFile
+		} else {
+			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
 		}
 	}
 
