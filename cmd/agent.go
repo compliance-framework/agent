@@ -2,17 +2,19 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/chris-cmsoft/concom/internal/event"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/chris-cmsoft/concom/internal/event"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/chris-cmsoft/concom/internal"
 	"github.com/chris-cmsoft/concom/runner"
@@ -23,6 +25,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/open-policy-agent/opa/rego"
@@ -344,6 +347,33 @@ func (ar *AgentRunner) runInstance() error {
 		logger.Debug("Using assessment plan ids", "ids", assessmentPlanIds)
 
 		logger.Debug("Running plugin", "source", source)
+
+		uuidSeedData := map[string]string{
+			// Repeatably identify this plugin / policy combination.
+			// Rerunning this plugin / policy on the same agent with the same config should generate the same UUID.
+			"plugin-name":    pluginName,
+			"plugin-version": "1.0.0",
+			"policy-version": "v1.2.3",
+
+			// Uniquely identify this agent.
+			// If a set of machines is running the same agent config, each should have a unique UUID.
+			"agent-version": "v1.0.0",
+			"hostname":      os.Getenv("HOSTNAME"),
+		}
+
+		seed := ""
+		for k, v := range uuidSeedData {
+			seed = fmt.Sprintf("%s-%s-%s", seed, k, v)
+		}
+
+		generatedUuid, err := uuid.NewRandomFromReader(strings.NewReader(seed))
+		if err != nil {
+			fmt.Printf("Failed to create UUID from dataset: %v", err)
+		}
+
+		fmt.Println("Generated UUID:", generatedUuid.String())
+
+		pluginConfig.Config["uuid"] = generatedUuid.String()
 
 		if _, err := os.ReadFile(source); err != nil {
 			return err
