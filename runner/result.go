@@ -3,6 +3,7 @@ package runner
 import "github.com/compliance-framework/agent/runner/proto"
 
 type Result struct {
+	Title        string                `json:"title"`
 	Status       proto.ExecutionStatus `json:"status"`
 	AssessmentId string                `json:"assessmentId"`
 	Error        error                 `json:"error"`
