@@ -388,6 +388,7 @@ func (ar *AgentRunner) runInstance() error {
 
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPath := ar.policyLocations[string(inputBundle)]
+			// TODO we need a way to get the plugin, policy and agent version at runtime.
 			streamId, err := internal.SeededUUID([]string{
 				fmt.Sprintf("plugin:%s:v1.0.0", pluginName),
 				fmt.Sprintf("policy:%s:v1.0.0", policyPath),
