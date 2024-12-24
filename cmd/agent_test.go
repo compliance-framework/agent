@@ -3,10 +3,8 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
 
@@ -119,37 +117,4 @@ func TestAgentCmd_ConfigurationMerging(t *testing.T) {
 			t.Errorf("Expected config.Daemon to be %v, got %v", true, config.Daemon)
 		}
 	})
-}
-
-func TestUUIDUniqueness(t *testing.T) {
-	// This seed data will be defined by the plugin author.
-	// Each agent instance should generate a reproducible UUID for a plugin/policy combo, but unique onto itself.
-	uuidSeedData := map[string]string{
-		// Repeatably identify this plugin / policy combination.
-		// Rerunning this plugin / policy on the same agent with the same config should generate the same UUID.
-		"plugin-name":    "local-ssh",
-		"plugin-version": "v1.3.0",
-		"policy-version": "v1.2.3",
-
-		// Uniquely identify this agent.
-		// If a set of machines is running the same agent config, each should have a unique UUID.
-		"agent-version": "v1.0.0",
-		"hostname":      "k8s-worker-3",
-	}
-
-	// Build a seed string based on the uniqueness parameters
-	seed := ""
-	for k, v := range uuidSeedData {
-		seed = fmt.Sprintf("%s-%s-%s", seed, k, v)
-	}
-
-	// Generate the UUID.
-	// It will be consistent for this plugin / policy / agent.
-	// It will be unique for each agent instance, so different hosts generate different IDs.
-	generatedUuid, err := uuid.NewRandomFromReader(strings.NewReader(seed))
-	if err != nil {
-		t.Errorf("Failed to create UUID from dataset: %v", err)
-	}
-
-	fmt.Println(generatedUuid.String())
 }

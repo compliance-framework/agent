@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/compliance-framework/agent/internal/event"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"os/signal"
 	"path"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -24,7 +24,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/open-policy-agent/opa/rego"
@@ -347,33 +346,6 @@ func (ar *AgentRunner) runInstance() error {
 
 		logger.Debug("Running plugin", "source", source)
 
-		uuidSeedData := map[string]string{
-			// Repeatably identify this plugin / policy combination.
-			// Rerunning this plugin / policy on the same agent with the same config should generate the same UUID.
-			"plugin-name":    pluginName,
-			"plugin-version": "1.0.0",
-			"policy-version": "v1.2.3",
-
-			// Uniquely identify this agent.
-			// If a set of machines is running the same agent config, each should have a unique UUID.
-			"agent-version": "v1.0.0",
-			"hostname":      os.Getenv("HOSTNAME"),
-		}
-
-		seed := ""
-		for k, v := range uuidSeedData {
-			seed = fmt.Sprintf("%s-%s-%s", seed, k, v)
-		}
-
-		generatedUuid, err := uuid.NewRandomFromReader(strings.NewReader(seed))
-		if err != nil {
-			fmt.Printf("Failed to create UUID from dataset: %v", err)
-		}
-
-		fmt.Println("Generated UUID:", generatedUuid.String())
-
-		pluginConfig.Config["uuid"] = generatedUuid.String()
-
 		if _, err := os.ReadFile(source); err != nil {
 			return err
 		}
@@ -389,7 +361,10 @@ func (ar *AgentRunner) runInstance() error {
 		})
 		if err != nil {
 			for _, assessmentPlanId := range assessmentPlanIds {
-				result := runner.ErrorResult(assessmentPlanId, err)
+				result := runner.ErrorResult(&runner.Result{
+					AssessmentId: assessmentPlanId,
+					Error:        err,
+				})
 				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 					logger.Error("Error publishing configure result", "error", pubErr)
 				}
@@ -400,7 +375,10 @@ func (ar *AgentRunner) runInstance() error {
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
 			for _, assessmentPlanId := range assessmentPlanIds {
-				result := runner.ErrorResult(assessmentPlanId, err)
+				result := runner.ErrorResult(&runner.Result{
+					AssessmentId: assessmentPlanId,
+					Error:        err,
+				})
 				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 					logger.Error("Error publishing evaslutae result", "error", pubErr)
 				}
@@ -410,12 +388,27 @@ func (ar *AgentRunner) runInstance() error {
 
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPath := ar.policyLocations[string(inputBundle)]
+			streamId, err := internal.SeededUUID([]string{
+				fmt.Sprintf("plugin:%s:v1.0.0", pluginName),
+				fmt.Sprintf("policy:%s:v1.0.0", policyPath),
+				// Uniquely identify this agent.
+				// If a set of machines is running the same agent config, each should have a unique UUID.
+				fmt.Sprintf("hostname:%s", os.Getenv("HOSTNAME")),
+			})
+			if err != nil {
+				fmt.Printf("Failed to create UUID from dataset: %v. Generating random uuid", err)
+				streamId = uuid.New()
+			}
 			res, err := runnerInstance.Eval(&proto.EvalRequest{
 				BundlePath: policyPath,
 			})
 			if err != nil {
 				for _, assessmentPlanId := range assessmentPlanIds {
-					result := runner.ErrorResult(assessmentPlanId, err)
+					result := runner.ErrorResult(&runner.Result{
+						AssessmentId: assessmentPlanId,
+						Error:        err,
+						StreamID:     streamId.String(),
+					})
 					if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 						logger.Error("Error publishing evaluate result", "error", pubErr)
 					}
@@ -432,11 +425,12 @@ func (ar *AgentRunner) runInstance() error {
 				result := runner.Result{
 					Status:       res.Status,
 					AssessmentId: assessmentPlanId,
+					StreamID:     streamId.String(),
 					Error:        err,
-					Observations: res.Observations,
-					Findings:     res.Findings,
-					Risks:        res.Risks,
-					Logs:         res.Logs,
+					Observations: &res.Observations,
+					Findings:     &res.Findings,
+					Risks:        &res.Risks,
+					Logs:         &res.Logs,
 				}
 
 				// Publish findings to nats

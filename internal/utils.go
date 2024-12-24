@@ -3,10 +3,14 @@ package internal
 import (
 	"archive/tar"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/uuid"
+	"hash/crc64"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 func OnError(err error, callback func(err error)) {
@@ -31,6 +35,13 @@ func IsOCI(source string) bool {
 	// Check whether this can be parsed as an OCI endpoint
 	_, err := name.NewTag(source, name.StrictValidation)
 	return err == nil
+}
+
+func SeededUUID(seedData []string) (uuid.UUID, error) {
+	slices.Sort(seedData)
+	seedint64 := crc64.Checksum([]byte(strings.Join(seedData, "-")), crc64.MakeTable(crc64.ISO))
+	random := rand.New(rand.NewSource(int64(seedint64)))
+	return uuid.NewRandomFromReader(random)
 }
 
 func Untar(destination string, tarReader io.Reader) error {

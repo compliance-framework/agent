@@ -115,3 +115,47 @@ func TestIsOci(t *testing.T) {
 		})
 	}
 }
+
+func TestSeededUUID(t *testing.T) {
+	t.Run("SeededUUID generates a consistent ID for the same seed", func(t *testing.T) {
+		seedData := []string{
+			"plugin:local-ssh:v1.3.0",
+			"policy:local-ssh:v1.3.0",
+			"hostname:k8s-worker-3",
+		}
+
+		uuid1, err := SeededUUID(seedData)
+		if err != nil {
+			t.Errorf("Failed to create UUID from dataset: %v", err)
+		}
+
+		uuid2, err := SeededUUID(seedData)
+		if err != nil {
+			t.Errorf("Failed to create UUID from dataset: %v", err)
+		}
+
+		if !reflect.DeepEqual(uuid1, uuid2) {
+			t.Errorf("SeededUUID generated different UUIDs for the same seed")
+		}
+	})
+
+	t.Run("SeededUUID generates different IDs for different seeds", func(t *testing.T) {
+		uuid1, err := SeededUUID([]string{
+			"plugin:local-ssh:v1.3.0",
+		})
+		if err != nil {
+			t.Errorf("Failed to create UUID from dataset: %v", err)
+		}
+
+		uuid2, err := SeededUUID([]string{
+			"plugin:local-ssh:v1.3.1",
+		})
+		if err != nil {
+			t.Errorf("Failed to create UUID from dataset: %v", err)
+		}
+
+		if reflect.DeepEqual(uuid1, uuid2) {
+			t.Errorf("SeededUUID generated the same UUID for different seeds")
+		}
+	})
+}
