@@ -424,6 +424,7 @@ func (ar *AgentRunner) runInstance() error {
 
 			for _, assessmentPlanId := range assessmentPlanIds {
 				result := runner.Result{
+					Title:        res.Title,
 					Status:       res.Status,
 					AssessmentId: assessmentPlanId,
 					StreamID:     streamId.String(),
