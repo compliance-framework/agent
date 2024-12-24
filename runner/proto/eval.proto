@@ -90,4 +90,5 @@ message EvalResponse {
   repeated Finding Findings = 3;
   repeated Risk Risks = 4;
   repeated LogEntry Logs = 5;
+  string Title = 6;
 }
