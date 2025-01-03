@@ -27,10 +27,16 @@ type Policy struct {
 	Annotations []*ast.Annotations
 }
 
+type Control struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
 type Result struct {
 	Policy              Policy
 	AdditionalVariables map[string]interface{}
 	Violations          []Violation
+	Controls            []Control
 }
 
 func (res Result) String() string {
@@ -41,5 +47,6 @@ Policy:
 	annotations: %s
 AdditionalVariables: %v
 Violations: %s
-`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations)
+Controls: %v
+`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Controls)
 }

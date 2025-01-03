@@ -44,6 +44,34 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 			continue
 		}
 
+		controls := []Control{}
+
+		for _, annotation := range module.Annotations {
+			if annotation.Custom["controls"] == nil {
+				continue
+			}
+			//var controls []Control
+			pm.logger.Info("Executing policy", "controls", annotation.Custom["controls"])
+			v, ok := annotation.Custom["controls"].([]interface{})
+			if !ok {
+				panic("controls is not an array")
+			}
+			for _, c := range v {
+				w, ok := c.(map[string]interface{})
+				if !ok {
+					panic("control element is not a map")
+				}
+
+				pm.logger.Info("Executing policy", "control", w["description"])
+				control := Control{
+					Title:       w["title"].(string),
+					Description: w["description"].(string),
+				}
+
+				controls = append(controls, control)
+			}
+		}
+
 		result := Result{
 			Policy: Policy{
 				File:        module.Package.Location.File,
@@ -52,6 +80,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 			},
 			AdditionalVariables: map[string]interface{}{},
 			Violations:          nil,
+			Controls:            controls,
 		}
 
 		regoArgs := []func(r *rego.Rego){
