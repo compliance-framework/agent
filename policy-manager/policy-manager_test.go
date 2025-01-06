@@ -1,188 +1,115 @@
 package policy_manager
 
-import "testing"
+import (
+	"context"
+	"os"
+	"testing"
 
-var sshConfiguration = map[string][]string{
-	"authorizedkeysfile": {
-		".ssh/authorized_keys",
-		".ssh/authorized_keys2",
-	},
-	"listenaddress": {
-		"[::]:22",
-		"0.0.0.0:22",
-	},
-	"passwordauthentication": {
-		"yes",
-	},
-	"permitrootlogin": {
-		//"without-password",
-		"with-password",
-	},
-	"port": {
-		"22",
-	},
-	"pubkeyauthentication": {
-		"yes",
-	},
+	"github.com/hashicorp/go-hclog"
+	"github.com/open-policy-agent/opa/ast"
+	"github.com/open-policy-agent/opa/bundle"
+	"github.com/open-policy-agent/opa/rego"
+	"github.com/stretchr/testify/assert"
+)
+
+func buildPolicyManager(regoContents []byte) *PolicyManager {
+	return &PolicyManager{
+		logger: hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		loaderOptions: []func(r *rego.Rego){
+			rego.ParsedBundle("test", &bundle.Bundle{
+				Modules: []bundle.ModuleFile{
+					{
+						Path: "test.rego",
+						Parsed: ast.MustParseModule(string(regoContents[:])),
+						Raw: []byte(regoContents),
+					},
+				},
+				Manifest: bundle.Manifest{Revision: "test", Roots: &[]string{"/"}},
+			}),
+		},
+	}
 }
 
-func TestPolicyManager_New(t *testing.T) {
+func TestPolicyManager(t *testing.T) {
 	t.Run("Policy Manager understands bundles", func(t *testing.T) {
+		ctx := context.TODO()
 
+		regoContents, err := os.ReadFile("testdata/test_policy.rego")
+		assert.NoError(t, err)
+
+		var data map[string]interface{} = make(map[string]interface{})
+
+		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		assert.NoError(t, err)
+		assert.Equal(t, len(results), 1)
+
+		result := results[0]
+
+		assert.Equal(t, len(result.Activities), 1)
+		assert.Equal(t, Activity{
+			Title:       "Activity1",
+			Description: "Do the first thing",
+			Type:        "test",
+			Steps:       []string{ "Step 1", "Step 2", "Step 3" },
+			Tools:       []string{ "rego", "OPA" },
+		}, result.Activities[0])
+
+		assert.Equal(t, 2, len(result.Risks))
+		assert.Equal(t, Risk{
+			Title: "Risk 1",
+			Description: "Risky business",
+			Statement: "We could be at risk",
+			Links: []Link{
+				{
+					Text: "stuff",
+					URL: "https://attack.mitre.org/techniques/T123/",
+				},
+			},
+		}, result.Risks[0])
+		assert.Equal(t, Risk{
+			Title: "Risk 2",
+			Description: "Even riskier business",
+			Statement: "You should be worried",
+			Links: []Link{
+				{
+					Text: "stuff",
+					URL: "https://attack.mitre.org/techniques/T124/",
+				},
+			},
+		}, result.Risks[1])
+
+		assert.Equal(t, 0, len(result.Violations))
 	})
-	t.Run("Policy Manager understands directories", func(t *testing.T) {
 
+	t.Run("Policy Manager handles violations", func(t *testing.T) {
+		ctx := context.TODO()
+
+		regoContents, err := os.ReadFile("testdata/test_policy.rego")
+		assert.NoError(t, err)
+
+		var data map[string]interface{} = make(map[string]interface{})
+		data["violated"] = []string{"yes"}
+
+		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
+		result := results[0]
+
+		assert.Equal(t, 1, len(result.Violations))
+		assert.Equal(t, Violation{
+			Title: "Violation 1",
+			Description: "You are so violated.",
+			Remarks: "Migrate to not being violated",
+			Controls: []string{
+				"AC-1",
+				"AC-2",
+			},
+		}, result.Violations[0])
 	})
 }
-
-//func TestSomething(t *testing.T) {
-//	ctx := context.TODO()
-//
-//	r := rego.New(
-//		rego.Query("data"),
-//		rego.LoadBundle("./bundle_ssh.tar.gz"),
-//		rego.Package("compliance_framework.local_ssh"),
-//		rego.Input(sshConfiguration),
-//	)
-//
-//	query, err := r.PrepareForEval(ctx)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	for _, module := range query.Modules() {
-//		// Exclude any test files for this compilation
-//		if strings.HasSuffix(module.Package.Location.File, "_test.rego") {
-//			continue
-//		}
-//
-//		finalResult := Result{
-//			Policy: Policy{
-//				File:        module.Package.Location.File,
-//				Package:     Package(module.Package.Path.String()),
-//				Annotations: module.Annotations,
-//			},
-//			AdditionalVariables: map[string]interface{}{},
-//			Violations:          nil,
-//		}
-//
-//		sub := rego.New(
-//			rego.Query(module.Package.Path.String()),
-//			rego.LoadBundle("./bundle_ssh.tar.gz"),
-//			rego.Package(module.Package.Path.String()),
-//			rego.Input(sshConfiguration),
-//		)
-//
-//		results, err := sub.Eval(ctx)
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//
-//		fmt.Println(results)
-//
-//		for _, result := range results {
-//			for _, expression := range result.Expressions {
-//				moduleOutputs := expression.Value.(map[string]interface{})
-//
-//				for key, value := range moduleOutputs {
-//					if !slices.Contains([]string{"violation"}, key) {
-//						finalResult.AdditionalVariables[key] = value
-//					}
-//				}
-//
-//				for _, tester := range moduleOutputs["violation"].([]interface{}) {
-//					finalResult.Violations = append(finalResult.Violations, tester.(map[string]interface{}))
-//				}
-//
-//				fmt.Println(finalResult.String())
-//				//for _,violate := range violations["violation"] {
-//				//
-//				//}
-//				//fmt.Println(expression)
-//			}
-//			//fmt.Println(result.Expressions)
-//			//fmt.Println(result.Bindings)
-//		}
-//
-//		//fmt.Println(result.([]map[string]interface{}))
-//
-//		//break
-//		//fmt.Println(module.Package.Path)
-//		fmt.Println("#########################################")
-//		fmt.Println(finalResult.String())
-//	}
-//
-//}
-
-//func TestSomething(t *testing.T) {
-//
-//	ctx := context.TODO()
-//
-//	r := rego.New(
-//		rego.Query("data.compliance_framework.local_ssh"),
-//		rego.LoadBundle("./bundle_ssh.tar.gz"),
-//		rego.Package("compliance_framework"),
-//	)
-//
-//	query, err := r.PrepareForEval(ctx)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	results, err := query.Eval(ctx, rego.EvalInput(sshConfiguration))
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	for _, module := range query.Modules() {
-//		fmt.Println(module.Package.Path.String())
-//
-//	}
-//
-//	var resultCompiled []struct {
-//		Namespace           string
-//		Violations          []map[string]interface{}
-//		AdditionalVariables map[string]interface{}
-//	}
-//
-//	fmt.Println(results)
-//
-//	for _, result := range results {
-//		for _, expression := range result.Expressions {
-//			for namespace, outcome := range expression.Value.(map[string]interface{}) {
-//
-//				fmt.Println("###########", outcome)
-//
-//				variables := outcome.(map[string]interface{})
-//
-//				var violations []map[string]interface{}
-//
-//				for _, violate := range variables["violation"].([]interface{}) {
-//					violations = append(violations, violate.(map[string]interface{}))
-//				}
-//
-//				//for name, value := range variables {
-//				//
-//				//}
-//
-//				result := struct {
-//					Namespace           string
-//					Violations          []map[string]interface{}
-//					AdditionalVariables map[string]interface{}
-//				}{
-//					Namespace:           namespace,
-//					Violations:          violations,
-//					AdditionalVariables: variables,
-//				}
-//
-//				resultCompiled = append(resultCompiled, result)
-//
-//				//fmt.Println()
-//			}
-//		}
-//	}
-//
-//	fmt.Println(resultCompiled)
-//	//fmt.Println(results)
-//
-//}

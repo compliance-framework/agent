@@ -6,13 +6,11 @@ import (
 	"strings"
 )
 
-type Violation map[string]interface{}
-
-func (v Violation) GetString(key string, defaultString string) string {
-	if _, value := v[key]; value {
-		return v[key].(string)
-	}
-	return defaultString
+type Violation struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Remarks     string   `json:"remarks"`
+	Controls    []string `json:"control-implementations"`
 }
 
 type Package string
@@ -27,16 +25,32 @@ type Policy struct {
 	Annotations []*ast.Annotations
 }
 
-type Control struct {
+type Activity struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Type        string   `json:"type"`
+	Steps       []string `json:"steps"`
+	Tools       []string `json:"tools"`
+}
+
+type Link struct {
+	Text string `json:"text"`
+	URL  string `json:"href"`
+}
+
+type Risk struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	Statement   string `json:"statement"`
+	Links       []Link `json:"links"`
 }
 
 type Result struct {
 	Policy              Policy
 	AdditionalVariables map[string]interface{}
 	Violations          []Violation
-	Controls            []Control
+	Activities          []Activity
+	Risks               []Risk
 }
 
 func (res Result) String() string {
@@ -47,6 +61,7 @@ Policy:
 	annotations: %s
 AdditionalVariables: %v
 Violations: %s
-Controls: %v
-`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Controls)
+Activities: %v
+Risks: %v
+`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Activities, res.Risks)
 }
