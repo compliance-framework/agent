@@ -25,12 +25,22 @@ type Policy struct {
 	Annotations []*ast.Annotations
 }
 
+type Step struct {
+	Title       string `json:"title"`
+}
+
 type Activity struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
 	Type        string   `json:"type"`
-	Steps       []string `json:"steps"`
+	Steps       []Step   `json:"steps"`
 	Tools       []string `json:"tools"`
+}
+
+type Task struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Activities  []Activity
 }
 
 type Link struct {
@@ -49,7 +59,7 @@ type Result struct {
 	Policy              Policy
 	AdditionalVariables map[string]interface{}
 	Violations          []Violation
-	Activities          []Activity
+	Tasks               []Task
 	Risks               []Risk
 }
 
@@ -61,7 +71,7 @@ Policy:
 	annotations: %s
 AdditionalVariables: %v
 Violations: %s
-Activities: %v
+Tasks: %v
 Risks: %v
-`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Activities, res.Risks)
+`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Tasks, res.Risks)
 }

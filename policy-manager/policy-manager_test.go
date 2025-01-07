@@ -49,14 +49,50 @@ func TestPolicyManager(t *testing.T) {
 
 		result := results[0]
 
-		assert.Equal(t, len(result.Activities), 1)
+		assert.Equal(t, len(result.Tasks), 1)
+		assert.Equal(t, "Task1", result.Tasks[0].Title)
+		assert.Equal(t, "Do the thing", result.Tasks[0].Description)
+		assert.Equal(t, 2, len(result.Tasks[0].Activities))
 		assert.Equal(t, Activity{
-			Title:       "Activity1",
+			Title: "Activity1",
 			Description: "Do the first thing",
-			Type:        "test",
-			Steps:       []string{ "Step 1", "Step 2", "Step 3" },
-			Tools:       []string{ "rego", "OPA" },
-		}, result.Activities[0])
+			Type: "test",
+			Steps: []Step{
+				{
+					Title: "Step 1",
+				},
+				{
+					Title: "Step 2",
+				},
+				{
+					Title: "Step 3",
+				},
+			},
+			Tools: []string{
+				"Tool 1",
+				"Tool 2",
+			},
+		}, result.Tasks[0].Activities[0])
+		assert.Equal(t, Activity{
+			Title: "Activity2",
+			Description: "Do the next thing",
+			Type: "test",
+			Steps: []Step{
+				{
+					Title: "Step a",
+				},
+				{
+					Title: "Step b",
+				},
+				{
+					Title: "Step c",
+				},
+			},
+			Tools: []string{
+				"Tool 1",
+				"Tool 2",
+			},
+		}, result.Tasks[0].Activities[1])
 
 		assert.Equal(t, 2, len(result.Risks))
 		assert.Equal(t, Risk{
