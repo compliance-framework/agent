@@ -8,6 +8,7 @@ type Result struct {
 	AssessmentId string                `json:"assessmentId"`
 	Error        error                 `json:"error"`
 	Observations *[]*proto.Observation `json:"observations,omitempty"`
+	Tasks        *[]*proto.Task        `json:"tasks,omitempty"`
 	Findings     *[]*proto.Finding     `json:"findings,omitempty"`
 	Risks        *[]*proto.Risk        `json:"risks,omitempty"`
 	Logs         *[]*proto.LogEntry    `json:"logs,omitempty"`

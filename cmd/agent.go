@@ -428,6 +428,7 @@ func (ar *AgentRunner) runInstance() error {
 					StreamID:     streamId.String(),
 					Error:        err,
 					Observations: &res.Observations,
+					Tasks:        &res.Tasks,
 					Findings:     &res.Findings,
 					Risks:        &res.Risks,
 					Logs:         &res.Logs,

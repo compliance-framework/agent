@@ -72,16 +72,15 @@ func (c *runnerClient) Eval(ctx context.Context, in *EvalRequest, opts ...grpc.C
 }
 
 // RunnerServer is the server API for Runner service.
-// All implementations must embed UnimplementedRunnerServer
+// All implementations should embed UnimplementedRunnerServer
 // for forward compatibility.
 type RunnerServer interface {
 	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
 	PrepareForEval(context.Context, *PrepareForEvalRequest) (*PrepareForEvalResponse, error)
 	Eval(context.Context, *EvalRequest) (*EvalResponse, error)
-	mustEmbedUnimplementedRunnerServer()
 }
 
-// UnimplementedRunnerServer must be embedded to have
+// UnimplementedRunnerServer should be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
@@ -97,8 +96,7 @@ func (UnimplementedRunnerServer) PrepareForEval(context.Context, *PrepareForEval
 func (UnimplementedRunnerServer) Eval(context.Context, *EvalRequest) (*EvalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Eval not implemented")
 }
-func (UnimplementedRunnerServer) mustEmbedUnimplementedRunnerServer() {}
-func (UnimplementedRunnerServer) testEmbeddedByValue()                {}
+func (UnimplementedRunnerServer) testEmbeddedByValue() {}
 
 // UnsafeRunnerServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to RunnerServer will

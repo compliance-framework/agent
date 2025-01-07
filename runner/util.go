@@ -28,6 +28,14 @@ func (eval *CallableEvalResponse) AddLogEntry(logEntry *proto.LogEntry) {
 	eval.Logs = append(eval.Logs, logEntry)
 }
 
+func (eval *CallableEvalResponse) AddTaskEntry(task *proto.Task) {
+	eval.Tasks = append(eval.Tasks, task)
+}
+
+func (eval *CallableEvalResponse) AddRiskEntry(risk *proto.Risk) {
+	eval.Risks = append(eval.Risks, risk)
+}
+
 func (eval *CallableEvalResponse) Result() *proto.EvalResponse {
 	return eval.EvalResponse
 }
