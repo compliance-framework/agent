@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
-	"strings"
-
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/rego"
+	"slices"
+	"strings"
 )
 
 type PolicyManager struct {
