@@ -2,7 +2,6 @@ package policy_manager
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/rego"
@@ -54,7 +53,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 			},
 			AdditionalVariables: map[string]interface{}{},
 			Violations:          nil,
-			Activities:          nil,
+			Tasks:               nil,
 			Risks:               nil,
 		}
 
@@ -83,14 +82,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 				}
 
 				for _, tester := range moduleOutputs["violation"].([]interface{}) {
-					var violation Violation
-
-					contents, err := json.Marshal(tester.(map[string]interface{}))
-					if err != nil {
-						return nil, err
-					}
-
-					err = json.Unmarshal(contents, &violation)
+					violation, err := mapToViolation(tester.(map[string]interface{}))
 					if err != nil {
 						return nil, err
 					}
@@ -98,35 +90,34 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 					result.Violations = append(result.Violations, violation)
 				}
 
-				for _, tester := range moduleOutputs["activities"].([]interface{}) {
-					var activity Activity
-
-					contents, err := json.Marshal(tester.(map[string]interface{}))
+				for _, tester := range moduleOutputs["tasks"].([]interface{}) {
+					task, err := mapToTask(tester.(map[string]interface{}))
 					if err != nil {
 						return nil, err
 					}
 
-					err = json.Unmarshal(contents, &activity)
-					if err != nil {
-						return nil, err
-					}
-
-					result.Activities = append(result.Activities, activity)
+					result.Tasks = append(result.Tasks, task)
 				}
 
 				for _, tester := range moduleOutputs["risks"].([]interface{}) {
-					var risk Risk
-					contents, err := json.Marshal(tester.(map[string]interface{}))
-					if err != nil {
-						return nil, err
-					}
-
-					err = json.Unmarshal(contents, &risk)
+					risk, err := mapToRisk(tester.(map[string]interface{}))
 					if err != nil {
 						return nil, err
 					}
 
 					result.Risks = append(result.Risks, risk)
+				// 	var risk Risk
+				// 	contents, err := json.Marshal(tester.(map[string]interface{}))
+				// 	if err != nil {
+				// 		return nil, err
+				// 	}
+
+				// 	err = json.Unmarshal(contents, &risk)
+				// 	if err != nil {
+				// 		return nil, err
+				// 	}
+
+				// 	result.Risks = append(result.Risks, risk)
 				}
 			}
 		}
@@ -135,4 +126,77 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 
 	//compiler
 	return output, nil
+}
+
+func mapToViolation(data map[string]interface{}) (Violation, error) {
+	title := data["title"].(string)
+	description := data["description"].(string)
+	remarks := data["remarks"].(string)
+	controls := data["control-implementations"].([]interface{})
+	var controlsList []string
+	for _, control := range controls {
+		controlsList = append(controlsList, control.(string))
+	}
+
+	return Violation {
+		Title: title,
+		Description: description,
+		Remarks: remarks,
+		Controls: controlsList,
+	}, nil
+}
+
+func mapToTask(data map[string]interface{}) (Task, error) {
+	title := data["title"].(string)
+	description := data["description"].(string)
+	activities := data["activities"].([]interface{})
+	var activitiesList []Activity
+	for _, activity := range activities {
+		activityMap := activity.(map[string]interface{})
+		var stepsList []Step
+		for _, step := range activityMap["steps"].([]interface{}) {
+			stepsList = append(stepsList, Step{
+				Title: step.(string),
+			})
+		}
+		var toolsList []string
+		for _, tool := range activityMap["tools"].([]interface{}) {
+			toolsList = append(toolsList, tool.(string))
+		}
+		activitiesList = append(activitiesList, Activity{
+			Title: activityMap["title"].(string),
+			Description: activityMap["description"].(string),
+			Type: activityMap["type"].(string),
+			Steps: stepsList,
+			Tools: toolsList,
+		})
+	}
+
+	return Task {
+		Title: title,
+		Description: description,
+		Activities: activitiesList,
+	}, nil
+}
+
+func mapToRisk(data map[string]interface{}) (Risk, error) {
+	title := data["title"].(string)
+	description := data["description"].(string)
+	statement := data["statement"].(string)
+	links := data["links"].([]interface{})
+	var linksList []Link
+	for _, link := range links {
+		linkMap := link.(map[string]interface{})
+		linksList = append(linksList, Link{
+			Text: linkMap["text"].(string),
+			URL: linkMap["href"].(string),
+		})
+	}
+
+	return Risk {
+		Title: title,
+		Description: description,
+		Statement: statement,
+		Links: linksList,
+	}, nil
 }

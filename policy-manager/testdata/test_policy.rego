@@ -6,18 +6,35 @@ package compliance_framework.local_ssh.deny_password_auth
 
 import future.keywords.in
 
-activities := [
+tasks := [
     {
-        "title": "Activity1",
-        "description": "Do the first thing",
-        "type": "test",
-        "steps": [
-            "Step 1",
-            "Step 2",
-            "Step 3",
-        ],
-        "tools": ["rego", "OPA"]
-    },
+        "title": "Task1",
+        "description": "Do the thing",
+        "activities": [
+            {
+                "title": "Activity1",
+                "description": "Do the first thing",
+                "type": "test",
+                "steps": [
+                    "Step 1",
+                    "Step 2",
+                    "Step 3",
+                ],
+                "tools": ["Tool 1", "Tool 2"]
+            },
+            {
+                "title": "Activity2",
+                "description": "Do the next thing",
+                "type": "test",
+                "steps": [
+                    "Step a",
+                    "Step b",
+                    "Step c",
+                ],
+                "tools": ["Tool 1", "Tool 2"]
+            }
+        ]
+    }
 ]
 
 risks := [
