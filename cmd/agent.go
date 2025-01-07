@@ -408,9 +408,7 @@ func (ar *AgentRunner) runInstance() error {
 			}
 
 			fmt.Println("Output from runner:")
-			fmt.Println("Findings:", res.Findings)
-			fmt.Println("Observations:", res.Observations)
-			fmt.Println("Log Entries:", res.Logs)
+			fmt.Println("res:", res)
 
 			result := runner.Result{
 				Title:        res.Title,

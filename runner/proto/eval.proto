@@ -70,13 +70,34 @@ message Observation {
   repeated Evidence RelevantEvidence = 10;
 }
 
+message Step {
+  string Title = 1;
+  string SubjectId = 2;
+}
+
+message Task {
+  string Title = 1;
+  string SubjectId = 2;
+  string Description = 3;
+  repeated Activity Activities = 4;
+}
+
+message Activity {
+  string Title = 1;
+  string SubjectId = 2;
+  string Description = 3;
+  string Type = 4;
+  repeated Step Steps = 5;
+  repeated string Tools = 6;
+}
+
 message Risk {
   string Title = 1;
   string SubjectId = 2;
   string Description = 3;
   string Statement = 4;
-  repeated Property Props = 9;
-  repeated Link Links = 8;
+  repeated Property Props = 5;
+  repeated Link Links = 6;
 }
 
 enum ExecutionStatus {
@@ -94,9 +115,10 @@ message EvalRequest {
  */
 message EvalResponse {
   ExecutionStatus Status = 1;
-  repeated Observation Observations = 2;
-  repeated Finding Findings = 3;
-  repeated Risk Risks = 4;
-  repeated LogEntry Logs = 5;
-  string Title = 6;
+  string Title = 2;
+  repeated Observation Observations = 3;
+  repeated Finding Findings = 4;
+  repeated Task Tasks = 5;
+  repeated Risk Risks = 6;
+  repeated LogEntry Logs = 7;
 }
