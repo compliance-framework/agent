@@ -65,7 +65,7 @@ risks := [
 violation[
     {
         "title": "Violation 1",
-        "description": "You are so violated.",
+        "description": "You have been violated.",
         "remarks": "Migrate to not being violated",
         "control-implementations": [
             "AC-1",
