@@ -35,7 +35,7 @@ func buildPolicyManager(regoContents []byte) *PolicyManager {
 
 func TestPolicyManager(t *testing.T) {
 	t.Run("Policy Manager understands bundles", func(t *testing.T) {
-		ctx := context.TODO()
+		ctx := context.Background()
 
 		regoContents, err := os.ReadFile("testdata/test_policy.rego")
 		assert.NoError(t, err)
@@ -122,7 +122,7 @@ func TestPolicyManager(t *testing.T) {
 	})
 
 	t.Run("Policy Manager handles violations", func(t *testing.T) {
-		ctx := context.TODO()
+		ctx := context.Background()
 
 		regoContents, err := os.ReadFile("testdata/test_policy.rego")
 		assert.NoError(t, err)
@@ -140,12 +140,44 @@ func TestPolicyManager(t *testing.T) {
 		assert.Equal(t, 1, len(result.Violations))
 		assert.Equal(t, Violation{
 			Title: "Violation 1",
-			Description: "You are so violated.",
+			Description: "You have been violated.",
 			Remarks: "Migrate to not being violated",
 			Controls: []string{
 				"AC-1",
 				"AC-2",
 			},
 		}, result.Violations[0])
+	})
+
+	t.Run("Policy Manager handles errors in specification", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents := []byte(`# METADATA
+# title: Stuff
+# description: Verify we're doing stuff
+
+package compliance_framework.local_ssh.deny_password_auth
+
+import future.keywords.in
+
+tasks := [
+    {
+        "title": "Task1",
+        "description": "Do the thing",
+        "activities": [
+            {
+                "title": "Activity1",
+                "description": "Do the first thing",
+                "nonsense": "test",
+            }
+        ]
+    }
+]`)
+
+		var data map[string]interface{} = make(map[string]interface{})
+
+		_, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		assert.EqualError(t, err, "Activity entry contains unexpected key: nonsense")
 	})
 }
