@@ -418,9 +418,7 @@ func (ar *AgentRunner) runInstance() error {
 			}
 
 			fmt.Println("Output from runner:")
-			fmt.Println("Findings:", res.Findings)
-			fmt.Println("Observations:", res.Observations)
-			fmt.Println("Log Entries:", res.Logs)
+			fmt.Println("res:", res)
 
 			for _, assessmentPlanId := range assessmentPlanIds {
 				result := runner.Result{

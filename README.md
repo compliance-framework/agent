@@ -78,3 +78,19 @@ or even simpler:
 ```shell
 go run main.go agent --config PATH_TO_CONFIG_FILE
 ```
+
+# Development
+
+## Regenerating Protobufs
+
+To regenerate the Protobufs, follow these steps:
+* first install `protoc` following the instructions here: https://grpc.io/docs/protoc-installation/
+* secondly install the `protoc-gen-go` and `protoc-gen-go-grpc` as follows:
+```shell
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+```
+* finally you can run the following command from the root of the repository:
+```shell
+protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative ./runner/proto/*.proto
+```
