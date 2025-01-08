@@ -407,8 +407,7 @@ func (ar *AgentRunner) runInstance() error {
 				return err
 			}
 
-			fmt.Println("Output from runner:")
-			fmt.Println("res:", res)
+			logger.Debug("Obtained results from running plugin", "res", res)
 
 			result := runner.Result{
 				Title:        res.Title,
