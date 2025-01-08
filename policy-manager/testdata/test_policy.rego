@@ -16,9 +16,14 @@ tasks := [
                 "description": "Do the first thing",
                 "type": "test",
                 "steps": [
-                    "Step 1",
-                    "Step 2",
-                    "Step 3",
+                    {
+                        "title": "First Step",
+                        "description": "First Step in full form"
+                    },
+                    {
+                        "title": "Second Step",
+                        "description": "Second Step in full form"
+                    }
                 ],
                 "tools": ["Tool 1", "Tool 2"]
             },
@@ -27,9 +32,14 @@ tasks := [
                 "description": "Do the next thing",
                 "type": "test",
                 "steps": [
-                    "Step a",
-                    "Step b",
-                    "Step c",
+                    {
+                        "title": "Activity 2 First Step",
+                        "description": "First Step in full form"
+                    },
+                    {
+                        "title": "Activity 2 Second Step",
+                        "description": "Second Step in full form"
+                    }
                 ],
                 "tools": ["Tool 1", "Tool 2"]
             }
