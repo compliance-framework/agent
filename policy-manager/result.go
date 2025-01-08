@@ -7,10 +7,10 @@ import (
 )
 
 type Violation struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Remarks     string   `json:"remarks"`
-	Controls    []string `json:"control-implementations"`
+	Title       string   `json:"title" mapstructure:"title"`
+	Description string   `json:"description" mapstructure:"description"`
+	Remarks     string   `json:"remarks" mapstructure:"remarks"`
+	Controls    []string `json:"control-implementations" mapstructure:"control-implementations"`
 }
 
 type Package string
@@ -26,41 +26,39 @@ type Policy struct {
 }
 
 type Step struct {
-	Title       string `json:"title"`
+	Title       string `json:"title" mapstructure:"title"`
+	Description string `json:"description" mapstructure:"description"`
 }
 
 type Activity struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Type        string   `json:"type"`
-	Steps       []Step   `json:"steps"`
-	Tools       []string `json:"tools"`
+	Title       string   `json:"title" mapstructure:"title"`
+	Description string   `json:"description" mapstructure:"description"`
+	Type        string   `json:"type" mapstructure:"type"`
+	Steps       []Step   `json:"steps" mapstructure:"steps"`
+	Tools       []string `json:"tools" mapstructure:"tools"`
 }
 
 type Task struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Activities  []Activity
+	Title       string     `json:"title" mapstructure:"title"`
+	Description string     `json:"description" mapstructure:"description"`
+	Activities  []Activity `json:"activities" mapstructure:"activities"`
 }
 
 type Link struct {
-	Text string `json:"text"`
-	URL  string `json:"href"`
+	Text string `json:"text" mapstructure:"text"`
+	URL  string `json:"href" mapstructure:"href"`
 }
 
 type Risk struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Statement   string `json:"statement"`
-	Links       []Link `json:"links"`
+	Title       string `json:"title" mapstructure:"title"`
+	Description string `json:"description" mapstructure:"description"`
+	Statement   string `json:"statement" mapstructure:"statement"`
+	Links       []Link `json:"links" mapstructure:"links"`
 }
 
 type Result struct {
-	Policy              Policy
-	AdditionalVariables map[string]interface{}
-	Violations          []Violation
-	Tasks               []Task
-	Risks               []Risk
+	Policy Policy
+	*EvalOutput
 }
 
 func (res Result) String() string {
