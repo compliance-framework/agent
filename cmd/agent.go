@@ -330,6 +330,8 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
+		resultLabels := pluginConfig.Labels
+
 		source := ar.pluginLocations[pluginConfig.Source]
 
 		logger.Debug("Running plugin", "source", source)
@@ -350,7 +352,7 @@ func (ar *AgentRunner) runInstance() error {
 		if err != nil {
 			result := runner.ErrorResult(&runner.Result{
 				Error:  err,
-				Labels: pluginConfig.Labels,
+				Labels: resultLabels,
 			})
 			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 				logger.Error("Error publishing configure result", "error", pubErr)
@@ -362,7 +364,7 @@ func (ar *AgentRunner) runInstance() error {
 		if err != nil {
 			result := runner.ErrorResult(&runner.Result{
 				Error:  err,
-				Labels: pluginConfig.Labels,
+				Labels: resultLabels,
 			})
 			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 				logger.Error("Error publishing evaslutae result", "error", pubErr)
@@ -373,6 +375,10 @@ func (ar *AgentRunner) runInstance() error {
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPath := ar.policyLocations[string(inputBundle)]
 			// TODO we need a way to get the plugin, policy and agent version at runtime.
+			resultLabels["_plugin"] = pluginName
+			resultLabels["_policy"] = policyPath
+			resultLabels["_hostname"] = os.Getenv("HOSTNAME")
+
 			streamId, err := internal.SeededUUID([]string{
 				fmt.Sprintf("plugin:%s:v1.0.0", pluginName),
 				fmt.Sprintf("policy:%s:v1.0.0", policyPath),
@@ -384,6 +390,8 @@ func (ar *AgentRunner) runInstance() error {
 				fmt.Printf("Failed to create UUID from dataset: %v. Generating random uuid", err)
 				streamId = uuid.New()
 			}
+			resultLabels["_stream"] = streamId.String()
+
 			res, err := runnerInstance.Eval(&proto.EvalRequest{
 				BundlePath: policyPath,
 			})
@@ -391,7 +399,7 @@ func (ar *AgentRunner) runInstance() error {
 				result := runner.ErrorResult(&runner.Result{
 					Error:    err,
 					StreamID: streamId.String(),
-					Labels:   pluginConfig.Labels,
+					Labels:   resultLabels,
 				})
 				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
 					logger.Error("Error publishing evaluate result", "error", pubErr)
@@ -413,7 +421,7 @@ func (ar *AgentRunner) runInstance() error {
 				Findings:     &res.Findings,
 				Risks:        &res.Risks,
 				Logs:         &res.Logs,
-				Labels:       pluginConfig.Labels,
+				Labels:       resultLabels,
 			}
 
 			// Publish findings to nats
