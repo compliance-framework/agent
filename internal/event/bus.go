@@ -3,6 +3,7 @@ package event
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/nats-io/nats.go"
 	"sync"
@@ -46,6 +47,7 @@ func Publish[T any](nb *NatsBus, msg T, topic string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("#####################")
 	nb.logger.Trace("Publishing message", "topic", topic, "data", string(data))
 	return nb.conn.Publish(topic, data)
 }
