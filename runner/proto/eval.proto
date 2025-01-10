@@ -39,7 +39,7 @@ message Evidence {
 
 enum FindingStatus {
     UNKNOWN = 0; // Default value
-    OPEN = 1; 
+    OPEN = 1;
     MITIGATED = 2;
     RESOLVED = 3;
 }
@@ -73,6 +73,7 @@ message Observation {
 message Step {
   string Title = 1;
   string SubjectId = 2;
+  string Description = 3;
 }
 
 message Task {

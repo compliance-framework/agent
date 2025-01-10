@@ -195,6 +195,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		config:          *config,
 		natsBus:         event.NewNatsBus(logger),
 		pluginLocations: map[string]string{},
+		setupTasks:      []*proto.Task{},
 	}
 
 	v.OnConfigChange(func(in fsnotify.Event) {
@@ -248,8 +249,10 @@ type AgentRunner struct {
 	natsBus *event.NatsBus
 
 	pluginLocations map[string]string
-
 	policyLocations map[string]string
+
+	// TODO: Ideally these wouldn't be protobuf Tasks but some wrapper instead but outside of scope for this work.
+	setupTasks []*proto.Task
 
 	queryBundles []*rego.Rego
 }
@@ -409,13 +412,16 @@ func (ar *AgentRunner) runInstance() error {
 
 			logger.Debug("Obtained results from running plugin", "res", res)
 
+			tasks := ar.setupTasks
+			tasks = append(tasks, res.Tasks...)
+
 			result := runner.Result{
 				Title:        res.Title,
 				Status:       res.Status,
 				StreamID:     streamId.String(),
 				Error:        err,
 				Observations: &res.Observations,
-				Tasks:        &res.Tasks,
+				Tasks:        &tasks,
 				Findings:     &res.Findings,
 				Risks:        &res.Risks,
 				Logs:         &res.Logs,
@@ -476,12 +482,39 @@ func (ar *AgentRunner) DownloadPlugins() error {
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
+	// Add a task to indicate we've downloaded the plugins
+	task := &proto.Task{
+		Title:       "Setup plugins",
+		Description: "Downloading or finding plugins required to run concom agent",
+		SubjectId:   "",
+		Activities:  []*proto.Activity{},
+	}
+	defer func() {
+		ar.setupTasks = append(ar.setupTasks, task)
+	}()
+
 	for _, pluginConfig := range ar.config.Plugins {
 		pluginSources[pluginConfig.Source] = struct{}{}
 	}
 
 	for source := range pluginSources {
 		ar.logger.Trace("Checking for plugin source", "source", source)
+
+		steps := []*proto.Step{}
+		activity := &proto.Activity{
+			Title:       "Getting plugin",
+			SubjectId:   "",
+			Description: fmt.Sprintf("Getting plugin from %s", source),
+			Type:        "setup_agent",
+			Steps:       []*proto.Step{},
+			Tools:       []string{"concom"},
+		}
+		defer func() {
+			activity.Steps = steps
+		}()
+		defer func() {
+			task.Activities = append(task.Activities, activity)
+		}()
 
 		// First we check if the source is a path that exists on the fs.
 		// If it does exist, it means we've been passed a binary, and we can just use it as is.
@@ -492,6 +525,13 @@ func (ar *AgentRunner) DownloadPlugins() error {
 			ar.logger.Debug("Found plugin locally, using local binary", "Binary", source)
 			// The file exists locally, so we use the local binary path.
 			ar.pluginLocations[source] = source
+
+			steps = append(steps, &proto.Step{
+				Title:       "Plugin found locally",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Plugin found locally at %s", source),
+			})
+
 			continue
 		}
 
@@ -507,6 +547,12 @@ func (ar *AgentRunner) DownloadPlugins() error {
 			if err != nil {
 				return err
 			}
+
+			steps = append(steps, &proto.Step{
+				Title:       "Plugin OCI endpoint found",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Plugin found OCI endpoint %s", source),
+			})
 
 			destination := path.Join(AgentPluginDir, tag.RepositoryStr(), tag.Identifier())
 
@@ -526,6 +572,12 @@ func (ar *AgentRunner) DownloadPlugins() error {
 			}
 			pluginBinary := path.Join(destination, "plugin")
 			ar.logger.Debug("Plugin downloaded successfully", "Destination", pluginBinary)
+
+			steps = append(steps, &proto.Step{
+				Title:       "Downloaded Plugin",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Downloaded plugin to destination %s", pluginBinary),
+			})
 
 			if ar.pluginLocations == nil {
 				ar.pluginLocations = map[string]string{}
@@ -548,6 +600,17 @@ func (ar *AgentRunner) DownloadPolicies() error {
 	// Build a set of unique policy sources
 	policySources := map[string]struct{}{}
 
+	// Add a task to indicate we've downloaded the plugins
+	task := &proto.Task{
+		Title:       "Setup policies",
+		Description: "Downloading or finding policies required to run concom agent",
+		SubjectId:   "",
+		Activities:  []*proto.Activity{},
+	}
+	defer func() {
+		ar.setupTasks = append(ar.setupTasks, task)
+	}()
+
 	for _, pluginConfig := range ar.config.Plugins {
 		for _, policy := range pluginConfig.Policies {
 			policySources[string(policy)] = struct{}{}
@@ -556,6 +619,22 @@ func (ar *AgentRunner) DownloadPolicies() error {
 
 	for source := range policySources {
 		ar.logger.Trace("Checking for policy source", "source", source)
+
+		steps := []*proto.Step{}
+		activity := &proto.Activity{
+			Title:       "Getting policies",
+			SubjectId:   "",
+			Description: fmt.Sprintf("Getting policies from %s", source),
+			Type:        "setup_agent",
+			Steps:       []*proto.Step{},
+			Tools:       []string{"concom"},
+		}
+		defer func() {
+			activity.Steps = steps
+		}()
+		defer func() {
+			task.Activities = append(task.Activities, activity)
+		}()
 
 		// First we check if the source is a path that exists on the fs.
 		// If it does exist, it means we've been passed a binary, and we can just use it as is.
@@ -566,6 +645,13 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			ar.logger.Debug("Found policy locally, using local file", "File", source)
 			// The file exists locally, so we use the local binary path.
 			ar.policyLocations[source] = source
+
+			steps = append(steps, &proto.Step{
+				Title:       "Policy found locally",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Policy found locally at %s", source),
+			})
+
 			continue
 		}
 
@@ -581,6 +667,12 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			if err != nil {
 				return err
 			}
+
+			steps = append(steps, &proto.Step{
+				Title:       "Policy OCI endpoint found",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Policy found OCI endpoint %s", source),
+			})
 
 			destination := path.Join(AgentPolicyDir, tag.RepositoryStr(), tag.Identifier())
 			policiesDir := path.Join(destination, "policies")
@@ -601,6 +693,12 @@ func (ar *AgentRunner) DownloadPolicies() error {
 			}
 			policyFile := policiesDir // Ensure the specific policy file name is used
 			ar.logger.Debug("Policy downloaded successfully", "Destination", policyFile)
+
+			steps = append(steps, &proto.Step{
+				Title:       "Downloaded Policy",
+				SubjectId:   "",
+				Description: fmt.Sprintf("Downloaded policy to destination %s", policyFile),
+			})
 
 			if ar.policyLocations == nil {
 				ar.policyLocations = map[string]string{}
