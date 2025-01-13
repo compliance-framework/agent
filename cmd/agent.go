@@ -2,9 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/compliance-framework/agent/internal/event"
-	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"os"
 	"os/exec"
@@ -14,6 +11,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/compliance-framework/agent/internal/event"
+	"github.com/google/uuid"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
@@ -433,6 +434,7 @@ func (ar *AgentRunner) runInstance() error {
 					Findings:     &res.Findings,
 					Risks:        &res.Risks,
 					Logs:         &res.Logs,
+					TTL:          time.Now().Add(1 * time.Minute).Add(24 * time.Hour), // TODO: hard-coded for demo. Composed of 1 min schedule (plugin-defined) + 24 hrs buffer (agent-defined)
 				}
 
 				// Publish findings to nats
