@@ -50,9 +50,9 @@ nats:
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
     source: <plugin_source>
-    labels:
-      type: plugin-check
-      host: 12345
+    assessment-plan-ids:
+      - <assessment_plan_id>
+      - <assessment_plan_id>
     policies:
       - <policy>
       - <policy>

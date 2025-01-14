@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/compliance-framework/agent/internal/event"
 	"github.com/google/uuid"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"log"
 	"os"
 	"os/exec"
@@ -39,10 +40,10 @@ type agentPolicy string
 type agentPluginConfig map[string]string
 
 type agentPlugin struct {
-	Source   string            `mapstructure:"source"`
-	Policies []agentPolicy     `mapstructure:"policies"`
-	Config   agentPluginConfig `mapstructure:"config"`
-	Labels   map[string]string `mapstructure:"labels"`
+	AssessmentPlanIds []string          `mapstructure:"assessment-plan-ids"`
+	Source            string            `mapstructure:"source"`
+	Policies          []agentPolicy     `mapstructure:"policies"`
+	Config            agentPluginConfig `mapstructure:"config"`
 }
 
 type agentConfig struct {
@@ -330,9 +331,18 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
-		resultLabels := pluginConfig.Labels
-
 		source := ar.pluginLocations[pluginConfig.Source]
+
+		assessmentPlanIds := []string{}
+		for _, assessmentPlanId := range pluginConfig.AssessmentPlanIds {
+			planIdObject, err := primitive.ObjectIDFromHex(assessmentPlanId)
+			if err != nil {
+				return err
+			}
+			assessmentPlanIds = append(assessmentPlanIds, planIdObject.Hex())
+		}
+
+		logger.Debug("Using assessment plan ids", "ids", assessmentPlanIds)
 
 		logger.Debug("Running plugin", "source", source)
 
@@ -350,24 +360,28 @@ func (ar *AgentRunner) runInstance() error {
 			Config: pluginConfig.Config,
 		})
 		if err != nil {
-			result := runner.ErrorResult(&runner.Result{
-				Error:  err,
-				Labels: resultLabels,
-			})
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing configure result", "error", pubErr)
+			for _, assessmentPlanId := range assessmentPlanIds {
+				result := runner.ErrorResult(&runner.Result{
+					AssessmentId: assessmentPlanId,
+					Error:        err,
+				})
+				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
+					logger.Error("Error publishing configure result", "error", pubErr)
+				}
 			}
 			return err
 		}
 
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
-			result := runner.ErrorResult(&runner.Result{
-				Error:  err,
-				Labels: resultLabels,
-			})
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing evaslutae result", "error", pubErr)
+			for _, assessmentPlanId := range assessmentPlanIds {
+				result := runner.ErrorResult(&runner.Result{
+					AssessmentId: assessmentPlanId,
+					Error:        err,
+				})
+				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
+					logger.Error("Error publishing evaslutae result", "error", pubErr)
+				}
 			}
 			return err
 		}
@@ -375,10 +389,6 @@ func (ar *AgentRunner) runInstance() error {
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPath := ar.policyLocations[string(inputBundle)]
 			// TODO we need a way to get the plugin, policy and agent version at runtime.
-			resultLabels["_plugin"] = pluginName
-			resultLabels["_policy"] = policyPath
-			resultLabels["_hostname"] = os.Getenv("HOSTNAME")
-
 			streamId, err := internal.SeededUUID([]string{
 				fmt.Sprintf("plugin:%s:v1.0.0", pluginName),
 				fmt.Sprintf("policy:%s:v1.0.0", policyPath),
@@ -390,19 +400,19 @@ func (ar *AgentRunner) runInstance() error {
 				fmt.Printf("Failed to create UUID from dataset: %v. Generating random uuid", err)
 				streamId = uuid.New()
 			}
-			resultLabels["_stream"] = streamId.String()
-
 			res, err := runnerInstance.Eval(&proto.EvalRequest{
 				BundlePath: policyPath,
 			})
 			if err != nil {
-				result := runner.ErrorResult(&runner.Result{
-					Error:    err,
-					StreamID: streamId.String(),
-					Labels:   resultLabels,
-				})
-				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-					logger.Error("Error publishing evaluate result", "error", pubErr)
+				for _, assessmentPlanId := range assessmentPlanIds {
+					result := runner.ErrorResult(&runner.Result{
+						AssessmentId: assessmentPlanId,
+						Error:        err,
+						StreamID:     streamId.String(),
+					})
+					if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
+						logger.Error("Error publishing evaluate result", "error", pubErr)
+					}
 				}
 				return err
 			}
@@ -412,21 +422,23 @@ func (ar *AgentRunner) runInstance() error {
 			fmt.Println("Observations:", res.Observations)
 			fmt.Println("Log Entries:", res.Logs)
 
-			result := runner.Result{
-				Title:        res.Title,
-				Status:       res.Status,
-				StreamID:     streamId.String(),
-				Error:        err,
-				Observations: &res.Observations,
-				Findings:     &res.Findings,
-				Risks:        &res.Risks,
-				Logs:         &res.Logs,
-				Labels:       resultLabels,
-			}
+			for _, assessmentPlanId := range assessmentPlanIds {
+				result := runner.Result{
+					Title:        res.Title,
+					Status:       res.Status,
+					AssessmentId: assessmentPlanId,
+					StreamID:     streamId.String(),
+					Error:        err,
+					Observations: &res.Observations,
+					Findings:     &res.Findings,
+					Risks:        &res.Risks,
+					Logs:         &res.Logs,
+				}
 
-			// Publish findings to nats
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing result", "error", pubErr)
+				// Publish findings to nats
+				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
+					logger.Error("Error publishing result", "error", pubErr)
+				}
 			}
 		}
 	}
