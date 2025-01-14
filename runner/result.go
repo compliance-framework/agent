@@ -1,6 +1,10 @@
 package runner
 
-import "github.com/compliance-framework/agent/runner/proto"
+import (
+	"time"
+
+	"github.com/compliance-framework/agent/runner/proto"
+)
 
 type Result struct {
 	Title        string                `json:"title"`
@@ -12,6 +16,7 @@ type Result struct {
 	Logs         *[]*proto.LogEntry    `json:"logs,omitempty"`
 	StreamID     string                `json:"streamId"`
 	Labels       map[string]string     `json:"labels"`
+	Expires      time.Time             `json:"expires"`
 }
 
 func ErrorResult(res *Result) *Result {

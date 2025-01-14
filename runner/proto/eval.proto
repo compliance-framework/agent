@@ -99,4 +99,5 @@ message EvalResponse {
   repeated Risk Risks = 4;
   repeated LogEntry Logs = 5;
   string Title = 6;
+  string Expires = 7;
 }
