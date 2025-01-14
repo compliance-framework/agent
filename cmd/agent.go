@@ -29,7 +29,6 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type natsConfig struct {
@@ -414,11 +413,19 @@ func (ar *AgentRunner) runInstance() error {
 
 			logger.Debug("Obtained results from running plugin", "res", res)
 
-			tasks := []*proto.Task{}
+			findings := []*proto.Finding{}
+
+			setupTasks := []*proto.Task{}
 			for _, task := range ar.setupTasks {
-				tasks = append(tasks, task.ToProtoStep())
+				setupTasks = append(setupTasks, task.ToProtoStep())
 			}
-			tasks = append(tasks, res.Tasks...)
+
+			for _, finding := range res.Findings {
+				tasks := setupTasks
+				tasks = append(tasks, finding.Tasks...)
+				finding.Tasks = tasks
+				findings = append(findings, finding)
+			}
 
 			result := runner.Result{
 				Title:        res.Title,
@@ -426,8 +433,7 @@ func (ar *AgentRunner) runInstance() error {
 				StreamID:     streamId.String(),
 				Error:        err,
 				Observations: &res.Observations,
-				Tasks:        &tasks,
-				Findings:     &res.Findings,
+				Findings:     &findings,
 				Risks:        &res.Risks,
 				Logs:         &res.Logs,
 				Labels:       resultLabels,
@@ -545,52 +551,7 @@ func (ar *AgentRunner) DownloadPolicies() error {
 
 		task.AddActivity(activity)
 
-<<<<<<< HEAD
-			steps = append(steps, &proto.Step{
-				Title:       "Policy OCI endpoint found",
-				SubjectId:   "",
-				Description: fmt.Sprintf("Policy found OCI endpoint %s", source),
-			})
-
-			destination := path.Join(AgentPolicyDir, tag.RepositoryStr(), tag.Identifier())
-			policiesDir := path.Join(destination, "policies")
-			if err := os.MkdirAll(policiesDir, 0755); err != nil {
-				return err
-			}
-
-			downloaderImpl, err := oci.NewDownloader(
-				tag,
-				destination,
-			)
-			if err != nil {
-				return err
-			}
-			err = downloaderImpl.Download()
-			if err != nil {
-				return err
-			}
-			policyFile := policiesDir // Ensure the specific policy file name is used
-			ar.logger.Debug("Policy downloaded successfully", "Destination", policyFile)
-
-			steps = append(steps, &proto.Step{
-				Title:       "Downloaded Policy",
-				SubjectId:   "",
-				Description: fmt.Sprintf("Downloaded policy to destination %s", policyFile),
-			})
-
-			if ar.policyLocations == nil {
-				ar.policyLocations = map[string]string{}
-			}
-			// Update the source in the agent configuration to the new path
-			ar.policyLocations[source] = policyFile
-		} else {
-			ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
-
-			// TODO We should download artifacts too
-		}
-=======
 		ar.policyLocations[source] = location
->>>>>>> 20d8b4a (Refactor to downloads to enable better task reporting)
 	}
 
 	return nil

@@ -46,27 +46,28 @@ enum FindingStatus {
 
 message Finding {
   string Id = 1;
-  string Title = 2;
-  string Description = 3;
-  string Remarks = 4;
-  repeated Property Props = 5;
-  repeated Link Links = 6;
-  string SubjectId = 7;
-  repeated string RelatedObservations = 8;
-  repeated string RelatedRisks = 9;
-  string Status = 10;
+  string SubjectId = 2;
+  string Title = 3;
+  string Description = 4;
+  string Status = 5;
+  string Remarks = 6;
+  repeated Property Props = 7;
+  repeated Link Links = 8;
+  repeated Task Tasks = 9;
+  repeated string RelatedObservations = 10;
+  repeated string RelatedRisks = 11;
 }
 
 message Observation {
   string Id = 1;
-  string Title = 4;
-  string Description = 5;
-  repeated Property Props = 9;
-  repeated Link Links = 8;
-  string Remarks = 7;
   string SubjectId = 2;
   string Collected = 3;
+  string Title = 4;
+  string Description = 5;
   string Expires = 6;
+  string Remarks = 7;
+  repeated Property Props = 9;
+  repeated Link Links = 8;
   repeated Evidence RelevantEvidence = 10;
 }
 
@@ -119,7 +120,6 @@ message EvalResponse {
   string Title = 2;
   repeated Observation Observations = 3;
   repeated Finding Findings = 4;
-  repeated Task Tasks = 5;
-  repeated Risk Risks = 6;
-  repeated LogEntry Logs = 7;
+  repeated Risk Risks = 5;
+  repeated LogEntry Logs = 6;
 }
