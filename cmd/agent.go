@@ -434,7 +434,7 @@ func (ar *AgentRunner) runInstance() error {
 					Findings:     &res.Findings,
 					Risks:        &res.Risks,
 					Logs:         &res.Logs,
-					TTL:          time.Now().Add(1 * time.Minute).Add(24 * time.Hour), // TODO: hard-coded for demo. Composed of 1 min schedule (plugin-defined) + 24 hrs buffer (agent-defined)
+					Expires:      time.Now().Add(1 * time.Minute).Add(24 * time.Hour), // TODO: hard-coded for demo. Composed of 1 min schedule (plugin-defined) + 24 hrs buffer (agent-defined)
 				}
 
 				// Publish findings to nats

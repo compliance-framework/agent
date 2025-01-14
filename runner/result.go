@@ -16,7 +16,7 @@ type Result struct {
 	Risks        *[]*proto.Risk        `json:"risks,omitempty"`
 	Logs         *[]*proto.LogEntry    `json:"logs,omitempty"`
 	StreamID     string                `json:"streamId"`
-	TTL          time.Time             `json:"ttl"`
+	Expires      time.Time             `json:"expires"`
 }
 
 func ErrorResult(res *Result) *Result {
