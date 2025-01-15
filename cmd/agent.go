@@ -197,7 +197,6 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		natsBus:         event.NewNatsBus(logger),
 		pluginLocations: map[string]string{},
 		policyLocations: map[string]string{},
-		setupTasks:      []*internal.Task{},
 	}
 
 	v.OnConfigChange(func(in fsnotify.Event) {
@@ -253,7 +252,8 @@ type AgentRunner struct {
 	pluginLocations map[string]string
 	policyLocations map[string]string
 
-	setupTasks []*internal.Task
+	setupPluginTask   *internal.Task
+	setupPoliciesTask *internal.Task
 
 	queryBundles []*rego.Rego
 }
@@ -415,9 +415,9 @@ func (ar *AgentRunner) runInstance() error {
 
 			findings := []*proto.Finding{}
 
-			setupTasks := []*proto.Task{}
-			for _, task := range ar.setupTasks {
-				setupTasks = append(setupTasks, task.ToProtoStep())
+			setupTasks := []*proto.Task{
+				ar.setupPluginTask.ToProtoStep(),
+				ar.setupPoliciesTask.ToProtoStep(),
 			}
 
 			for _, finding := range res.Findings {
@@ -496,7 +496,7 @@ func (ar *AgentRunner) DownloadPlugins() error {
 		Activities:  []internal.Activity{},
 	}
 	defer func() {
-		ar.setupTasks = append(ar.setupTasks, task)
+		ar.setupPluginTask = task
 	}()
 
 	// Build a set of unique plugin sources
@@ -530,7 +530,7 @@ func (ar *AgentRunner) DownloadPolicies() error {
 		Activities:  []internal.Activity{},
 	}
 	defer func() {
-		ar.setupTasks = append(ar.setupTasks, task)
+		ar.setupPoliciesTask = task
 	}()
 
 	// Build a set of unique policy sources
