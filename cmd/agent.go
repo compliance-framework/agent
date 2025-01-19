@@ -261,14 +261,29 @@ type AgentRunner struct {
 func (ar *AgentRunner) Run() error {
 	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon, "nats_uri", ar.config.Nats.Url)
 
-	err := ar.natsBus.Connect(ar.config.Nats.Url)
-	if err != nil {
-		log.Fatal(err)
+	const maxRetries = 10
+	for i := 1; i <= maxRetries; i++ {
+		err := ar.natsBus.Connect(ar.config.Nats.Url)
+		if err == nil {
+			log.Println("Connected to NATS successfully.")
+			break
+		}
+		// If we haven't reached the max attempts, wait and try again
+		if i < maxRetries {
+			log.Printf("Attempt %d/%d: Error connecting to NATS: %v. Retrying in 5 seconds...\n",
+			    i, maxRetries, err)
+			time.Sleep(5 * time.Second)
+		} else {
+			// We've reached the maximum number of retries
+			log.Printf("Attempt %d/%d: Error connecting to NATS: %v. Giving up.\n",
+			    i, maxRetries, err)
+			return err
+		}
 	}
 
 	defer ar.natsBus.Close()
 
-	err = ar.DownloadPlugins()
+	err := ar.DownloadPlugins()
 	if err != nil {
 		return err
 	}
