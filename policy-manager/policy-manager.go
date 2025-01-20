@@ -11,6 +11,7 @@ import (
 )
 
 type EvalOutput struct {
+	If                  bool        `mapstructure:"if"`
 	Risks               []Risk      `mapstructure:"risks"`
 	Tasks               []Task      `mapstructure:"tasks"`
 	Violations          []Violation `mapstructure:"violation"`
@@ -85,6 +86,10 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 				err := mapstructure.Decode(expression.Value.(map[string]interface{}), evalOutput)
 				if err != nil {
 					panic(err)
+				}
+
+				if !evalOutput.If {
+					evalOutput.Violations = []Violation{}
 				}
 
 				// TODO here we could run evalOutput.Validate()

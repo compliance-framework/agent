@@ -82,6 +82,6 @@ violation[
             "AC-2",
         ]
     }
-] {
+] if {
 	"yes" in input.violated
 }
