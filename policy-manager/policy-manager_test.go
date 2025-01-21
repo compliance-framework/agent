@@ -2,7 +2,6 @@ package policy_manager
 
 import (
 	"context"
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
@@ -132,8 +131,6 @@ func TestPolicyManager(t *testing.T) {
 		data["violated"] = []string{"yes"}
 
 		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
-
-		fmt.Println(results)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(results))
