@@ -7,10 +7,10 @@ import (
 )
 
 type Violation struct {
-	Title       string   `json:"title" mapstructure:"title"`
-	Description string   `json:"description" mapstructure:"description"`
-	Remarks     string   `json:"remarks" mapstructure:"remarks"`
-	Controls    []string `json:"control-implementations" mapstructure:"control-implementations"`
+	Title       string   `json:"title,omitempty" mapstructure:"title,omitempty"`
+	Description string   `json:"description,omitempty" mapstructure:"description,omitempty"`
+	Remarks     string   `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
+	Controls    []string `json:"control-implementations,omitempty" mapstructure:"control-implementations,omitempty"`
 }
 
 type Package string
