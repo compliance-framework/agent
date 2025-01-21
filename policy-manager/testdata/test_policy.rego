@@ -1,7 +1,3 @@
-# METADATA
-# title: Stuff
-# description: Verify we're doing stuff
-
 package compliance_framework.local_ssh.deny_password_auth
 
 import future.keywords.in
@@ -72,16 +68,14 @@ risks := [
     }
 ]
 
-violation[
-    {
-        "title": "Violation 1",
-        "description": "You have been violated.",
-        "remarks": "Migrate to not being violated",
-        "control-implementations": [
-            "AC-1",
-            "AC-2",
-        ]
-    }
-] if {
+violation[{
+    "title": "Violation 1",
+    "description": "You have been violated.",
+    "remarks": "Migrate to not being violated",
+    "control-implementations": [
+        "AC-1",
+        "AC-2",
+    ]
+}] if {
 	"yes" in input.violated
 }

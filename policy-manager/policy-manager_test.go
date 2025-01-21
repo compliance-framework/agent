@@ -2,14 +2,15 @@ package policy_manager
 
 import (
 	"context"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/open-policy-agent/opa/ast"
-	"github.com/open-policy-agent/opa/bundle"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/ast"
+	"github.com/open-policy-agent/opa/v1/bundle"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 func buildPolicyManager(regoContents []byte) *PolicyManager {
@@ -131,6 +132,8 @@ func TestPolicyManager(t *testing.T) {
 		data["violated"] = []string{"yes"}
 
 		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		fmt.Println(results)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(results))
