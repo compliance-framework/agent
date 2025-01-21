@@ -2,19 +2,19 @@ package policy_manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-hclog"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 	"slices"
 	"strings"
 )
 
 type EvalOutput struct {
-	If                  bool        `mapstructure:"if"`
-	Risks               []Risk      `mapstructure:"risks"`
-	Tasks               []Task      `mapstructure:"tasks"`
-	Violations          []Violation `mapstructure:"violation"`
+	Risks               []Risk `mapstructure:"risks"`
+	Tasks               []Task `mapstructure:"tasks"`
+	Violations          []Violation
 	AdditionalVariables map[string]interface{}
 }
 
@@ -79,17 +79,30 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 		for _, eval := range evaluation {
 			for _, expression := range eval.Expressions {
 				moduleOutputs := expression.Value.(map[string]interface{})
+				violations := make([]Violation, 0)
+
+				val, ok := moduleOutputs["violation"]
+				// If the key exists
+				if ok {
+					// Do something
+					for violation, _ := range val.(map[string]interface{}) {
+						viol := &Violation{}
+						err := json.Unmarshal([]byte(violation), viol)
+						if err != nil {
+							return nil, err
+						}
+						violations = append(violations, *viol)
+					}
+				}
 
 				evalOutput := &EvalOutput{
 					AdditionalVariables: map[string]interface{}{},
+					Violations:          violations,
 				}
+
 				err := mapstructure.Decode(expression.Value.(map[string]interface{}), evalOutput)
 				if err != nil {
 					panic(err)
-				}
-
-				if !evalOutput.If {
-					evalOutput.Violations = []Violation{}
 				}
 
 				// TODO here we could run evalOutput.Validate()
