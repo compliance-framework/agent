@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/compliance-framework/agent/internal"
-	"github.com/compliance-framework/agent/internal/event"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/gooci/pkg/oci"
@@ -303,9 +302,13 @@ func (ar *AgentRunner) runDaemon() {
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runInstance() error {
 	startTimer := time.Now()
+
+	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
+		BaseURL: "http://localhost:8080",
+	})
+
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
-
 	defer ar.closePluginClients()
 
 	err := ar.DownloadPolicies()
@@ -321,6 +324,15 @@ func (ar *AgentRunner) runInstance() error {
 		})
 
 		resultLabels := pluginConfig.Labels
+		resultLabels["_plugin"] = pluginName
+		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
+
+		streamId, err := sdk.SeededUUID(resultLabels)
+		if err != nil {
+			return err
+		}
+
+		resultLabels["_stream"] = streamId.String()
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
@@ -340,36 +352,36 @@ func (ar *AgentRunner) runInstance() error {
 			Config: pluginConfig.Config,
 		})
 		if err != nil {
-			result := runner.ErrorResult(&runner.Result{
-				Error:  err,
-				Labels: resultLabels,
+			endTimer := time.Now()
+			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+				Title:       "Agent has failed to configure plugin.",
+				Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
+				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+				Start:       startTimer,
+				End:         &endTimer,
 			})
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing configure result", "error", pubErr)
-			}
 			return err
 		}
 
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
-			result := runner.ErrorResult(&runner.Result{
-				Error:  err,
-				Labels: resultLabels,
+			endTimer := time.Now()
+			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+				Title:       "Agent has failed to prepare plugin for eval.",
+				Remarks:     "Agent has failed to prepare plugin for eval. Fix agent to continue receiving results",
+				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+				Start:       startTimer,
+				End:         &endTimer,
 			})
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing evaslutae result", "error", pubErr)
-			}
 			return err
 		}
 
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPath := ar.policyLocations[string(inputBundle)]
 			// TODO we need a way to get the plugin, policy and agent version at runtime.
-			resultLabels["_plugin"] = pluginName
 			resultLabels["_policy"] = policyPath
-			resultLabels["_hostname"] = os.Getenv("HOSTNAME")
 
-			streamId, err := sdk.SeededUUID(map[string]string{
+			streamId, err = sdk.SeededUUID(map[string]string{
 				"plugin": pluginName,
 				"policy": policyPath,
 				// Uniquely identify this agent.
@@ -385,14 +397,14 @@ func (ar *AgentRunner) runInstance() error {
 				BundlePath: policyPath,
 			})
 			if err != nil {
-				result := runner.ErrorResult(&runner.Result{
-					Error:    err,
-					StreamID: streamId.String(),
-					Labels:   resultLabels,
+				endTimer := time.Now()
+				_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+					Title:       "Agent has failed to execute policies.",
+					Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
+					Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+					Start:       startTimer,
+					End:         &endTimer,
 				})
-				if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-					logger.Error("Error publishing evaluate result", "error", pubErr)
-				}
 				return err
 			}
 
@@ -413,9 +425,6 @@ func (ar *AgentRunner) runInstance() error {
 				return err
 			}
 
-			client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-				BaseURL: "http://localhost:8080",
-			})
 			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
 				AssessmentLog:    nil,
 				Attestations:     nil,
