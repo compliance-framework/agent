@@ -3,7 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"log"
+	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -23,15 +24,16 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/compliance-framework/configuration-service/sdk"
 )
 
-type natsConfig struct {
+type apiConfig struct {
 	Url string `json:"url"`
 }
 
@@ -49,7 +51,7 @@ type agentPlugin struct {
 type agentConfig struct {
 	Daemon    bool                    `mapstructure:"daemon"`
 	Verbosity int32                   `mapstructure:"verbosity"`
-	Nats      *natsConfig             `mapstructure:"nats"`
+	ApiConfig *apiConfig              `mapstructure:"api"`
 	Plugins   map[string]*agentPlugin `mapstructure:"plugins"`
 }
 
@@ -62,14 +64,6 @@ func (ac *agentConfig) logVerbosity() int32 {
 }
 
 func (ac *agentConfig) validate() error {
-	if ac.Nats == nil {
-		return fmt.Errorf("no nats configuration available in config file")
-	}
-
-	if ac.Nats.Url == "" {
-		return fmt.Errorf("invalid nats url: %s", ac.Nats.Url)
-	}
-
 	if len(ac.Plugins) == 0 {
 		return fmt.Errorf("no plugins specified in config")
 	}
@@ -194,7 +188,6 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	agentRunner := AgentRunner{
 		logger:          logger,
 		config:          *config,
-		natsBus:         event.NewNatsBus(logger),
 		pluginLocations: map[string]string{},
 		policyLocations: map[string]string{},
 	}
@@ -246,8 +239,7 @@ type AgentRunner struct {
 
 	mu sync.Mutex
 
-	config  agentConfig
-	natsBus *event.NatsBus
+	config agentConfig
 
 	pluginLocations map[string]string
 	policyLocations map[string]string
@@ -259,30 +251,7 @@ type AgentRunner struct {
 }
 
 func (ar *AgentRunner) Run() error {
-	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon, "nats_uri", ar.config.Nats.Url)
-
-	const maxRetries = 10
-	for i := 1; i <= maxRetries; i++ {
-		err := ar.natsBus.Connect(ar.config.Nats.Url)
-		if err == nil {
-			log.Println("Connected to NATS successfully.")
-			break
-		}
-
-		// If we haven't reached the max attempts, wait and try again
-		if i < maxRetries {
-			log.Printf("Attempt %d/%d: Error connecting to NATS: %v. Retrying in 5 seconds...\n",
-				i, maxRetries, err)
-			time.Sleep(5 * time.Second)
-		} else {
-			// We've reached the maximum number of retries
-			log.Printf("Attempt %d/%d: Error connecting to NATS: %v. Giving up.\n",
-				i, maxRetries, err)
-			return err
-		}
-	}
-
-	defer ar.natsBus.Close()
+	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon)
 
 	err := ar.DownloadPlugins()
 	if err != nil {
@@ -333,6 +302,7 @@ func (ar *AgentRunner) runDaemon() {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runInstance() error {
+	startTimer := time.Now()
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 
@@ -399,16 +369,15 @@ func (ar *AgentRunner) runInstance() error {
 			resultLabels["_policy"] = policyPath
 			resultLabels["_hostname"] = os.Getenv("HOSTNAME")
 
-			streamId, err := internal.SeededUUID([]string{
-				fmt.Sprintf("plugin:%s:v1.0.0", pluginName),
-				fmt.Sprintf("policy:%s:v1.0.0", policyPath),
+			streamId, err := sdk.SeededUUID(map[string]string{
+				"plugin": pluginName,
+				"policy": policyPath,
 				// Uniquely identify this agent.
 				// If a set of machines is running the same agent config, each should have a unique UUID.
-				fmt.Sprintf("hostname:%s", os.Getenv("HOSTNAME")),
+				"hostname": os.Getenv("HOSTNAME"),
 			})
 			if err != nil {
-				fmt.Printf("Failed to create UUID from dataset: %v. Generating random uuid", err)
-				streamId = uuid.New()
+				return err
 			}
 			resultLabels["_stream"] = streamId.String()
 
@@ -429,35 +398,41 @@ func (ar *AgentRunner) runInstance() error {
 
 			logger.Debug("Obtained results from running plugin", "res", res)
 
-			findings := []*proto.Finding{}
+			//setupTasks := []*proto.Task{
+			//	ar.setupPluginTask.ToProtoStep(),
+			//	ar.setupPoliciesTask.ToProtoStep(),
+			//}
 
-			setupTasks := []*proto.Task{
-				ar.setupPluginTask.ToProtoStep(),
-				ar.setupPoliciesTask.ToProtoStep(),
+			endTimer := time.Now()
+			observations, err := runner.ObservationsProtoToOscal(res.Observations)
+			if err != nil {
+				return err
+			}
+			findings, err := runner.FindingsProtoToOscal(res.Findings)
+			if err != nil {
+				return err
 			}
 
-			for _, finding := range res.Findings {
-				tasks := setupTasks
-				tasks = append(tasks, finding.Tasks...)
-				finding.Tasks = tasks
-				findings = append(findings, finding)
-			}
-
-			result := runner.Result{
-				Title:        res.Title,
-				Status:       res.Status,
-				StreamID:     streamId.String(),
-				Error:        err,
-				Observations: &res.Observations,
-				Findings:     &findings,
-				Risks:        &res.Risks,
-				Logs:         &res.Logs,
-				Labels:       resultLabels,
-			}
-
-			// Publish findings to nats
-			if pubErr := event.Publish(ar.natsBus, result, "job.result"); pubErr != nil {
-				logger.Error("Error publishing result", "error", pubErr)
+			client := sdk.NewClient(http.DefaultClient, &sdk.Config{
+				BaseURL: "http://localhost:8080",
+			})
+			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+				AssessmentLog:    nil,
+				Attestations:     nil,
+				Findings:         findings,
+				Links:            nil,
+				LocalDefinitions: nil,
+				Observations:     observations,
+				Props:            nil,
+				Remarks:          "",
+				ReviewedControls: oscalTypes_1_1_3.ReviewedControls{},
+				Risks:            nil,
+				Start:            startTimer,
+				End:              &endTimer,
+				Title:            res.Title,
+			})
+			if err != nil {
+				return err
 			}
 		}
 	}
