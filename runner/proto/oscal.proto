@@ -1,0 +1,533 @@
+syntax = "proto3";
+package proto;
+option go_package = "./proto";
+
+// Property
+// An attribute, characteristic, or quality of the containing object expressed as a namespace qualified name/value pair.
+message Property {
+  // Property Name
+  // A textual label, within a namespace, that identifies a specific attribute, characteristic, or quality of the property's containing object.
+  string Name = 1;
+
+  // Property Value
+  // Indicates the value of the attribute, characteristic, or quality.
+  string Value = 2;
+
+  // Property Universally Unique Identifier
+  // A unique identifier for a property.
+  optional string Uuid = 3;
+
+  // Property Namespace
+  // A namespace qualifying the property's name. This allows different organizations to associate distinct semantics with the same name.
+  optional string Ns = 4;
+
+  // Property Class
+  // A textual label that provides a sub-type or characterization of the property's name.
+  optional string Class = 5;
+
+  // Property Group
+  // An identifier for relating distinct sets of properties.
+  optional string Group = 6;
+
+  // Remarks
+  // Additional explanatory notes for the property.
+  optional string Remarks = 7;
+}
+
+enum LinkRelationship {
+  LINK_RELATIONSHIP_UNKNOWN = 0;
+  LINK_RELATIONSHIP_REFERENCE = 1;
+}
+
+message Link {
+  // Hypertext Reference
+  // A resolvable URL reference to a resource.
+  string Href = 1;
+
+  // Link Relation Type
+  // Describes the type of relationship provided by the link's hypertext reference. This can be an indicator of the link's purpose.
+  optional LinkRelationship Rel = 2;
+
+  // Media Type
+  // A label that indicates the nature of a resource, as a data serialization or format.
+  optional string MediaType = 3;
+
+  // Resource Fragment
+  // In case where the href points to a back-matter/resource, this value will indicate the URI fragment to append to any rlink associated with the resource. This value MUST be URI encoded.
+  optional string ResourceFragment = 4;
+
+  // Link Text
+  // A textual label to associate with the link, which may be used for presentation in a tool.
+  optional string Text = 5;
+}
+
+enum ActorType {
+  ACTOR_TYPE_UNKNOWN = 0;
+  ACTOR_TYPE_TOOL = 1;
+  ACTOR_TYPE_ASSESSMENT_PLATFORM = 2;
+  ACTOR_TYPE_PARTY = 3;
+}
+
+// Originating Actor
+// The actor that produces an observation, a finding, or a risk. One or more actor types can be used to specify a person that is using a tool.
+message OriginActor {
+  // Actor Type
+  // The kind of actor.
+  ActorType Type = 1;
+
+  // Actor Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to the tool or person based on the associated type.
+  string ActorUuid = 2;
+
+  // Actor Role
+  // For a party, this can optionally be used to specify the role the actor was performing.
+  optional string RoleId = 3;
+
+  // Properties
+  // Additional attributes related to the actor.
+  repeated Property Props = 4;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 5;
+}
+
+// Select Assessment Subject
+// Identifies a set of assessment subjects to include/exclude by UUID.
+message SelectSubjectById {
+  // Subject Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to a component, inventory-item, location, party, user, or resource using it's UUID.
+  string SubjectUuid = 1;
+
+  // Subject Universally Unique Identifier Reference Type
+  // Used to indicate the type of object pointed to by the uuid-ref within a subject.
+  SubjectType Type = 2;
+
+  // Properties
+  // Additional attributes related to the subject.
+  repeated Property Props = 3;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 4;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 5;
+}
+
+enum SubjectType {
+  SUBJECT_TYPE_UNKNOWN = 0;
+  SUBJECT_TYPE_COMPONENT = 1;
+  SUBJECT_TYPE_INVENTORY_ITEM = 2;
+  SUBJECT_TYPE_LOCATION = 3;
+  SUBJECT_TYPE_PARTY = 4;
+  SUBJECT_TYPE_USER = 5;
+  SUBJECT_TYPE_RESOURCE = 6;
+}
+
+// Subject of Assessment
+// Identifies system elements being assessed, such as components, inventory items, and locations. In the assessment plan, this identifies a planned assessment subject. In the assessment results this is an actual assessment subject, and reflects any changes from the plan. exactly what will be the focus of this assessment. Any subjects not identified in this way are out-of-scope.
+message AssessmentSubject {
+  // Subject Type
+  // Indicates the type of assessment subject, such as a component, inventory, item, location, or party represented by this selection statement.
+  SubjectType Type = 1;
+
+  // Include Subjects Description
+  // A human-readable description of the collection of subjects being included in this assessment.
+  optional string Description = 2;
+
+  // Properties
+  // Additional attributes related to the assessment subject.
+  repeated Property Props = 3;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 4;
+
+  // Include All
+  // Specifies if all subjects should be included.
+  optional IncludeAll IncludeAll = 5;
+
+  // Include Subjects
+  // Subjects explicitly included in the assessment.
+  repeated SelectSubjectById IncludeSubjects = 6;
+
+  // Exclude Subjects
+  // Subjects explicitly excluded from the assessment.
+  repeated SelectSubjectById ExcludeSubjects = 7;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 8;
+}
+
+// Identified Subject
+// Used to detail assessment subjects that were identified by this task.
+message IdentifiedSubject {
+  // Assessment Subject Placeholder Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to a unique assessment subject placeholder defined by this task.
+  string SubjectPlaceholderUuid = 1;
+
+  // Subjects
+  // Assessment subjects identified by this task.
+  repeated AssessmentSubject Subjects = 2;
+}
+
+// Responsible Party
+// A reference to a set of persons and/or organizations that have responsibility for performing the referenced role in the context of the containing object.
+message ResponsibleParty {
+  // Responsible Role
+  // A reference to a role performed by a party.
+  string RoleId = 1;
+
+  // Party UUIDs
+  // References to parties that perform the role.
+  repeated string PartyUuids = 2;
+
+  // Properties
+  // Additional attributes related to the responsible party.
+  repeated Property Props = 3;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 4;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 5;
+}
+
+
+// Task Reference
+// Identifies an individual task for which the containing object is a consequence of.
+message RelatedTask {
+  // Task Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to a unique task.
+  string TaskUuid = 1;
+
+  // Properties
+  // Additional attributes related to the task.
+  repeated Property Props = 2;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 3;
+
+  // Responsible Parties
+  // Parties responsible for this task.
+  repeated ResponsibleParty ResponsibleParties = 4;
+
+  // Subjects
+  // Assessment subjects related to this task.
+  repeated AssessmentSubject Subjects = 5;
+
+  // Identified Subject
+  // Used to detail assessment subjects that were identified by this task.
+  optional IdentifiedSubject IdentifiedSubject = 6;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 7;
+}
+
+// Origin
+// Identifies the source of the finding, such as a tool, interviewed person, or activity.
+message Origin {
+  // Actors
+  // The actors that contributed to the finding.
+  repeated OriginActor Actors = 1;
+
+  // Related Tasks
+  // Tasks related to the finding's origin.
+  repeated RelatedTask RelatedTasks = 2;
+}
+
+enum ImplementationStatusState {
+  IMPLEMENTATION_STATUS_STATE_UNKNOWN = 0;
+  IMPLEMENTATION_STATUS_STATE_IMPLEMENTED = 1;
+  IMPLEMENTATION_STATUS_STATE_PARTIAL = 2;
+  IMPLEMENTATION_STATUS_STATE_PLANNED = 3;
+  IMPLEMENTATION_STATUS_STATE_ALTERNATIVE = 4;
+  IMPLEMENTATION_STATUS_STATE_NOT_APPLICABLE = 5;
+}
+
+// Implementation Status
+// Indicates the degree to which a given control is implemented.
+message ImplementationStatus {
+  // Implementation State
+  // Identifies the implementation status of the control or control objective.
+  ImplementationStatusState State = 1;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 2;
+}
+
+enum ObjectiveState {
+  OBJECTIVE_STATE_UNKNOWN = 0;
+  OBJECTIVE_STATE_SATISFIED = 1;
+  OBJECTIVE_STATE_NOT_SATISFIED = 2;
+}
+
+enum ObjectiveReason {
+  OBJECTIVE_REASON_UNKNOWN = 0;
+  OBJECTIVE_REASON_PASS = 1;
+  OBJECTIVE_REASON_FAIL = 2;
+  OBJECTIVE_REASON_OTHER = 3;
+}
+
+// Objective Status
+// A determination of if the objective is satisfied or not within a given system.
+message ObjectiveStatus {
+  // Objective Status State
+  // An indication as to whether the objective is satisfied or not.
+  ObjectiveState State = 1;
+
+  // Objective Status Reason
+  // The reason the objective was given its status.
+  optional ObjectiveReason Reason = 2;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 3;
+}
+
+// Objective Status
+// Captures an assessor's conclusions regarding the degree to which an objective is satisfied.
+message FindingTarget {
+  // Finding Target Type
+  // Identifies the type of the target.
+  enum TargetType {
+    TARGET_TYPE_UNKNOWN = 0;
+    STATEMENT_ID = 1;
+    OBJECTIVE_ID = 2;
+  }
+  TargetType Type = 1;
+
+  // Finding Target Identifier Reference
+  // A machine-oriented identifier reference for a specific target qualified by the type.
+  string TargetId = 2;
+
+  // Objective Status Title
+  // The title for this objective status.
+  optional string Title = 3;
+
+  // Objective Status Description
+  // A human-readable description of the assessor's conclusions regarding the degree to which an objective is satisfied.
+  optional string Description = 4;
+
+  // Properties
+  // Additional attributes related to the finding target.
+  repeated Property Props = 5;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 6;
+
+  // Objective Status
+  // A determination of if the objective is satisfied or not within a given system.
+  ObjectiveStatus Status = 7;
+
+  // Implementation Status
+  // The implementation status of the objective.
+  optional ImplementationStatus ImplementationStatus = 8;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 9;
+}
+
+// Related Observation
+// Relates the finding to a set of referenced observations that were used to determine the finding.
+message RelatedObservation {
+  // Observation Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to an observation defined in the list of observations.
+  string ObservationUuid = 1;
+}
+
+// Associated Risk
+// Relates the finding to a set of referenced risks that were used to determine the finding.
+message RelatedRisk {
+  // Risk Universally Unique Identifier Reference
+  // A reference to a risk in the list of risks.
+  string RiskUuid = 1;
+}
+
+// Relevant Evidence
+// Links this observation to relevant evidence.
+message RelevantEvidence {
+  // Relevant Evidence Reference
+  // A resolvable URL reference to relevant evidence.
+  optional string Href = 1;
+
+  // Relevant Evidence Description
+  // A human-readable description of this evidence.
+  string Description = 2;
+
+  // Properties
+  // Additional attributes related to the evidence.
+  repeated Property Props = 3;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 4;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 5;
+}
+
+// Identifies the Subject
+// A human-oriented identifier reference to a resource. Use type to indicate whether the identified resource is a component, inventory item, location, user, or something else.
+message SubjectReference {
+  // Subject Universally Unique Identifier Reference
+  // A machine-oriented identifier reference to a component, inventory-item, location, party, user, or resource using its UUID.
+  string SubjectUuid = 1;
+
+  // Subject Universally Unique Identifier Reference Type
+  // Used to indicate the type of object pointed to by the uuid-ref within a subject.
+  SubjectType Type = 2;
+
+  // Subject Reference Title
+  // The title or name for the referenced subject.
+  optional string Title = 3;
+
+  // Properties
+  // Additional attributes related to the subject reference.
+  repeated Property Props = 4;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 5;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 6;
+}
+
+
+// Finding
+// Describes an individual finding.
+message Finding {
+  // Finding Universally Unique Identifier
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this finding in this or other OSCAL instances. The locally defined UUID of the finding can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  string Uuid = 1;
+
+  // Finding Title
+  // The title for this finding.
+  string Title = 2;
+
+  // Finding Description
+  // A human-readable description of this finding.
+  string Description = 3;
+
+  // Properties
+  // Additional attributes related to the finding.
+  repeated Property Props = 4;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 5;
+
+  // Origins
+  // The sources of the finding, such as tools or activities.
+  repeated Origin Origins = 6;
+
+  // Target
+  // The objective status and target of the finding.
+  FindingTarget Target = 7;
+
+  // Implementation Statement UUID
+  // A reference to the implementation statement in the SSP related to this finding.
+  optional string ImplementationStatementUuid = 8;
+
+  // Related Observation
+  // Relates the finding to a set of referenced observations that were used to determine the finding.
+  repeated RelatedObservation RelatedObservations = 9;
+
+  // Associated Risk
+  // Relates the finding to a set of referenced risks that were used to determine the finding.
+  repeated RelatedRisk RelatedRisks = 10;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 11;
+}
+
+// Observation Method
+// Identifies how the observation was made.
+enum ObservationMethod {
+  OBSERVATION_METHOD_UNKNOWN = 0;
+  OBSERVATION_METHOD_EXAMINE = 1;
+  OBSERVATION_METHOD_INTERVIEW = 2;
+  OBSERVATION_METHOD_TEST = 3;
+}
+
+// Observation Type
+// Identifies the nature of the observation. More than one may be used to further qualify and enable filtering.
+enum ObservationType {
+  OBSERVATION_TYPE_UNKNOWN = 0;
+  OBSERVATION_TYPE_SSP_STATEMENT_ISSUE = 1;
+  OBSERVATION_TYPE_CONTROL_OBJECTIVE = 2;
+  OBSERVATION_TYPE_MITIGATION = 3;
+  OBSERVATION_TYPE_FINDING = 4;
+  OBSERVATION_TYPE_HISTORIC = 5;
+}
+
+// Observation
+// Describes an individual observation.
+message Observation {
+  // Observation Universally Unique Identifier
+  // A globally unique identifier for this observation, used for cross-instance referencing.
+  string Uuid = 1;
+
+  // Observation Title
+  // The title for this observation.
+  optional string Title = 2;
+
+  // Observation Description
+  // A human-readable description of this assessment observation.
+  string Description = 3;
+
+  // Properties
+  // Additional attributes related to the observation.
+  repeated Property Props = 4;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 5;
+
+  // Observation Method
+  // Identifies how the observation was made.
+  repeated ObservationMethod Methods = 6;
+
+  // Observation Type
+  // Identifies the nature of the observation. More than one may be used to further qualify and enable filtering.
+  repeated ObservationType Types = 7;
+
+  // Origins
+  // The sources of the observation, such as tools or activities.
+  repeated Origin Origins = 8;
+
+  // Subjects
+  // References to subjects related to this observation.
+  repeated SubjectReference Subjects = 9;
+
+  // Relevant Evidence
+  // Links this observation to relevant evidence.
+  repeated RelevantEvidence RelevantEvidence = 10;
+
+  // Collected Field
+  // Date/time stamp identifying when the observation information was collected.
+  string Collected = 11;
+
+  // Expires Field
+  // Date/time identifying when the observation information is out-of-date and no longer valid.
+  optional string Expires = 12;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 13;
+}
+
