@@ -4,8 +4,6 @@ option go_package = "./proto";
 
 import "runner/proto/oscal.proto";
 
-
-
 // LogEntry represents a record in an assessment log that documents a specific
 // event or action during the assessment. A log entry can contain various
 // information, including observations or findings, but it's essentially a
@@ -48,9 +46,7 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
-message EvalRequest {
-  string bundlePath = 1;
-}
+message EvalRequest { string bundlePath = 1; }
 
 /**
  * EvalResponse is the result of an assessment check
@@ -60,9 +56,9 @@ message EvalResponse {
   ExecutionStatus Status = 1;
 
   AssessmentResult Result = 2;
-//  string Title = 2;
-//  repeated Observation Observations = 3;
-//  repeated Finding Findings = 4;
-//  repeated Risk Risks = 5;
-//  repeated LogEntry Logs = 6;
+  //  string Title = 2;
+  //  repeated Observation Observations = 3;
+  //  repeated Finding Findings = 4;
+  //  repeated Risk Risks = 5;
+  //  repeated LogEntry Logs = 6;
 }
