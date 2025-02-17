@@ -3,7 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
+	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -304,7 +304,7 @@ func (ar *AgentRunner) runInstance() error {
 	startTimer := time.Now()
 
 	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: "http://localhost:8080",
+		BaseURL: ar.config.ApiConfig.Url,
 	})
 
 	ar.mu.Lock()
@@ -353,7 +353,7 @@ func (ar *AgentRunner) runInstance() error {
 		})
 		if err != nil {
 			endTimer := time.Now()
-			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
 				Title:       "Agent has failed to configure plugin.",
 				Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
 				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
@@ -366,7 +366,7 @@ func (ar *AgentRunner) runInstance() error {
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
 			endTimer := time.Now()
-			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
 				Title:       "Agent has failed to prepare plugin for eval.",
 				Remarks:     "Agent has failed to prepare plugin for eval. Fix agent to continue receiving results",
 				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
@@ -398,7 +398,7 @@ func (ar *AgentRunner) runInstance() error {
 			})
 			if err != nil {
 				endTimer := time.Now()
-				_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+				_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
 					Title:       "Agent has failed to execute policies.",
 					Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
 					Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
@@ -425,7 +425,7 @@ func (ar *AgentRunner) runInstance() error {
 				return err
 			}
 
-			_, err = client.Results.Create(streamId, resultLabels, &oscalTypes_1_1_3.Result{
+			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
 				AssessmentLog:    nil,
 				Attestations:     nil,
 				Findings:         findings,
@@ -434,7 +434,7 @@ func (ar *AgentRunner) runInstance() error {
 				Observations:     observations,
 				Props:            nil,
 				Remarks:          "",
-				ReviewedControls: oscalTypes_1_1_3.ReviewedControls{},
+				ReviewedControls: oscaltypes113.ReviewedControls{},
 				Risks:            nil,
 				Start:            startTimer,
 				End:              &endTimer,
