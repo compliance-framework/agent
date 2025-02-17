@@ -416,29 +416,23 @@ func (ar *AgentRunner) runInstance() error {
 			//}
 
 			endTimer := time.Now()
-			observations, err := runner.ObservationsProtoToOscal(res.Observations)
-			if err != nil {
-				return err
-			}
-			findings, err := runner.FindingsProtoToOscal(res.Findings)
-			if err != nil {
-				return err
-			}
 
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
-				AssessmentLog:    nil,
-				Attestations:     nil,
-				Findings:         findings,
+				Title:            res.GetTitle(),
+				Description:      res.Get,
+				Observations:     runner.ObservationsProtoToOscal(res.GetObservations()),
+				Findings:         runner.FindingsProtoToOscal(res.GetFindings()),
+				Start:            startTimer,
+				End:              &endTimer,
 				Links:            nil,
 				LocalDefinitions: nil,
-				Observations:     observations,
 				Props:            nil,
 				Remarks:          "",
 				ReviewedControls: oscaltypes113.ReviewedControls{},
 				Risks:            nil,
-				Start:            startTimer,
-				End:              &endTimer,
-				Title:            res.Title,
+				AssessmentLog:    nil,
+				Attestations:     nil,
+				UUID:             "",
 			})
 			if err != nil {
 				return err

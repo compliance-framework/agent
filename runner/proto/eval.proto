@@ -28,20 +28,6 @@ message Evidence {
   string Remarks = 5;
 }
 
-
-message Observation {
-  string Id = 1;
-  string SubjectId = 2;
-  string Collected = 3;
-  string Title = 4;
-  string Description = 5;
-  string Expires = 6;
-  string Remarks = 7;
-  repeated Property Props = 9;
-  repeated Link Links = 8;
-  repeated Evidence RelevantEvidence = 10;
-}
-
 message Step {
   string Title = 1;
   string SubjectId = 2;

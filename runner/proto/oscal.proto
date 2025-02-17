@@ -2,6 +2,8 @@ syntax = "proto3";
 package proto;
 option go_package = "./proto";
 
+import "google/protobuf/timestamp.proto";
+
 // Property
 // An attribute, characteristic, or quality of the containing object expressed as a namespace qualified name/value pair.
 message Property {
@@ -124,6 +126,10 @@ enum SubjectType {
   SUBJECT_TYPE_PARTY = 4;
   SUBJECT_TYPE_USER = 5;
   SUBJECT_TYPE_RESOURCE = 6;
+}
+
+message IncludeAll {
+
 }
 
 // Subject of Assessment
@@ -520,11 +526,11 @@ message Observation {
 
   // Collected Field
   // Date/time stamp identifying when the observation information was collected.
-  string Collected = 11;
+  google.protobuf.Timestamp Collected = 11;
 
   // Expires Field
   // Date/time identifying when the observation information is out-of-date and no longer valid.
-  optional string Expires = 12;
+  optional google.protobuf.Timestamp Expires = 12;
 
   // Remarks
   // Additional explanatory notes.
