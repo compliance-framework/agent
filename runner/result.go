@@ -3,7 +3,6 @@ package runner
 import (
 	"github.com/compliance-framework/agent/runner/proto"
 	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
-	"time"
 )
 
 type Result struct {
@@ -21,10 +20,6 @@ type Result struct {
 func ErrorResult(res *Result) *Result {
 	res.Status = proto.ExecutionStatus_FAILURE
 	return res
-}
-
-func strToTime(s string) (time.Time, error) {
-	return time.Parse(time.RFC3339, s)
 }
 
 func LinksProtoToOscal(links []*proto.Link) *[]oscalTypes_1_1_3.Link {
