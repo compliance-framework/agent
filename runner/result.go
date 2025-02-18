@@ -384,3 +384,25 @@ func FindingProtoToOscal(finding *proto.Finding) *oscalTypes_1_1_3.Finding {
 		Target:                      *FindingTargetProtoToOscal(finding.Target),
 	}
 }
+
+func ResultProtoToOscal(result *proto.AssessmentResult) *oscalTypes_1_1_3.Result {
+	endTime := result.GetEnd().AsTime()
+	return &oscalTypes_1_1_3.Result{
+		UUID:         result.GetUuid(),
+		Title:        result.GetTitle(),
+		Description:  result.GetDescription(),
+		Start:        result.GetStart().AsTime(),
+		End:          &endTime,
+		Observations: ObservationsProtoToOscal(result.GetObservations()),
+		Findings:     FindingsProtoToOscal(result.GetFindings()),
+		Links:        LinksProtoToOscal(result.GetLinks()),
+		Props:        PropertiesProtoToOscal(result.GetProps()),
+		Remarks:      result.GetRemarks(),
+		// TODO this comes when implemented in the protogen files.
+		AssessmentLog:    nil,
+		Attestations:     nil,
+		LocalDefinitions: nil,
+		ReviewedControls: oscalTypes_1_1_3.ReviewedControls{},
+		Risks:            nil,
+	}
+}

@@ -415,25 +415,7 @@ func (ar *AgentRunner) runInstance() error {
 			//	ar.setupPoliciesTask.ToProtoStep(),
 			//}
 
-			endTimer := time.Now()
-
-			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
-				Title:            res.GetTitle(),
-				Description:      "",
-				Observations:     runner.ObservationsProtoToOscal(res.GetObservations()),
-				Findings:         runner.FindingsProtoToOscal(res.GetFindings()),
-				Start:            startTimer,
-				End:              &endTimer,
-				Links:            nil,
-				LocalDefinitions: nil,
-				Props:            nil,
-				Remarks:          "",
-				ReviewedControls: oscaltypes113.ReviewedControls{},
-				Risks:            nil,
-				AssessmentLog:    nil,
-				Attestations:     nil,
-				UUID:             "",
-			})
+			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(res.GetResult()))
 			if err != nil {
 				return err
 			}
