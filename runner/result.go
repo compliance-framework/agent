@@ -859,10 +859,6 @@ func ResultProtoToOscal(result *proto.AssessmentResult) *oscaltypes113.Result {
 	}
 }
 
-func strToTime(s string) (time.Time, error) {
-	return time.Parse(time.RFC3339, s)
-}
-
 func LinksProtoToOscal(links []*proto.Link) *[]oscalTypes_1_1_3.Link {
 	results := make([]oscalTypes_1_1_3.Link, 0)
 	for _, link := range links {
