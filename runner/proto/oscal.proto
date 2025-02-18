@@ -537,3 +537,127 @@ message Observation {
   optional string Remarks = 13;
 }
 
+// TODO this is a partial implementation to support bidirectional implementation.
+// This should be fledged more completely as soon as possible.
+// Assessment Result
+// Used by the assessment results and POA&M. Identifies observations, findings, risks, deviations, and dispositions.
+message AssessmentResult {
+  // Results Universally Unique Identifier
+  // A globally unique identifier for this set of results, used for cross-instance referencing.
+  string Uuid = 1;
+
+  // Results Title
+  // The title for this set of results.
+  string Title = 2;
+
+  // Results Description
+  // A human-readable description of this set of test results.
+  string Description = 3;
+
+  // Start Field
+  // Date/time stamp identifying the start of the evidence collection.
+  google.protobuf.Timestamp Start = 4;
+
+  // End Field
+  // Date/time stamp identifying the end of the evidence collection.
+  google.protobuf.Timestamp End = 5;
+
+  // Properties
+  // Additional attributes related to the assessment result.
+  repeated Property Props = 6;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 7;
+
+//  // Local Definitions
+//  // Used to define data objects used in the assessment plan but not appearing in the referenced SSP.
+//  message LocalDefinitions {
+//    // Components
+//    repeated SystemComponent Components = 1;
+//
+//    // Inventory Items
+//    repeated InventoryItem InventoryItems = 2;
+//
+//    // Users
+//    repeated SystemUser Users = 3;
+//
+//    // Assessment Assets
+//    optional AssessmentAssets AssessmentAssets = 4;
+//
+//    // Tasks
+//    repeated Task Tasks = 5;
+//  }
+//  optional LocalDefinitions LocalDefinitions = 8;
+
+//  // Reviewed Controls
+//  // Identifies the controls reviewed in the assessment.
+//  ReviewedControls ReviewedControls = 9;
+
+//  // Attestations
+//  // A set of textual statements, typically written by the assessor.
+//  message Attestation {
+//    // Responsible Parties
+//    repeated ResponsibleParty ResponsibleParties = 1;
+//
+//    // Parts
+//    repeated AssessmentPart Parts = 2;
+//  }
+//  repeated Attestation Attestations = 10;
+
+//  // Assessment Log
+//  // A log of all assessment-related actions taken.
+//  message AssessmentLog {
+//    // Assessment Log Entry
+//    // Identifies the result of an action/task during the assessment.
+//    message Entry {
+//      // Universally Unique Identifier
+//      string Uuid = 1;
+//
+//      // Action Title
+//      optional string Title = 2;
+//
+//      // Action Description
+//      optional string Description = 3;
+//
+//      // Start
+//      string Start = 4;
+//
+//      // End
+//      optional string End = 5;
+//
+//      // Properties
+//      repeated Property Props = 6;
+//
+//      // Links
+//      repeated Link Links = 7;
+//
+//      // Logged By
+//      repeated LoggedBy LoggedBy = 8;
+//
+//      // Related Tasks
+//      repeated RelatedTask RelatedTasks = 9;
+//
+//      // Remarks
+//      optional string Remarks = 10;
+//    }
+//    repeated Entry Entries = 1;
+//  }
+//  AssessmentLog AssessmentLog = 11;
+
+  // Observations
+  // The observations made during the assessment.
+  repeated Observation Observations = 12;
+
+//  // Risks
+//  // The risks identified during the assessment.
+//  repeated Risk Risks = 13;
+
+  // Findings
+  // The findings identified during the assessment.
+  repeated Finding Findings = 14;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 15;
+}

@@ -419,7 +419,7 @@ func (ar *AgentRunner) runInstance() error {
 
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
 				Title:            res.GetTitle(),
-				Description:      res.Get,
+				Description:      "",
 				Observations:     runner.ObservationsProtoToOscal(res.GetObservations()),
 				Findings:         runner.FindingsProtoToOscal(res.GetFindings()),
 				Start:            startTimer,
