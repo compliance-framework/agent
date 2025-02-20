@@ -51,3 +51,9 @@ func (eval *CallableEvalResponse) AddRiskEntry(risk *proto.Risk) {
 func (eval *CallableEvalResponse) Result() *proto.EvalResponse {
 	return eval.EvalResponse
 }
+
+// Constants used in plugins for statusses which map to OSCAL due to int requirements of GRPC
+const (
+	FindingTargetStatusSatisfied    = "satisfied"
+	FindingTargetStatusNotSatisfied = "not satisfied"
+)

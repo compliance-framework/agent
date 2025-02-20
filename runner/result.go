@@ -313,9 +313,9 @@ func ImplementationStatusProtoToOscal(status *proto.ImplementationStatus) *oscal
 
 func ObjectiveStatusProtoToOscal(status *proto.ObjectiveStatus) *oscalTypes_1_1_3.ObjectiveStatus {
 	return &oscalTypes_1_1_3.ObjectiveStatus{
-		Reason:  status.GetReason().String(),
+		Reason:  status.GetReason(),
 		Remarks: status.GetRemarks(),
-		State:   status.GetState().String(),
+		State:   status.GetState(),
 	}
 }
 

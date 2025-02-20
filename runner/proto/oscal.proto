@@ -270,29 +270,16 @@ message ImplementationStatus {
   optional string Remarks = 2;
 }
 
-enum ObjectiveState {
-  OBJECTIVE_STATE_UNKNOWN = 0;
-  OBJECTIVE_STATE_SATISFIED = 1;
-  OBJECTIVE_STATE_NOT_SATISFIED = 2;
-}
-
-enum ObjectiveReason {
-  OBJECTIVE_REASON_UNKNOWN = 0;
-  OBJECTIVE_REASON_PASS = 1;
-  OBJECTIVE_REASON_FAIL = 2;
-  OBJECTIVE_REASON_OTHER = 3;
-}
-
 // Objective Status
 // A determination of if the objective is satisfied or not within a given system.
 message ObjectiveStatus {
   // Objective Status State
   // An indication as to whether the objective is satisfied or not.
-  ObjectiveState State = 1;
+  string State = 1;
 
   // Objective Status Reason
   // The reason the objective was given its status.
-  optional ObjectiveReason Reason = 2;
+  optional string Reason = 2;
 
   // Remarks
   // Additional explanatory notes.

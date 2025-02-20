@@ -239,107 +239,6 @@ func (ImplementationStatusState) EnumDescriptor() ([]byte, []int) {
 	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{3}
 }
 
-type ObjectiveState int32
-
-const (
-	ObjectiveState_OBJECTIVE_STATE_UNKNOWN       ObjectiveState = 0
-	ObjectiveState_OBJECTIVE_STATE_SATISFIED     ObjectiveState = 1
-	ObjectiveState_OBJECTIVE_STATE_NOT_SATISFIED ObjectiveState = 2
-)
-
-// Enum value maps for ObjectiveState.
-var (
-	ObjectiveState_name = map[int32]string{
-		0: "OBJECTIVE_STATE_UNKNOWN",
-		1: "OBJECTIVE_STATE_SATISFIED",
-		2: "OBJECTIVE_STATE_NOT_SATISFIED",
-	}
-	ObjectiveState_value = map[string]int32{
-		"OBJECTIVE_STATE_UNKNOWN":       0,
-		"OBJECTIVE_STATE_SATISFIED":     1,
-		"OBJECTIVE_STATE_NOT_SATISFIED": 2,
-	}
-)
-
-func (x ObjectiveState) Enum() *ObjectiveState {
-	p := new(ObjectiveState)
-	*p = x
-	return p
-}
-
-func (x ObjectiveState) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ObjectiveState) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[4].Descriptor()
-}
-
-func (ObjectiveState) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[4]
-}
-
-func (x ObjectiveState) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ObjectiveState.Descriptor instead.
-func (ObjectiveState) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{4}
-}
-
-type ObjectiveReason int32
-
-const (
-	ObjectiveReason_OBJECTIVE_REASON_UNKNOWN ObjectiveReason = 0
-	ObjectiveReason_OBJECTIVE_REASON_PASS    ObjectiveReason = 1
-	ObjectiveReason_OBJECTIVE_REASON_FAIL    ObjectiveReason = 2
-	ObjectiveReason_OBJECTIVE_REASON_OTHER   ObjectiveReason = 3
-)
-
-// Enum value maps for ObjectiveReason.
-var (
-	ObjectiveReason_name = map[int32]string{
-		0: "OBJECTIVE_REASON_UNKNOWN",
-		1: "OBJECTIVE_REASON_PASS",
-		2: "OBJECTIVE_REASON_FAIL",
-		3: "OBJECTIVE_REASON_OTHER",
-	}
-	ObjectiveReason_value = map[string]int32{
-		"OBJECTIVE_REASON_UNKNOWN": 0,
-		"OBJECTIVE_REASON_PASS":    1,
-		"OBJECTIVE_REASON_FAIL":    2,
-		"OBJECTIVE_REASON_OTHER":   3,
-	}
-)
-
-func (x ObjectiveReason) Enum() *ObjectiveReason {
-	p := new(ObjectiveReason)
-	*p = x
-	return p
-}
-
-func (x ObjectiveReason) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ObjectiveReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[5].Descriptor()
-}
-
-func (ObjectiveReason) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[5]
-}
-
-func (x ObjectiveReason) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ObjectiveReason.Descriptor instead.
-func (ObjectiveReason) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{5}
-}
-
 // Observation Method
 // Identifies how the observation was made.
 type ObservationMethod int32
@@ -378,11 +277,11 @@ func (x ObservationMethod) String() string {
 }
 
 func (ObservationMethod) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[6].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[4].Descriptor()
 }
 
 func (ObservationMethod) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[6]
+	return &file_runner_proto_oscal_proto_enumTypes[4]
 }
 
 func (x ObservationMethod) Number() protoreflect.EnumNumber {
@@ -391,7 +290,7 @@ func (x ObservationMethod) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ObservationMethod.Descriptor instead.
 func (ObservationMethod) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{6}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{4}
 }
 
 // Observation Type
@@ -438,11 +337,11 @@ func (x ObservationType) String() string {
 }
 
 func (ObservationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[7].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[5].Descriptor()
 }
 
 func (ObservationType) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[7]
+	return &file_runner_proto_oscal_proto_enumTypes[5]
 }
 
 func (x ObservationType) Number() protoreflect.EnumNumber {
@@ -451,7 +350,7 @@ func (x ObservationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ObservationType.Descriptor instead.
 func (ObservationType) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{7}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{5}
 }
 
 // Risk Status
@@ -501,11 +400,11 @@ func (x RiskStatus) String() string {
 }
 
 func (RiskStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[8].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[6].Descriptor()
 }
 
 func (RiskStatus) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[8]
+	return &file_runner_proto_oscal_proto_enumTypes[6]
 }
 
 func (x RiskStatus) Number() protoreflect.EnumNumber {
@@ -514,7 +413,7 @@ func (x RiskStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RiskStatus.Descriptor instead.
 func (RiskStatus) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{8}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{6}
 }
 
 // Task Type
@@ -552,11 +451,11 @@ func (x TaskType) String() string {
 }
 
 func (TaskType) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[9].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[7].Descriptor()
 }
 
 func (TaskType) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[9]
+	return &file_runner_proto_oscal_proto_enumTypes[7]
 }
 
 func (x TaskType) Number() protoreflect.EnumNumber {
@@ -565,7 +464,7 @@ func (x TaskType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskType.Descriptor instead.
 func (TaskType) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{9}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{7}
 }
 
 // Remediation Intent
@@ -606,11 +505,11 @@ func (x Lifecycle) String() string {
 }
 
 func (Lifecycle) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[10].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[8].Descriptor()
 }
 
 func (Lifecycle) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[10]
+	return &file_runner_proto_oscal_proto_enumTypes[8]
 }
 
 func (x Lifecycle) Number() protoreflect.EnumNumber {
@@ -619,7 +518,7 @@ func (x Lifecycle) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Lifecycle.Descriptor instead.
 func (Lifecycle) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{10}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{8}
 }
 
 type State int32
@@ -661,11 +560,11 @@ func (x State) String() string {
 }
 
 func (State) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[11].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[9].Descriptor()
 }
 
 func (State) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[11]
+	return &file_runner_proto_oscal_proto_enumTypes[9]
 }
 
 func (x State) Number() protoreflect.EnumNumber {
@@ -674,7 +573,7 @@ func (x State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use State.Descriptor instead.
 func (State) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{11}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{9}
 }
 
 type Transport int32
@@ -710,11 +609,11 @@ func (x Transport) String() string {
 }
 
 func (Transport) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[12].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[10].Descriptor()
 }
 
 func (Transport) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[12]
+	return &file_runner_proto_oscal_proto_enumTypes[10]
 }
 
 func (x Transport) Number() protoreflect.EnumNumber {
@@ -723,7 +622,7 @@ func (x Transport) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Transport.Descriptor instead.
 func (Transport) EnumDescriptor() ([]byte, []int) {
-	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{12}
+	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{10}
 }
 
 // Finding Target Type
@@ -761,11 +660,11 @@ func (x FindingTarget_TargetType) String() string {
 }
 
 func (FindingTarget_TargetType) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[13].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[11].Descriptor()
 }
 
 func (FindingTarget_TargetType) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[13]
+	return &file_runner_proto_oscal_proto_enumTypes[11]
 }
 
 func (x FindingTarget_TargetType) Number() protoreflect.EnumNumber {
@@ -822,11 +721,11 @@ func (x EventTiming_Frequency_TimeUnit) String() string {
 }
 
 func (EventTiming_Frequency_TimeUnit) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[14].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[12].Descriptor()
 }
 
 func (EventTiming_Frequency_TimeUnit) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[14]
+	return &file_runner_proto_oscal_proto_enumTypes[12]
 }
 
 func (x EventTiming_Frequency_TimeUnit) Number() protoreflect.EnumNumber {
@@ -876,11 +775,11 @@ func (x AssessmentPart_PartName) String() string {
 }
 
 func (AssessmentPart_PartName) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[15].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[13].Descriptor()
 }
 
 func (AssessmentPart_PartName) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[15]
+	return &file_runner_proto_oscal_proto_enumTypes[13]
 }
 
 func (x AssessmentPart_PartName) Number() protoreflect.EnumNumber {
@@ -963,11 +862,11 @@ func (x SystemComponent_ComponentType) String() string {
 }
 
 func (SystemComponent_ComponentType) Descriptor() protoreflect.EnumDescriptor {
-	return file_runner_proto_oscal_proto_enumTypes[16].Descriptor()
+	return file_runner_proto_oscal_proto_enumTypes[14].Descriptor()
 }
 
 func (SystemComponent_ComponentType) Type() protoreflect.EnumType {
-	return &file_runner_proto_oscal_proto_enumTypes[16]
+	return &file_runner_proto_oscal_proto_enumTypes[14]
 }
 
 func (x SystemComponent_ComponentType) Number() protoreflect.EnumNumber {
@@ -1879,10 +1778,10 @@ type ObjectiveStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Objective Status State
 	// An indication as to whether the objective is satisfied or not.
-	State ObjectiveState `protobuf:"varint,1,opt,name=State,proto3,enum=proto.ObjectiveState" json:"State,omitempty"`
+	State string `protobuf:"bytes,1,opt,name=State,proto3" json:"State,omitempty"`
 	// Objective Status Reason
 	// The reason the objective was given its status.
-	Reason *ObjectiveReason `protobuf:"varint,2,opt,name=Reason,proto3,enum=proto.ObjectiveReason,oneof" json:"Reason,omitempty"`
+	Reason *string `protobuf:"bytes,2,opt,name=Reason,proto3,oneof" json:"Reason,omitempty"`
 	// Remarks
 	// Additional explanatory notes.
 	Remarks       *string `protobuf:"bytes,3,opt,name=Remarks,proto3,oneof" json:"Remarks,omitempty"`
@@ -1920,18 +1819,18 @@ func (*ObjectiveStatus) Descriptor() ([]byte, []int) {
 	return file_runner_proto_oscal_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ObjectiveStatus) GetState() ObjectiveState {
+func (x *ObjectiveStatus) GetState() string {
 	if x != nil {
 		return x.State
 	}
-	return ObjectiveState_OBJECTIVE_STATE_UNKNOWN
+	return ""
 }
 
-func (x *ObjectiveStatus) GetReason() ObjectiveReason {
+func (x *ObjectiveStatus) GetReason() string {
 	if x != nil && x.Reason != nil {
 		return *x.Reason
 	}
-	return ObjectiveReason_OBJECTIVE_REASON_UNKNOWN
+	return ""
 }
 
 func (x *ObjectiveStatus) GetRemarks() string {
@@ -6507,14 +6406,11 @@ var file_runner_proto_oscal_proto_rawDesc = string([]byte{
 	0x6e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x05, 0x53, 0x74,
 	0x61, 0x74, 0x65, 0x12, 0x1d, 0x0a, 0x07, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73, 0x18, 0x02,
 	0x20, 0x01, 0x28, 0x09, 0x48, 0x00, 0x52, 0x07, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73, 0x88,
-	0x01, 0x01, 0x42, 0x0a, 0x0a, 0x08, 0x5f, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73, 0x22, 0xa9,
-	0x01, 0x0a, 0x0f, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x12, 0x2b, 0x0a, 0x05, 0x53, 0x74, 0x61, 0x74, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0e, 0x32, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74,
-	0x69, 0x76, 0x65, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x05, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12,
-	0x33, 0x0a, 0x06, 0x52, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32,
-	0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x69, 0x76,
-	0x65, 0x52, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x48, 0x00, 0x52, 0x06, 0x52, 0x65, 0x61, 0x73, 0x6f,
+	0x01, 0x01, 0x42, 0x0a, 0x0a, 0x08, 0x5f, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73, 0x22, 0x7a,
+	0x0a, 0x0f, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53, 0x74, 0x61, 0x74, 0x75,
+	0x73, 0x12, 0x14, 0x0a, 0x05, 0x53, 0x74, 0x61, 0x74, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x05, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x1b, 0x0a, 0x06, 0x52, 0x65, 0x61, 0x73, 0x6f,
+	0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x48, 0x00, 0x52, 0x06, 0x52, 0x65, 0x61, 0x73, 0x6f,
 	0x6e, 0x88, 0x01, 0x01, 0x12, 0x1d, 0x0a, 0x07, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73, 0x18,
 	0x03, 0x20, 0x01, 0x28, 0x09, 0x48, 0x01, 0x52, 0x07, 0x52, 0x65, 0x6d, 0x61, 0x72, 0x6b, 0x73,
 	0x88, 0x01, 0x01, 0x42, 0x09, 0x0a, 0x07, 0x5f, 0x52, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x42, 0x0a,
@@ -7412,85 +7308,70 @@ var file_runner_proto_oscal_proto_rawDesc = string([]byte{
 	0x41, 0x4c, 0x54, 0x45, 0x52, 0x4e, 0x41, 0x54, 0x49, 0x56, 0x45, 0x10, 0x04, 0x12, 0x2e, 0x0a,
 	0x2a, 0x49, 0x4d, 0x50, 0x4c, 0x45, 0x4d, 0x45, 0x4e, 0x54, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f,
 	0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x4e, 0x4f, 0x54,
-	0x5f, 0x41, 0x50, 0x50, 0x4c, 0x49, 0x43, 0x41, 0x42, 0x4c, 0x45, 0x10, 0x05, 0x2a, 0x6f, 0x0a,
-	0x0e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x69, 0x76, 0x65, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12,
-	0x1b, 0x0a, 0x17, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f, 0x53, 0x54, 0x41,
-	0x54, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x1d, 0x0a, 0x19,
-	0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f,
-	0x53, 0x41, 0x54, 0x49, 0x53, 0x46, 0x49, 0x45, 0x44, 0x10, 0x01, 0x12, 0x21, 0x0a, 0x1d, 0x4f,
-	0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x4e,
-	0x4f, 0x54, 0x5f, 0x53, 0x41, 0x54, 0x49, 0x53, 0x46, 0x49, 0x45, 0x44, 0x10, 0x02, 0x2a, 0x81,
-	0x01, 0x0a, 0x0f, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x69, 0x76, 0x65, 0x52, 0x65, 0x61, 0x73,
-	0x6f, 0x6e, 0x12, 0x1c, 0x0a, 0x18, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f,
-	0x52, 0x45, 0x41, 0x53, 0x4f, 0x4e, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00,
-	0x12, 0x19, 0x0a, 0x15, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f, 0x52, 0x45,
-	0x41, 0x53, 0x4f, 0x4e, 0x5f, 0x50, 0x41, 0x53, 0x53, 0x10, 0x01, 0x12, 0x19, 0x0a, 0x15, 0x4f,
-	0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x5f, 0x52, 0x45, 0x41, 0x53, 0x4f, 0x4e, 0x5f,
-	0x46, 0x41, 0x49, 0x4c, 0x10, 0x02, 0x12, 0x1a, 0x0a, 0x16, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54,
-	0x49, 0x56, 0x45, 0x5f, 0x52, 0x45, 0x41, 0x53, 0x4f, 0x4e, 0x5f, 0x4f, 0x54, 0x48, 0x45, 0x52,
-	0x10, 0x03, 0x2a, 0x92, 0x01, 0x0a, 0x11, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69,
-	0x6f, 0x6e, 0x4d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x12, 0x1e, 0x0a, 0x1a, 0x4f, 0x42, 0x53, 0x45,
-	0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x55,
-	0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x1e, 0x0a, 0x1a, 0x4f, 0x42, 0x53, 0x45,
-	0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x45,
-	0x58, 0x41, 0x4d, 0x49, 0x4e, 0x45, 0x10, 0x01, 0x12, 0x20, 0x0a, 0x1c, 0x4f, 0x42, 0x53, 0x45,
-	0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x49,
-	0x4e, 0x54, 0x45, 0x52, 0x56, 0x49, 0x45, 0x57, 0x10, 0x02, 0x12, 0x1b, 0x0a, 0x17, 0x4f, 0x42,
-	0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44,
-	0x5f, 0x54, 0x45, 0x53, 0x54, 0x10, 0x03, 0x2a, 0xdf, 0x01, 0x0a, 0x0f, 0x4f, 0x62, 0x73, 0x65,
-	0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1c, 0x0a, 0x18, 0x4f,
-	0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f,
-	0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x28, 0x0a, 0x24, 0x4f, 0x42, 0x53,
-	0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x53, 0x53,
-	0x50, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x4d, 0x45, 0x4e, 0x54, 0x5f, 0x49, 0x53, 0x53, 0x55,
-	0x45, 0x10, 0x01, 0x12, 0x26, 0x0a, 0x22, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49,
-	0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x43, 0x4f, 0x4e, 0x54, 0x52, 0x4f, 0x4c, 0x5f,
-	0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x49, 0x56, 0x45, 0x10, 0x02, 0x12, 0x1f, 0x0a, 0x1b, 0x4f,
-	0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f,
-	0x4d, 0x49, 0x54, 0x49, 0x47, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x03, 0x12, 0x1c, 0x0a, 0x18,
-	0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45,
-	0x5f, 0x46, 0x49, 0x4e, 0x44, 0x49, 0x4e, 0x47, 0x10, 0x04, 0x12, 0x1d, 0x0a, 0x19, 0x4f, 0x42,
-	0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x48,
-	0x49, 0x53, 0x54, 0x4f, 0x52, 0x49, 0x43, 0x10, 0x05, 0x2a, 0xd8, 0x01, 0x0a, 0x0a, 0x52, 0x69,
-	0x73, 0x6b, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x17, 0x0a, 0x13, 0x52, 0x49, 0x53, 0x4b,
-	0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10,
-	0x00, 0x12, 0x14, 0x0a, 0x10, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53,
-	0x5f, 0x4f, 0x50, 0x45, 0x4e, 0x10, 0x01, 0x12, 0x1d, 0x0a, 0x19, 0x52, 0x49, 0x53, 0x4b, 0x5f,
-	0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x49, 0x4e, 0x56, 0x45, 0x53, 0x54, 0x49, 0x47, 0x41,
-	0x54, 0x49, 0x4e, 0x47, 0x10, 0x02, 0x12, 0x1b, 0x0a, 0x17, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53,
-	0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x52, 0x45, 0x4d, 0x45, 0x44, 0x49, 0x41, 0x54, 0x49, 0x4e,
-	0x47, 0x10, 0x03, 0x12, 0x23, 0x0a, 0x1f, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54,
-	0x55, 0x53, 0x5f, 0x44, 0x45, 0x56, 0x49, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x52, 0x45, 0x51,
-	0x55, 0x45, 0x53, 0x54, 0x45, 0x44, 0x10, 0x04, 0x12, 0x22, 0x0a, 0x1e, 0x52, 0x49, 0x53, 0x4b,
-	0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x44, 0x45, 0x56, 0x49, 0x41, 0x54, 0x49, 0x4f,
-	0x4e, 0x5f, 0x41, 0x50, 0x50, 0x52, 0x4f, 0x56, 0x45, 0x44, 0x10, 0x05, 0x12, 0x16, 0x0a, 0x12,
-	0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x43, 0x4c, 0x4f, 0x53,
-	0x45, 0x44, 0x10, 0x06, 0x2a, 0x50, 0x0a, 0x08, 0x54, 0x61, 0x73, 0x6b, 0x54, 0x79, 0x70, 0x65,
-	0x12, 0x15, 0x0a, 0x11, 0x54, 0x41, 0x53, 0x4b, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x55, 0x4e,
-	0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x17, 0x0a, 0x13, 0x54, 0x41, 0x53, 0x4b, 0x5f,
-	0x54, 0x59, 0x50, 0x45, 0x5f, 0x4d, 0x49, 0x4c, 0x45, 0x53, 0x54, 0x4f, 0x4e, 0x45, 0x10, 0x01,
-	0x12, 0x14, 0x0a, 0x10, 0x54, 0x41, 0x53, 0x4b, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x41, 0x43,
-	0x54, 0x49, 0x4f, 0x4e, 0x10, 0x02, 0x2a, 0x70, 0x0a, 0x09, 0x4c, 0x69, 0x66, 0x65, 0x63, 0x79,
-	0x63, 0x6c, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x4c, 0x49, 0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45,
-	0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x1c, 0x0a, 0x18, 0x4c, 0x49,
-	0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45, 0x5f, 0x52, 0x45, 0x43, 0x4f, 0x4d, 0x4d, 0x45, 0x4e,
-	0x44, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x01, 0x12, 0x15, 0x0a, 0x11, 0x4c, 0x49, 0x46, 0x45,
-	0x43, 0x59, 0x43, 0x4c, 0x45, 0x5f, 0x50, 0x4c, 0x41, 0x4e, 0x4e, 0x45, 0x44, 0x10, 0x02, 0x12,
-	0x17, 0x0a, 0x13, 0x4c, 0x49, 0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45, 0x5f, 0x43, 0x4f, 0x4d,
-	0x50, 0x4c, 0x45, 0x54, 0x45, 0x44, 0x10, 0x03, 0x2a, 0x76, 0x0a, 0x05, 0x53, 0x74, 0x61, 0x74,
-	0x65, 0x12, 0x11, 0x0a, 0x0d, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f,
-	0x57, 0x4e, 0x10, 0x00, 0x12, 0x1b, 0x0a, 0x17, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x55, 0x4e,
-	0x44, 0x45, 0x52, 0x5f, 0x44, 0x45, 0x56, 0x45, 0x4c, 0x4f, 0x50, 0x4d, 0x45, 0x4e, 0x54, 0x10,
-	0x01, 0x12, 0x15, 0x0a, 0x11, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41,
-	0x54, 0x49, 0x4f, 0x4e, 0x41, 0x4c, 0x10, 0x02, 0x12, 0x15, 0x0a, 0x11, 0x53, 0x54, 0x41, 0x54,
-	0x45, 0x5f, 0x44, 0x49, 0x53, 0x50, 0x4f, 0x53, 0x49, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x03, 0x12,
-	0x0f, 0x0a, 0x0b, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x4f, 0x54, 0x48, 0x45, 0x52, 0x10, 0x04,
-	0x2a, 0x48, 0x0a, 0x09, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x70, 0x6f, 0x72, 0x74, 0x12, 0x15, 0x0a,
-	0x11, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x50, 0x4f, 0x52, 0x54, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f,
-	0x57, 0x4e, 0x10, 0x00, 0x12, 0x11, 0x0a, 0x0d, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x50, 0x4f, 0x52,
-	0x54, 0x5f, 0x54, 0x43, 0x50, 0x10, 0x01, 0x12, 0x11, 0x0a, 0x0d, 0x54, 0x52, 0x41, 0x4e, 0x53,
-	0x50, 0x4f, 0x52, 0x54, 0x5f, 0x55, 0x44, 0x50, 0x10, 0x02, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x2f,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x5f, 0x41, 0x50, 0x50, 0x4c, 0x49, 0x43, 0x41, 0x42, 0x4c, 0x45, 0x10, 0x05, 0x2a, 0x92, 0x01,
+	0x0a, 0x11, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x4d, 0x65, 0x74,
+	0x68, 0x6f, 0x64, 0x12, 0x1e, 0x0a, 0x1a, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49,
+	0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57,
+	0x4e, 0x10, 0x00, 0x12, 0x1e, 0x0a, 0x1a, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49,
+	0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x45, 0x58, 0x41, 0x4d, 0x49, 0x4e,
+	0x45, 0x10, 0x01, 0x12, 0x20, 0x0a, 0x1c, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49,
+	0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x49, 0x4e, 0x54, 0x45, 0x52, 0x56,
+	0x49, 0x45, 0x57, 0x10, 0x02, 0x12, 0x1b, 0x0a, 0x17, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41,
+	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4d, 0x45, 0x54, 0x48, 0x4f, 0x44, 0x5f, 0x54, 0x45, 0x53, 0x54,
+	0x10, 0x03, 0x2a, 0xdf, 0x01, 0x0a, 0x0f, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x61, 0x74, 0x69,
+	0x6f, 0x6e, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1c, 0x0a, 0x18, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56,
+	0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f,
+	0x57, 0x4e, 0x10, 0x00, 0x12, 0x28, 0x0a, 0x24, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54,
+	0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x53, 0x53, 0x50, 0x5f, 0x53, 0x54, 0x41,
+	0x54, 0x45, 0x4d, 0x45, 0x4e, 0x54, 0x5f, 0x49, 0x53, 0x53, 0x55, 0x45, 0x10, 0x01, 0x12, 0x26,
+	0x0a, 0x22, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59,
+	0x50, 0x45, 0x5f, 0x43, 0x4f, 0x4e, 0x54, 0x52, 0x4f, 0x4c, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43,
+	0x54, 0x49, 0x56, 0x45, 0x10, 0x02, 0x12, 0x1f, 0x0a, 0x1b, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56,
+	0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x4d, 0x49, 0x54, 0x49, 0x47,
+	0x41, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x03, 0x12, 0x1c, 0x0a, 0x18, 0x4f, 0x42, 0x53, 0x45, 0x52,
+	0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x46, 0x49, 0x4e, 0x44,
+	0x49, 0x4e, 0x47, 0x10, 0x04, 0x12, 0x1d, 0x0a, 0x19, 0x4f, 0x42, 0x53, 0x45, 0x52, 0x56, 0x41,
+	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x48, 0x49, 0x53, 0x54, 0x4f, 0x52,
+	0x49, 0x43, 0x10, 0x05, 0x2a, 0xd8, 0x01, 0x0a, 0x0a, 0x52, 0x69, 0x73, 0x6b, 0x53, 0x74, 0x61,
+	0x74, 0x75, 0x73, 0x12, 0x17, 0x0a, 0x13, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54,
+	0x55, 0x53, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x14, 0x0a, 0x10,
+	0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x4f, 0x50, 0x45, 0x4e,
+	0x10, 0x01, 0x12, 0x1d, 0x0a, 0x19, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55,
+	0x53, 0x5f, 0x49, 0x4e, 0x56, 0x45, 0x53, 0x54, 0x49, 0x47, 0x41, 0x54, 0x49, 0x4e, 0x47, 0x10,
+	0x02, 0x12, 0x1b, 0x0a, 0x17, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53,
+	0x5f, 0x52, 0x45, 0x4d, 0x45, 0x44, 0x49, 0x41, 0x54, 0x49, 0x4e, 0x47, 0x10, 0x03, 0x12, 0x23,
+	0x0a, 0x1f, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x44, 0x45,
+	0x56, 0x49, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x52, 0x45, 0x51, 0x55, 0x45, 0x53, 0x54, 0x45,
+	0x44, 0x10, 0x04, 0x12, 0x22, 0x0a, 0x1e, 0x52, 0x49, 0x53, 0x4b, 0x5f, 0x53, 0x54, 0x41, 0x54,
+	0x55, 0x53, 0x5f, 0x44, 0x45, 0x56, 0x49, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x41, 0x50, 0x50,
+	0x52, 0x4f, 0x56, 0x45, 0x44, 0x10, 0x05, 0x12, 0x16, 0x0a, 0x12, 0x52, 0x49, 0x53, 0x4b, 0x5f,
+	0x53, 0x54, 0x41, 0x54, 0x55, 0x53, 0x5f, 0x43, 0x4c, 0x4f, 0x53, 0x45, 0x44, 0x10, 0x06, 0x2a,
+	0x50, 0x0a, 0x08, 0x54, 0x61, 0x73, 0x6b, 0x54, 0x79, 0x70, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x54,
+	0x41, 0x53, 0x4b, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e,
+	0x10, 0x00, 0x12, 0x17, 0x0a, 0x13, 0x54, 0x41, 0x53, 0x4b, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f,
+	0x4d, 0x49, 0x4c, 0x45, 0x53, 0x54, 0x4f, 0x4e, 0x45, 0x10, 0x01, 0x12, 0x14, 0x0a, 0x10, 0x54,
+	0x41, 0x53, 0x4b, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e, 0x10,
+	0x02, 0x2a, 0x70, 0x0a, 0x09, 0x4c, 0x69, 0x66, 0x65, 0x63, 0x79, 0x63, 0x6c, 0x65, 0x12, 0x15,
+	0x0a, 0x11, 0x4c, 0x49, 0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e,
+	0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12, 0x1c, 0x0a, 0x18, 0x4c, 0x49, 0x46, 0x45, 0x43, 0x59, 0x43,
+	0x4c, 0x45, 0x5f, 0x52, 0x45, 0x43, 0x4f, 0x4d, 0x4d, 0x45, 0x4e, 0x44, 0x41, 0x54, 0x49, 0x4f,
+	0x4e, 0x10, 0x01, 0x12, 0x15, 0x0a, 0x11, 0x4c, 0x49, 0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45,
+	0x5f, 0x50, 0x4c, 0x41, 0x4e, 0x4e, 0x45, 0x44, 0x10, 0x02, 0x12, 0x17, 0x0a, 0x13, 0x4c, 0x49,
+	0x46, 0x45, 0x43, 0x59, 0x43, 0x4c, 0x45, 0x5f, 0x43, 0x4f, 0x4d, 0x50, 0x4c, 0x45, 0x54, 0x45,
+	0x44, 0x10, 0x03, 0x2a, 0x76, 0x0a, 0x05, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x11, 0x0a, 0x0d,
+	0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12,
+	0x1b, 0x0a, 0x17, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x55, 0x4e, 0x44, 0x45, 0x52, 0x5f, 0x44,
+	0x45, 0x56, 0x45, 0x4c, 0x4f, 0x50, 0x4d, 0x45, 0x4e, 0x54, 0x10, 0x01, 0x12, 0x15, 0x0a, 0x11,
+	0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x41,
+	0x4c, 0x10, 0x02, 0x12, 0x15, 0x0a, 0x11, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x44, 0x49, 0x53,
+	0x50, 0x4f, 0x53, 0x49, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x03, 0x12, 0x0f, 0x0a, 0x0b, 0x53, 0x54,
+	0x41, 0x54, 0x45, 0x5f, 0x4f, 0x54, 0x48, 0x45, 0x52, 0x10, 0x04, 0x2a, 0x48, 0x0a, 0x09, 0x54,
+	0x72, 0x61, 0x6e, 0x73, 0x70, 0x6f, 0x72, 0x74, 0x12, 0x15, 0x0a, 0x11, 0x54, 0x52, 0x41, 0x4e,
+	0x53, 0x50, 0x4f, 0x52, 0x54, 0x5f, 0x55, 0x4e, 0x4b, 0x4e, 0x4f, 0x57, 0x4e, 0x10, 0x00, 0x12,
+	0x11, 0x0a, 0x0d, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x50, 0x4f, 0x52, 0x54, 0x5f, 0x54, 0x43, 0x50,
+	0x10, 0x01, 0x12, 0x11, 0x0a, 0x0d, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x50, 0x4f, 0x52, 0x54, 0x5f,
+	0x55, 0x44, 0x50, 0x10, 0x02, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 })
 
 var (
@@ -7505,270 +7386,266 @@ func file_runner_proto_oscal_proto_rawDescGZIP() []byte {
 	return file_runner_proto_oscal_proto_rawDescData
 }
 
-var file_runner_proto_oscal_proto_enumTypes = make([]protoimpl.EnumInfo, 17)
+var file_runner_proto_oscal_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
 var file_runner_proto_oscal_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_runner_proto_oscal_proto_goTypes = []any{
 	(LinkRelationship)(0),                              // 0: proto.LinkRelationship
 	(ActorType)(0),                                     // 1: proto.ActorType
 	(SubjectType)(0),                                   // 2: proto.SubjectType
 	(ImplementationStatusState)(0),                     // 3: proto.ImplementationStatusState
-	(ObjectiveState)(0),                                // 4: proto.ObjectiveState
-	(ObjectiveReason)(0),                               // 5: proto.ObjectiveReason
-	(ObservationMethod)(0),                             // 6: proto.ObservationMethod
-	(ObservationType)(0),                               // 7: proto.ObservationType
-	(RiskStatus)(0),                                    // 8: proto.RiskStatus
-	(TaskType)(0),                                      // 9: proto.TaskType
-	(Lifecycle)(0),                                     // 10: proto.Lifecycle
-	(State)(0),                                         // 11: proto.State
-	(Transport)(0),                                     // 12: proto.Transport
-	(FindingTarget_TargetType)(0),                      // 13: proto.FindingTarget.TargetType
-	(EventTiming_Frequency_TimeUnit)(0),                // 14: proto.EventTiming.Frequency.TimeUnit
-	(AssessmentPart_PartName)(0),                       // 15: proto.AssessmentPart.PartName
-	(SystemComponent_ComponentType)(0),                 // 16: proto.SystemComponent.ComponentType
-	(*Property)(nil),                                   // 17: proto.Property
-	(*Link)(nil),                                       // 18: proto.Link
-	(*OriginActor)(nil),                                // 19: proto.OriginActor
-	(*SelectSubjectById)(nil),                          // 20: proto.SelectSubjectById
-	(*IncludeAll)(nil),                                 // 21: proto.IncludeAll
-	(*AssessmentSubject)(nil),                          // 22: proto.AssessmentSubject
-	(*IdentifiedSubject)(nil),                          // 23: proto.IdentifiedSubject
-	(*ResponsibleParty)(nil),                           // 24: proto.ResponsibleParty
-	(*RelatedTask)(nil),                                // 25: proto.RelatedTask
-	(*Origin)(nil),                                     // 26: proto.Origin
-	(*ImplementationStatus)(nil),                       // 27: proto.ImplementationStatus
-	(*ObjectiveStatus)(nil),                            // 28: proto.ObjectiveStatus
-	(*FindingTarget)(nil),                              // 29: proto.FindingTarget
-	(*RelatedObservation)(nil),                         // 30: proto.RelatedObservation
-	(*RelatedRisk)(nil),                                // 31: proto.RelatedRisk
-	(*RelevantEvidence)(nil),                           // 32: proto.RelevantEvidence
-	(*SubjectReference)(nil),                           // 33: proto.SubjectReference
-	(*Finding)(nil),                                    // 34: proto.Finding
-	(*Observation)(nil),                                // 35: proto.Observation
-	(*ThreatId)(nil),                                   // 36: proto.ThreatId
-	(*Facet)(nil),                                      // 37: proto.Facet
-	(*Characterization)(nil),                           // 38: proto.Characterization
-	(*MitigatingFactor)(nil),                           // 39: proto.MitigatingFactor
-	(*RequiredAsset)(nil),                              // 40: proto.RequiredAsset
-	(*EventTiming)(nil),                                // 41: proto.EventTiming
-	(*ResponsibleRole)(nil),                            // 42: proto.ResponsibleRole
-	(*Task)(nil),                                       // 43: proto.Task
-	(*Response)(nil),                                   // 44: proto.Response
-	(*RiskLog)(nil),                                    // 45: proto.RiskLog
-	(*LoggedBy)(nil),                                   // 46: proto.LoggedBy
-	(*Risk)(nil),                                       // 47: proto.Risk
-	(*AssessmentLog)(nil),                              // 48: proto.AssessmentLog
-	(*AssessmentPart)(nil),                             // 49: proto.AssessmentPart
-	(*Attestation)(nil),                                // 50: proto.Attestation
-	(*SelectControlById)(nil),                          // 51: proto.SelectControlById
-	(*SelectObjectiveById)(nil),                        // 52: proto.SelectObjectiveById
-	(*ReviewedControls)(nil),                           // 53: proto.ReviewedControls
-	(*Status)(nil),                                     // 54: proto.Status
-	(*PortRange)(nil),                                  // 55: proto.PortRange
-	(*Protocol)(nil),                                   // 56: proto.Protocol
-	(*SystemComponent)(nil),                            // 57: proto.SystemComponent
-	(*InventoryItem)(nil),                              // 58: proto.InventoryItem
-	(*FunctionPerformed)(nil),                          // 59: proto.FunctionPerformed
-	(*AuthorizedPrivilege)(nil),                        // 60: proto.AuthorizedPrivilege
-	(*SystemUser)(nil),                                 // 61: proto.SystemUser
-	(*AssessmentAssets)(nil),                           // 62: proto.AssessmentAssets
-	(*LocalDefinitions)(nil),                           // 63: proto.LocalDefinitions
-	(*AssessmentResult)(nil),                           // 64: proto.AssessmentResult
-	(*EventTiming_DateRange)(nil),                      // 65: proto.EventTiming.DateRange
-	(*EventTiming_Frequency)(nil),                      // 66: proto.EventTiming.Frequency
-	(*Task_TaskDependency)(nil),                        // 67: proto.Task.TaskDependency
-	(*Task_AssociatedActivity)(nil),                    // 68: proto.Task.AssociatedActivity
-	(*RiskLog_Entry)(nil),                              // 69: proto.RiskLog.Entry
-	(*RiskLog_Entry_RelatedResponse)(nil),              // 70: proto.RiskLog.Entry.RelatedResponse
-	(*AssessmentLog_Entry)(nil),                        // 71: proto.AssessmentLog.Entry
-	(*ReviewedControls_ControlSelection)(nil),          // 72: proto.ReviewedControls.ControlSelection
-	(*ReviewedControls_ControlObjectiveSelection)(nil), // 73: proto.ReviewedControls.ControlObjectiveSelection
-	(*InventoryItem_ImplementedComponent)(nil),         // 74: proto.InventoryItem.ImplementedComponent
-	(*AssessmentAssets_AssessmentPlatform)(nil),        // 75: proto.AssessmentAssets.AssessmentPlatform
-	(*AssessmentAssets_AssessmentPlatform_UsesComponent)(nil), // 76: proto.AssessmentAssets.AssessmentPlatform.UsesComponent
-	(*timestamppb.Timestamp)(nil),                             // 77: google.protobuf.Timestamp
+	(ObservationMethod)(0),                             // 4: proto.ObservationMethod
+	(ObservationType)(0),                               // 5: proto.ObservationType
+	(RiskStatus)(0),                                    // 6: proto.RiskStatus
+	(TaskType)(0),                                      // 7: proto.TaskType
+	(Lifecycle)(0),                                     // 8: proto.Lifecycle
+	(State)(0),                                         // 9: proto.State
+	(Transport)(0),                                     // 10: proto.Transport
+	(FindingTarget_TargetType)(0),                      // 11: proto.FindingTarget.TargetType
+	(EventTiming_Frequency_TimeUnit)(0),                // 12: proto.EventTiming.Frequency.TimeUnit
+	(AssessmentPart_PartName)(0),                       // 13: proto.AssessmentPart.PartName
+	(SystemComponent_ComponentType)(0),                 // 14: proto.SystemComponent.ComponentType
+	(*Property)(nil),                                   // 15: proto.Property
+	(*Link)(nil),                                       // 16: proto.Link
+	(*OriginActor)(nil),                                // 17: proto.OriginActor
+	(*SelectSubjectById)(nil),                          // 18: proto.SelectSubjectById
+	(*IncludeAll)(nil),                                 // 19: proto.IncludeAll
+	(*AssessmentSubject)(nil),                          // 20: proto.AssessmentSubject
+	(*IdentifiedSubject)(nil),                          // 21: proto.IdentifiedSubject
+	(*ResponsibleParty)(nil),                           // 22: proto.ResponsibleParty
+	(*RelatedTask)(nil),                                // 23: proto.RelatedTask
+	(*Origin)(nil),                                     // 24: proto.Origin
+	(*ImplementationStatus)(nil),                       // 25: proto.ImplementationStatus
+	(*ObjectiveStatus)(nil),                            // 26: proto.ObjectiveStatus
+	(*FindingTarget)(nil),                              // 27: proto.FindingTarget
+	(*RelatedObservation)(nil),                         // 28: proto.RelatedObservation
+	(*RelatedRisk)(nil),                                // 29: proto.RelatedRisk
+	(*RelevantEvidence)(nil),                           // 30: proto.RelevantEvidence
+	(*SubjectReference)(nil),                           // 31: proto.SubjectReference
+	(*Finding)(nil),                                    // 32: proto.Finding
+	(*Observation)(nil),                                // 33: proto.Observation
+	(*ThreatId)(nil),                                   // 34: proto.ThreatId
+	(*Facet)(nil),                                      // 35: proto.Facet
+	(*Characterization)(nil),                           // 36: proto.Characterization
+	(*MitigatingFactor)(nil),                           // 37: proto.MitigatingFactor
+	(*RequiredAsset)(nil),                              // 38: proto.RequiredAsset
+	(*EventTiming)(nil),                                // 39: proto.EventTiming
+	(*ResponsibleRole)(nil),                            // 40: proto.ResponsibleRole
+	(*Task)(nil),                                       // 41: proto.Task
+	(*Response)(nil),                                   // 42: proto.Response
+	(*RiskLog)(nil),                                    // 43: proto.RiskLog
+	(*LoggedBy)(nil),                                   // 44: proto.LoggedBy
+	(*Risk)(nil),                                       // 45: proto.Risk
+	(*AssessmentLog)(nil),                              // 46: proto.AssessmentLog
+	(*AssessmentPart)(nil),                             // 47: proto.AssessmentPart
+	(*Attestation)(nil),                                // 48: proto.Attestation
+	(*SelectControlById)(nil),                          // 49: proto.SelectControlById
+	(*SelectObjectiveById)(nil),                        // 50: proto.SelectObjectiveById
+	(*ReviewedControls)(nil),                           // 51: proto.ReviewedControls
+	(*Status)(nil),                                     // 52: proto.Status
+	(*PortRange)(nil),                                  // 53: proto.PortRange
+	(*Protocol)(nil),                                   // 54: proto.Protocol
+	(*SystemComponent)(nil),                            // 55: proto.SystemComponent
+	(*InventoryItem)(nil),                              // 56: proto.InventoryItem
+	(*FunctionPerformed)(nil),                          // 57: proto.FunctionPerformed
+	(*AuthorizedPrivilege)(nil),                        // 58: proto.AuthorizedPrivilege
+	(*SystemUser)(nil),                                 // 59: proto.SystemUser
+	(*AssessmentAssets)(nil),                           // 60: proto.AssessmentAssets
+	(*LocalDefinitions)(nil),                           // 61: proto.LocalDefinitions
+	(*AssessmentResult)(nil),                           // 62: proto.AssessmentResult
+	(*EventTiming_DateRange)(nil),                      // 63: proto.EventTiming.DateRange
+	(*EventTiming_Frequency)(nil),                      // 64: proto.EventTiming.Frequency
+	(*Task_TaskDependency)(nil),                        // 65: proto.Task.TaskDependency
+	(*Task_AssociatedActivity)(nil),                    // 66: proto.Task.AssociatedActivity
+	(*RiskLog_Entry)(nil),                              // 67: proto.RiskLog.Entry
+	(*RiskLog_Entry_RelatedResponse)(nil),              // 68: proto.RiskLog.Entry.RelatedResponse
+	(*AssessmentLog_Entry)(nil),                        // 69: proto.AssessmentLog.Entry
+	(*ReviewedControls_ControlSelection)(nil),          // 70: proto.ReviewedControls.ControlSelection
+	(*ReviewedControls_ControlObjectiveSelection)(nil), // 71: proto.ReviewedControls.ControlObjectiveSelection
+	(*InventoryItem_ImplementedComponent)(nil),         // 72: proto.InventoryItem.ImplementedComponent
+	(*AssessmentAssets_AssessmentPlatform)(nil),        // 73: proto.AssessmentAssets.AssessmentPlatform
+	(*AssessmentAssets_AssessmentPlatform_UsesComponent)(nil), // 74: proto.AssessmentAssets.AssessmentPlatform.UsesComponent
+	(*timestamppb.Timestamp)(nil),                             // 75: google.protobuf.Timestamp
 }
 var file_runner_proto_oscal_proto_depIdxs = []int32{
 	0,   // 0: proto.Link.Rel:type_name -> proto.LinkRelationship
 	1,   // 1: proto.OriginActor.Type:type_name -> proto.ActorType
-	17,  // 2: proto.OriginActor.Props:type_name -> proto.Property
-	18,  // 3: proto.OriginActor.Links:type_name -> proto.Link
+	15,  // 2: proto.OriginActor.Props:type_name -> proto.Property
+	16,  // 3: proto.OriginActor.Links:type_name -> proto.Link
 	2,   // 4: proto.SelectSubjectById.Type:type_name -> proto.SubjectType
-	17,  // 5: proto.SelectSubjectById.Props:type_name -> proto.Property
-	18,  // 6: proto.SelectSubjectById.Links:type_name -> proto.Link
+	15,  // 5: proto.SelectSubjectById.Props:type_name -> proto.Property
+	16,  // 6: proto.SelectSubjectById.Links:type_name -> proto.Link
 	2,   // 7: proto.AssessmentSubject.Type:type_name -> proto.SubjectType
-	17,  // 8: proto.AssessmentSubject.Props:type_name -> proto.Property
-	18,  // 9: proto.AssessmentSubject.Links:type_name -> proto.Link
-	21,  // 10: proto.AssessmentSubject.IncludeAll:type_name -> proto.IncludeAll
-	20,  // 11: proto.AssessmentSubject.IncludeSubjects:type_name -> proto.SelectSubjectById
-	20,  // 12: proto.AssessmentSubject.ExcludeSubjects:type_name -> proto.SelectSubjectById
-	22,  // 13: proto.IdentifiedSubject.Subjects:type_name -> proto.AssessmentSubject
-	17,  // 14: proto.ResponsibleParty.Props:type_name -> proto.Property
-	18,  // 15: proto.ResponsibleParty.Links:type_name -> proto.Link
-	17,  // 16: proto.RelatedTask.Props:type_name -> proto.Property
-	18,  // 17: proto.RelatedTask.Links:type_name -> proto.Link
-	24,  // 18: proto.RelatedTask.ResponsibleParties:type_name -> proto.ResponsibleParty
-	22,  // 19: proto.RelatedTask.Subjects:type_name -> proto.AssessmentSubject
-	23,  // 20: proto.RelatedTask.IdentifiedSubject:type_name -> proto.IdentifiedSubject
-	19,  // 21: proto.Origin.Actors:type_name -> proto.OriginActor
-	25,  // 22: proto.Origin.RelatedTasks:type_name -> proto.RelatedTask
+	15,  // 8: proto.AssessmentSubject.Props:type_name -> proto.Property
+	16,  // 9: proto.AssessmentSubject.Links:type_name -> proto.Link
+	19,  // 10: proto.AssessmentSubject.IncludeAll:type_name -> proto.IncludeAll
+	18,  // 11: proto.AssessmentSubject.IncludeSubjects:type_name -> proto.SelectSubjectById
+	18,  // 12: proto.AssessmentSubject.ExcludeSubjects:type_name -> proto.SelectSubjectById
+	20,  // 13: proto.IdentifiedSubject.Subjects:type_name -> proto.AssessmentSubject
+	15,  // 14: proto.ResponsibleParty.Props:type_name -> proto.Property
+	16,  // 15: proto.ResponsibleParty.Links:type_name -> proto.Link
+	15,  // 16: proto.RelatedTask.Props:type_name -> proto.Property
+	16,  // 17: proto.RelatedTask.Links:type_name -> proto.Link
+	22,  // 18: proto.RelatedTask.ResponsibleParties:type_name -> proto.ResponsibleParty
+	20,  // 19: proto.RelatedTask.Subjects:type_name -> proto.AssessmentSubject
+	21,  // 20: proto.RelatedTask.IdentifiedSubject:type_name -> proto.IdentifiedSubject
+	17,  // 21: proto.Origin.Actors:type_name -> proto.OriginActor
+	23,  // 22: proto.Origin.RelatedTasks:type_name -> proto.RelatedTask
 	3,   // 23: proto.ImplementationStatus.State:type_name -> proto.ImplementationStatusState
-	4,   // 24: proto.ObjectiveStatus.State:type_name -> proto.ObjectiveState
-	5,   // 25: proto.ObjectiveStatus.Reason:type_name -> proto.ObjectiveReason
-	13,  // 26: proto.FindingTarget.Type:type_name -> proto.FindingTarget.TargetType
-	17,  // 27: proto.FindingTarget.Props:type_name -> proto.Property
-	18,  // 28: proto.FindingTarget.Links:type_name -> proto.Link
-	28,  // 29: proto.FindingTarget.Status:type_name -> proto.ObjectiveStatus
-	27,  // 30: proto.FindingTarget.ImplementationStatus:type_name -> proto.ImplementationStatus
-	17,  // 31: proto.RelevantEvidence.Props:type_name -> proto.Property
-	18,  // 32: proto.RelevantEvidence.Links:type_name -> proto.Link
-	2,   // 33: proto.SubjectReference.Type:type_name -> proto.SubjectType
-	17,  // 34: proto.SubjectReference.Props:type_name -> proto.Property
-	18,  // 35: proto.SubjectReference.Links:type_name -> proto.Link
-	17,  // 36: proto.Finding.Props:type_name -> proto.Property
-	18,  // 37: proto.Finding.Links:type_name -> proto.Link
-	26,  // 38: proto.Finding.Origins:type_name -> proto.Origin
-	29,  // 39: proto.Finding.Target:type_name -> proto.FindingTarget
-	30,  // 40: proto.Finding.RelatedObservations:type_name -> proto.RelatedObservation
-	31,  // 41: proto.Finding.RelatedRisks:type_name -> proto.RelatedRisk
-	17,  // 42: proto.Observation.Props:type_name -> proto.Property
-	18,  // 43: proto.Observation.Links:type_name -> proto.Link
-	6,   // 44: proto.Observation.Methods:type_name -> proto.ObservationMethod
-	7,   // 45: proto.Observation.Types:type_name -> proto.ObservationType
-	26,  // 46: proto.Observation.Origins:type_name -> proto.Origin
-	33,  // 47: proto.Observation.Subjects:type_name -> proto.SubjectReference
-	32,  // 48: proto.Observation.RelevantEvidence:type_name -> proto.RelevantEvidence
-	77,  // 49: proto.Observation.Collected:type_name -> google.protobuf.Timestamp
-	77,  // 50: proto.Observation.Expires:type_name -> google.protobuf.Timestamp
-	17,  // 51: proto.Facet.Props:type_name -> proto.Property
-	18,  // 52: proto.Facet.Links:type_name -> proto.Link
-	17,  // 53: proto.Characterization.Props:type_name -> proto.Property
-	18,  // 54: proto.Characterization.Links:type_name -> proto.Link
-	26,  // 55: proto.Characterization.Origin:type_name -> proto.Origin
-	37,  // 56: proto.Characterization.Facets:type_name -> proto.Facet
-	17,  // 57: proto.MitigatingFactor.Props:type_name -> proto.Property
-	18,  // 58: proto.MitigatingFactor.Links:type_name -> proto.Link
-	33,  // 59: proto.MitigatingFactor.Subjects:type_name -> proto.SubjectReference
-	33,  // 60: proto.RequiredAsset.Subjects:type_name -> proto.SubjectReference
-	17,  // 61: proto.RequiredAsset.Props:type_name -> proto.Property
-	18,  // 62: proto.RequiredAsset.Links:type_name -> proto.Link
-	65,  // 63: proto.EventTiming.WithinDateRange:type_name -> proto.EventTiming.DateRange
-	66,  // 64: proto.EventTiming.AtFrequency:type_name -> proto.EventTiming.Frequency
-	17,  // 65: proto.ResponsibleRole.Props:type_name -> proto.Property
-	18,  // 66: proto.ResponsibleRole.Links:type_name -> proto.Link
-	9,   // 67: proto.Task.Type:type_name -> proto.TaskType
-	17,  // 68: proto.Task.Props:type_name -> proto.Property
-	18,  // 69: proto.Task.Links:type_name -> proto.Link
-	41,  // 70: proto.Task.Timing:type_name -> proto.EventTiming
-	67,  // 71: proto.Task.Dependencies:type_name -> proto.Task.TaskDependency
-	43,  // 72: proto.Task.Tasks:type_name -> proto.Task
-	68,  // 73: proto.Task.AssociatedActivities:type_name -> proto.Task.AssociatedActivity
-	22,  // 74: proto.Task.Subjects:type_name -> proto.AssessmentSubject
-	42,  // 75: proto.Task.ResponsibleRoles:type_name -> proto.ResponsibleRole
-	10,  // 76: proto.Response.Lifecycle:type_name -> proto.Lifecycle
-	17,  // 77: proto.Response.Props:type_name -> proto.Property
-	18,  // 78: proto.Response.Links:type_name -> proto.Link
-	26,  // 79: proto.Response.Origins:type_name -> proto.Origin
-	40,  // 80: proto.Response.RequiredAssets:type_name -> proto.RequiredAsset
-	43,  // 81: proto.Response.Tasks:type_name -> proto.Task
-	69,  // 82: proto.RiskLog.Entries:type_name -> proto.RiskLog.Entry
-	17,  // 83: proto.Risk.Props:type_name -> proto.Property
-	18,  // 84: proto.Risk.Links:type_name -> proto.Link
-	8,   // 85: proto.Risk.Status:type_name -> proto.RiskStatus
-	26,  // 86: proto.Risk.Origins:type_name -> proto.Origin
-	36,  // 87: proto.Risk.ThreatIds:type_name -> proto.ThreatId
-	38,  // 88: proto.Risk.Characterizations:type_name -> proto.Characterization
-	39,  // 89: proto.Risk.MitigatingFactors:type_name -> proto.MitigatingFactor
-	77,  // 90: proto.Risk.Deadline:type_name -> google.protobuf.Timestamp
-	44,  // 91: proto.Risk.Remediations:type_name -> proto.Response
-	45,  // 92: proto.Risk.RiskLog:type_name -> proto.RiskLog
-	30,  // 93: proto.Risk.RelatedObservations:type_name -> proto.RelatedObservation
-	71,  // 94: proto.AssessmentLog.Entries:type_name -> proto.AssessmentLog.Entry
-	15,  // 95: proto.AssessmentPart.Name:type_name -> proto.AssessmentPart.PartName
-	17,  // 96: proto.AssessmentPart.Props:type_name -> proto.Property
-	49,  // 97: proto.AssessmentPart.Parts:type_name -> proto.AssessmentPart
-	18,  // 98: proto.AssessmentPart.Links:type_name -> proto.Link
-	24,  // 99: proto.Attestation.ResponsibleParties:type_name -> proto.ResponsibleParty
-	49,  // 100: proto.Attestation.Parts:type_name -> proto.AssessmentPart
-	17,  // 101: proto.ReviewedControls.Props:type_name -> proto.Property
-	18,  // 102: proto.ReviewedControls.Links:type_name -> proto.Link
-	72,  // 103: proto.ReviewedControls.ControlSelections:type_name -> proto.ReviewedControls.ControlSelection
-	73,  // 104: proto.ReviewedControls.ControlObjectiveSelections:type_name -> proto.ReviewedControls.ControlObjectiveSelection
-	11,  // 105: proto.Status.State:type_name -> proto.State
-	12,  // 106: proto.PortRange.Transport:type_name -> proto.Transport
-	55,  // 107: proto.Protocol.PortRanges:type_name -> proto.PortRange
-	16,  // 108: proto.SystemComponent.Type:type_name -> proto.SystemComponent.ComponentType
-	17,  // 109: proto.SystemComponent.Props:type_name -> proto.Property
-	18,  // 110: proto.SystemComponent.Links:type_name -> proto.Link
-	54,  // 111: proto.SystemComponent.Status:type_name -> proto.Status
-	42,  // 112: proto.SystemComponent.ResponsibleRoles:type_name -> proto.ResponsibleRole
-	56,  // 113: proto.SystemComponent.Protocols:type_name -> proto.Protocol
-	17,  // 114: proto.InventoryItem.Props:type_name -> proto.Property
-	18,  // 115: proto.InventoryItem.Links:type_name -> proto.Link
-	24,  // 116: proto.InventoryItem.ResponsibleParties:type_name -> proto.ResponsibleParty
-	74,  // 117: proto.InventoryItem.ImplementedComponents:type_name -> proto.InventoryItem.ImplementedComponent
-	59,  // 118: proto.AuthorizedPrivilege.FunctionsPerformed:type_name -> proto.FunctionPerformed
-	17,  // 119: proto.SystemUser.Props:type_name -> proto.Property
-	18,  // 120: proto.SystemUser.Links:type_name -> proto.Link
-	60,  // 121: proto.SystemUser.AuthorizedPrivileges:type_name -> proto.AuthorizedPrivilege
-	57,  // 122: proto.AssessmentAssets.Components:type_name -> proto.SystemComponent
-	75,  // 123: proto.AssessmentAssets.AssessmentPlatforms:type_name -> proto.AssessmentAssets.AssessmentPlatform
-	57,  // 124: proto.LocalDefinitions.Components:type_name -> proto.SystemComponent
-	58,  // 125: proto.LocalDefinitions.InventoryItems:type_name -> proto.InventoryItem
-	61,  // 126: proto.LocalDefinitions.Users:type_name -> proto.SystemUser
-	62,  // 127: proto.LocalDefinitions.AssessmentAssets:type_name -> proto.AssessmentAssets
-	43,  // 128: proto.LocalDefinitions.Tasks:type_name -> proto.Task
-	77,  // 129: proto.AssessmentResult.Start:type_name -> google.protobuf.Timestamp
-	77,  // 130: proto.AssessmentResult.End:type_name -> google.protobuf.Timestamp
-	17,  // 131: proto.AssessmentResult.Props:type_name -> proto.Property
-	18,  // 132: proto.AssessmentResult.Links:type_name -> proto.Link
-	63,  // 133: proto.AssessmentResult.LocalDefinitions:type_name -> proto.LocalDefinitions
-	53,  // 134: proto.AssessmentResult.ReviewedControls:type_name -> proto.ReviewedControls
-	50,  // 135: proto.AssessmentResult.Attestations:type_name -> proto.Attestation
-	48,  // 136: proto.AssessmentResult.AssessmentLog:type_name -> proto.AssessmentLog
-	35,  // 137: proto.AssessmentResult.Observations:type_name -> proto.Observation
-	47,  // 138: proto.AssessmentResult.Risks:type_name -> proto.Risk
-	34,  // 139: proto.AssessmentResult.Findings:type_name -> proto.Finding
-	14,  // 140: proto.EventTiming.Frequency.Unit:type_name -> proto.EventTiming.Frequency.TimeUnit
-	17,  // 141: proto.Task.AssociatedActivity.Props:type_name -> proto.Property
-	18,  // 142: proto.Task.AssociatedActivity.Links:type_name -> proto.Link
-	42,  // 143: proto.Task.AssociatedActivity.ResponsibleRoles:type_name -> proto.ResponsibleRole
-	22,  // 144: proto.Task.AssociatedActivity.Subjects:type_name -> proto.AssessmentSubject
-	17,  // 145: proto.RiskLog.Entry.Props:type_name -> proto.Property
-	18,  // 146: proto.RiskLog.Entry.Links:type_name -> proto.Link
-	46,  // 147: proto.RiskLog.Entry.LoggedBy:type_name -> proto.LoggedBy
-	8,   // 148: proto.RiskLog.Entry.StatusChange:type_name -> proto.RiskStatus
-	70,  // 149: proto.RiskLog.Entry.RelatedResponses:type_name -> proto.RiskLog.Entry.RelatedResponse
-	17,  // 150: proto.RiskLog.Entry.RelatedResponse.Props:type_name -> proto.Property
-	18,  // 151: proto.RiskLog.Entry.RelatedResponse.Links:type_name -> proto.Link
-	25,  // 152: proto.RiskLog.Entry.RelatedResponse.RelatedTasks:type_name -> proto.RelatedTask
-	17,  // 153: proto.AssessmentLog.Entry.Props:type_name -> proto.Property
-	18,  // 154: proto.AssessmentLog.Entry.Links:type_name -> proto.Link
-	46,  // 155: proto.AssessmentLog.Entry.LoggedBy:type_name -> proto.LoggedBy
-	25,  // 156: proto.AssessmentLog.Entry.RelatedTasks:type_name -> proto.RelatedTask
-	17,  // 157: proto.ReviewedControls.ControlSelection.Props:type_name -> proto.Property
-	18,  // 158: proto.ReviewedControls.ControlSelection.Links:type_name -> proto.Link
-	21,  // 159: proto.ReviewedControls.ControlSelection.IncludeAll:type_name -> proto.IncludeAll
-	51,  // 160: proto.ReviewedControls.ControlSelection.IncludeControls:type_name -> proto.SelectControlById
-	51,  // 161: proto.ReviewedControls.ControlSelection.ExcludeControls:type_name -> proto.SelectControlById
-	17,  // 162: proto.ReviewedControls.ControlObjectiveSelection.Props:type_name -> proto.Property
-	18,  // 163: proto.ReviewedControls.ControlObjectiveSelection.Links:type_name -> proto.Link
-	21,  // 164: proto.ReviewedControls.ControlObjectiveSelection.IncludeAll:type_name -> proto.IncludeAll
-	52,  // 165: proto.ReviewedControls.ControlObjectiveSelection.IncludeObjectives:type_name -> proto.SelectObjectiveById
-	52,  // 166: proto.ReviewedControls.ControlObjectiveSelection.ExcludeObjectives:type_name -> proto.SelectObjectiveById
-	17,  // 167: proto.InventoryItem.ImplementedComponent.Props:type_name -> proto.Property
-	18,  // 168: proto.InventoryItem.ImplementedComponent.Links:type_name -> proto.Link
-	24,  // 169: proto.InventoryItem.ImplementedComponent.ResponsibleParties:type_name -> proto.ResponsibleParty
-	17,  // 170: proto.AssessmentAssets.AssessmentPlatform.Props:type_name -> proto.Property
-	18,  // 171: proto.AssessmentAssets.AssessmentPlatform.Links:type_name -> proto.Link
-	76,  // 172: proto.AssessmentAssets.AssessmentPlatform.UsesComponents:type_name -> proto.AssessmentAssets.AssessmentPlatform.UsesComponent
-	17,  // 173: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.Props:type_name -> proto.Property
-	18,  // 174: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.Links:type_name -> proto.Link
-	24,  // 175: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.ResponsibleParties:type_name -> proto.ResponsibleParty
-	176, // [176:176] is the sub-list for method output_type
-	176, // [176:176] is the sub-list for method input_type
-	176, // [176:176] is the sub-list for extension type_name
-	176, // [176:176] is the sub-list for extension extendee
-	0,   // [0:176] is the sub-list for field type_name
+	11,  // 24: proto.FindingTarget.Type:type_name -> proto.FindingTarget.TargetType
+	15,  // 25: proto.FindingTarget.Props:type_name -> proto.Property
+	16,  // 26: proto.FindingTarget.Links:type_name -> proto.Link
+	26,  // 27: proto.FindingTarget.Status:type_name -> proto.ObjectiveStatus
+	25,  // 28: proto.FindingTarget.ImplementationStatus:type_name -> proto.ImplementationStatus
+	15,  // 29: proto.RelevantEvidence.Props:type_name -> proto.Property
+	16,  // 30: proto.RelevantEvidence.Links:type_name -> proto.Link
+	2,   // 31: proto.SubjectReference.Type:type_name -> proto.SubjectType
+	15,  // 32: proto.SubjectReference.Props:type_name -> proto.Property
+	16,  // 33: proto.SubjectReference.Links:type_name -> proto.Link
+	15,  // 34: proto.Finding.Props:type_name -> proto.Property
+	16,  // 35: proto.Finding.Links:type_name -> proto.Link
+	24,  // 36: proto.Finding.Origins:type_name -> proto.Origin
+	27,  // 37: proto.Finding.Target:type_name -> proto.FindingTarget
+	28,  // 38: proto.Finding.RelatedObservations:type_name -> proto.RelatedObservation
+	29,  // 39: proto.Finding.RelatedRisks:type_name -> proto.RelatedRisk
+	15,  // 40: proto.Observation.Props:type_name -> proto.Property
+	16,  // 41: proto.Observation.Links:type_name -> proto.Link
+	4,   // 42: proto.Observation.Methods:type_name -> proto.ObservationMethod
+	5,   // 43: proto.Observation.Types:type_name -> proto.ObservationType
+	24,  // 44: proto.Observation.Origins:type_name -> proto.Origin
+	31,  // 45: proto.Observation.Subjects:type_name -> proto.SubjectReference
+	30,  // 46: proto.Observation.RelevantEvidence:type_name -> proto.RelevantEvidence
+	75,  // 47: proto.Observation.Collected:type_name -> google.protobuf.Timestamp
+	75,  // 48: proto.Observation.Expires:type_name -> google.protobuf.Timestamp
+	15,  // 49: proto.Facet.Props:type_name -> proto.Property
+	16,  // 50: proto.Facet.Links:type_name -> proto.Link
+	15,  // 51: proto.Characterization.Props:type_name -> proto.Property
+	16,  // 52: proto.Characterization.Links:type_name -> proto.Link
+	24,  // 53: proto.Characterization.Origin:type_name -> proto.Origin
+	35,  // 54: proto.Characterization.Facets:type_name -> proto.Facet
+	15,  // 55: proto.MitigatingFactor.Props:type_name -> proto.Property
+	16,  // 56: proto.MitigatingFactor.Links:type_name -> proto.Link
+	31,  // 57: proto.MitigatingFactor.Subjects:type_name -> proto.SubjectReference
+	31,  // 58: proto.RequiredAsset.Subjects:type_name -> proto.SubjectReference
+	15,  // 59: proto.RequiredAsset.Props:type_name -> proto.Property
+	16,  // 60: proto.RequiredAsset.Links:type_name -> proto.Link
+	63,  // 61: proto.EventTiming.WithinDateRange:type_name -> proto.EventTiming.DateRange
+	64,  // 62: proto.EventTiming.AtFrequency:type_name -> proto.EventTiming.Frequency
+	15,  // 63: proto.ResponsibleRole.Props:type_name -> proto.Property
+	16,  // 64: proto.ResponsibleRole.Links:type_name -> proto.Link
+	7,   // 65: proto.Task.Type:type_name -> proto.TaskType
+	15,  // 66: proto.Task.Props:type_name -> proto.Property
+	16,  // 67: proto.Task.Links:type_name -> proto.Link
+	39,  // 68: proto.Task.Timing:type_name -> proto.EventTiming
+	65,  // 69: proto.Task.Dependencies:type_name -> proto.Task.TaskDependency
+	41,  // 70: proto.Task.Tasks:type_name -> proto.Task
+	66,  // 71: proto.Task.AssociatedActivities:type_name -> proto.Task.AssociatedActivity
+	20,  // 72: proto.Task.Subjects:type_name -> proto.AssessmentSubject
+	40,  // 73: proto.Task.ResponsibleRoles:type_name -> proto.ResponsibleRole
+	8,   // 74: proto.Response.Lifecycle:type_name -> proto.Lifecycle
+	15,  // 75: proto.Response.Props:type_name -> proto.Property
+	16,  // 76: proto.Response.Links:type_name -> proto.Link
+	24,  // 77: proto.Response.Origins:type_name -> proto.Origin
+	38,  // 78: proto.Response.RequiredAssets:type_name -> proto.RequiredAsset
+	41,  // 79: proto.Response.Tasks:type_name -> proto.Task
+	67,  // 80: proto.RiskLog.Entries:type_name -> proto.RiskLog.Entry
+	15,  // 81: proto.Risk.Props:type_name -> proto.Property
+	16,  // 82: proto.Risk.Links:type_name -> proto.Link
+	6,   // 83: proto.Risk.Status:type_name -> proto.RiskStatus
+	24,  // 84: proto.Risk.Origins:type_name -> proto.Origin
+	34,  // 85: proto.Risk.ThreatIds:type_name -> proto.ThreatId
+	36,  // 86: proto.Risk.Characterizations:type_name -> proto.Characterization
+	37,  // 87: proto.Risk.MitigatingFactors:type_name -> proto.MitigatingFactor
+	75,  // 88: proto.Risk.Deadline:type_name -> google.protobuf.Timestamp
+	42,  // 89: proto.Risk.Remediations:type_name -> proto.Response
+	43,  // 90: proto.Risk.RiskLog:type_name -> proto.RiskLog
+	28,  // 91: proto.Risk.RelatedObservations:type_name -> proto.RelatedObservation
+	69,  // 92: proto.AssessmentLog.Entries:type_name -> proto.AssessmentLog.Entry
+	13,  // 93: proto.AssessmentPart.Name:type_name -> proto.AssessmentPart.PartName
+	15,  // 94: proto.AssessmentPart.Props:type_name -> proto.Property
+	47,  // 95: proto.AssessmentPart.Parts:type_name -> proto.AssessmentPart
+	16,  // 96: proto.AssessmentPart.Links:type_name -> proto.Link
+	22,  // 97: proto.Attestation.ResponsibleParties:type_name -> proto.ResponsibleParty
+	47,  // 98: proto.Attestation.Parts:type_name -> proto.AssessmentPart
+	15,  // 99: proto.ReviewedControls.Props:type_name -> proto.Property
+	16,  // 100: proto.ReviewedControls.Links:type_name -> proto.Link
+	70,  // 101: proto.ReviewedControls.ControlSelections:type_name -> proto.ReviewedControls.ControlSelection
+	71,  // 102: proto.ReviewedControls.ControlObjectiveSelections:type_name -> proto.ReviewedControls.ControlObjectiveSelection
+	9,   // 103: proto.Status.State:type_name -> proto.State
+	10,  // 104: proto.PortRange.Transport:type_name -> proto.Transport
+	53,  // 105: proto.Protocol.PortRanges:type_name -> proto.PortRange
+	14,  // 106: proto.SystemComponent.Type:type_name -> proto.SystemComponent.ComponentType
+	15,  // 107: proto.SystemComponent.Props:type_name -> proto.Property
+	16,  // 108: proto.SystemComponent.Links:type_name -> proto.Link
+	52,  // 109: proto.SystemComponent.Status:type_name -> proto.Status
+	40,  // 110: proto.SystemComponent.ResponsibleRoles:type_name -> proto.ResponsibleRole
+	54,  // 111: proto.SystemComponent.Protocols:type_name -> proto.Protocol
+	15,  // 112: proto.InventoryItem.Props:type_name -> proto.Property
+	16,  // 113: proto.InventoryItem.Links:type_name -> proto.Link
+	22,  // 114: proto.InventoryItem.ResponsibleParties:type_name -> proto.ResponsibleParty
+	72,  // 115: proto.InventoryItem.ImplementedComponents:type_name -> proto.InventoryItem.ImplementedComponent
+	57,  // 116: proto.AuthorizedPrivilege.FunctionsPerformed:type_name -> proto.FunctionPerformed
+	15,  // 117: proto.SystemUser.Props:type_name -> proto.Property
+	16,  // 118: proto.SystemUser.Links:type_name -> proto.Link
+	58,  // 119: proto.SystemUser.AuthorizedPrivileges:type_name -> proto.AuthorizedPrivilege
+	55,  // 120: proto.AssessmentAssets.Components:type_name -> proto.SystemComponent
+	73,  // 121: proto.AssessmentAssets.AssessmentPlatforms:type_name -> proto.AssessmentAssets.AssessmentPlatform
+	55,  // 122: proto.LocalDefinitions.Components:type_name -> proto.SystemComponent
+	56,  // 123: proto.LocalDefinitions.InventoryItems:type_name -> proto.InventoryItem
+	59,  // 124: proto.LocalDefinitions.Users:type_name -> proto.SystemUser
+	60,  // 125: proto.LocalDefinitions.AssessmentAssets:type_name -> proto.AssessmentAssets
+	41,  // 126: proto.LocalDefinitions.Tasks:type_name -> proto.Task
+	75,  // 127: proto.AssessmentResult.Start:type_name -> google.protobuf.Timestamp
+	75,  // 128: proto.AssessmentResult.End:type_name -> google.protobuf.Timestamp
+	15,  // 129: proto.AssessmentResult.Props:type_name -> proto.Property
+	16,  // 130: proto.AssessmentResult.Links:type_name -> proto.Link
+	61,  // 131: proto.AssessmentResult.LocalDefinitions:type_name -> proto.LocalDefinitions
+	51,  // 132: proto.AssessmentResult.ReviewedControls:type_name -> proto.ReviewedControls
+	48,  // 133: proto.AssessmentResult.Attestations:type_name -> proto.Attestation
+	46,  // 134: proto.AssessmentResult.AssessmentLog:type_name -> proto.AssessmentLog
+	33,  // 135: proto.AssessmentResult.Observations:type_name -> proto.Observation
+	45,  // 136: proto.AssessmentResult.Risks:type_name -> proto.Risk
+	32,  // 137: proto.AssessmentResult.Findings:type_name -> proto.Finding
+	12,  // 138: proto.EventTiming.Frequency.Unit:type_name -> proto.EventTiming.Frequency.TimeUnit
+	15,  // 139: proto.Task.AssociatedActivity.Props:type_name -> proto.Property
+	16,  // 140: proto.Task.AssociatedActivity.Links:type_name -> proto.Link
+	40,  // 141: proto.Task.AssociatedActivity.ResponsibleRoles:type_name -> proto.ResponsibleRole
+	20,  // 142: proto.Task.AssociatedActivity.Subjects:type_name -> proto.AssessmentSubject
+	15,  // 143: proto.RiskLog.Entry.Props:type_name -> proto.Property
+	16,  // 144: proto.RiskLog.Entry.Links:type_name -> proto.Link
+	44,  // 145: proto.RiskLog.Entry.LoggedBy:type_name -> proto.LoggedBy
+	6,   // 146: proto.RiskLog.Entry.StatusChange:type_name -> proto.RiskStatus
+	68,  // 147: proto.RiskLog.Entry.RelatedResponses:type_name -> proto.RiskLog.Entry.RelatedResponse
+	15,  // 148: proto.RiskLog.Entry.RelatedResponse.Props:type_name -> proto.Property
+	16,  // 149: proto.RiskLog.Entry.RelatedResponse.Links:type_name -> proto.Link
+	23,  // 150: proto.RiskLog.Entry.RelatedResponse.RelatedTasks:type_name -> proto.RelatedTask
+	15,  // 151: proto.AssessmentLog.Entry.Props:type_name -> proto.Property
+	16,  // 152: proto.AssessmentLog.Entry.Links:type_name -> proto.Link
+	44,  // 153: proto.AssessmentLog.Entry.LoggedBy:type_name -> proto.LoggedBy
+	23,  // 154: proto.AssessmentLog.Entry.RelatedTasks:type_name -> proto.RelatedTask
+	15,  // 155: proto.ReviewedControls.ControlSelection.Props:type_name -> proto.Property
+	16,  // 156: proto.ReviewedControls.ControlSelection.Links:type_name -> proto.Link
+	19,  // 157: proto.ReviewedControls.ControlSelection.IncludeAll:type_name -> proto.IncludeAll
+	49,  // 158: proto.ReviewedControls.ControlSelection.IncludeControls:type_name -> proto.SelectControlById
+	49,  // 159: proto.ReviewedControls.ControlSelection.ExcludeControls:type_name -> proto.SelectControlById
+	15,  // 160: proto.ReviewedControls.ControlObjectiveSelection.Props:type_name -> proto.Property
+	16,  // 161: proto.ReviewedControls.ControlObjectiveSelection.Links:type_name -> proto.Link
+	19,  // 162: proto.ReviewedControls.ControlObjectiveSelection.IncludeAll:type_name -> proto.IncludeAll
+	50,  // 163: proto.ReviewedControls.ControlObjectiveSelection.IncludeObjectives:type_name -> proto.SelectObjectiveById
+	50,  // 164: proto.ReviewedControls.ControlObjectiveSelection.ExcludeObjectives:type_name -> proto.SelectObjectiveById
+	15,  // 165: proto.InventoryItem.ImplementedComponent.Props:type_name -> proto.Property
+	16,  // 166: proto.InventoryItem.ImplementedComponent.Links:type_name -> proto.Link
+	22,  // 167: proto.InventoryItem.ImplementedComponent.ResponsibleParties:type_name -> proto.ResponsibleParty
+	15,  // 168: proto.AssessmentAssets.AssessmentPlatform.Props:type_name -> proto.Property
+	16,  // 169: proto.AssessmentAssets.AssessmentPlatform.Links:type_name -> proto.Link
+	74,  // 170: proto.AssessmentAssets.AssessmentPlatform.UsesComponents:type_name -> proto.AssessmentAssets.AssessmentPlatform.UsesComponent
+	15,  // 171: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.Props:type_name -> proto.Property
+	16,  // 172: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.Links:type_name -> proto.Link
+	22,  // 173: proto.AssessmentAssets.AssessmentPlatform.UsesComponent.ResponsibleParties:type_name -> proto.ResponsibleParty
+	174, // [174:174] is the sub-list for method output_type
+	174, // [174:174] is the sub-list for method input_type
+	174, // [174:174] is the sub-list for extension type_name
+	174, // [174:174] is the sub-list for extension extendee
+	0,   // [0:174] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_oscal_proto_init() }
@@ -7825,7 +7702,7 @@ func file_runner_proto_oscal_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_oscal_proto_rawDesc), len(file_runner_proto_oscal_proto_rawDesc)),
-			NumEnums:      17,
+			NumEnums:      15,
 			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   0,
