@@ -537,13 +537,970 @@ message Observation {
   optional string Remarks = 13;
 }
 
+// Risk Status
+// Describes the status of the associated risk.
+enum RiskStatus {
+  RISK_STATUS_UNKNOWN = 0;
+  RISK_STATUS_OPEN = 1;
+  RISK_STATUS_INVESTIGATING = 2;
+  RISK_STATUS_REMEDIATING = 3;
+  RISK_STATUS_DEVIATION_REQUESTED = 4;
+  RISK_STATUS_DEVIATION_APPROVED = 5;
+  RISK_STATUS_CLOSED = 6;
+}
+
+// Threat ID
+// A pointer, by ID, to an externally-defined threat.
+message ThreatId {
+  // Threat Type Identification System
+  // Specifies the source of the threat information.
+  string System = 1;
+
+  // Threat Information Resource Reference
+  // An optional location for the threat data, from which this ID originates.
+  optional string Href = 2;
+
+  // Threat Identifier
+  // A unique identifier for the threat.
+  string Id = 3;
+}
+
+// Facet
+// An individual characteristic that is part of a larger set produced by the same actor.
+message Facet {
+  // Facet Name
+  // The name of the risk metric within the specified system.
+  string Name = 1;
+
+  // Naming System
+  // Specifies the naming system under which this risk metric is organized, which allows for the same names to be used in different systems controlled by different parties. This avoids the potential of a name clash.
+  string System = 2;
+
+  // Facet Value
+  // Indicates the value of the facet.
+  string Value = 3;
+
+  // Properties
+  // Additional attributes related to the facet.
+  repeated Property Props = 4;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 5;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 6;
+}
+
+// Characterization
+// A collection of descriptive data about the containing object from a specific origin.
+message Characterization {
+  // Properties
+  // Additional attributes related to the characterization.
+  repeated Property Props = 1;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 2;
+
+  // Origin
+  // The source of the characterization data.
+  Origin Origin = 3;
+
+  repeated Facet Facets = 4;
+}
+
+// Mitigating Factors
+// Describes an existing mitigating factor that may affect the overall determination of the risk, with an optional link to an implementation statement in the SSP.
+message MitigatingFactor {
+  // Mitigating Factor Universally Unique Identifier
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this mitigating factor elsewhere in this or other OSCAL instances. The locally defined UUID of the mitigating factor can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  string Uuid = 1;
+
+  // Implementation UUID
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this implementation statement elsewhere in this or other OSCAL instancess. The locally defined UUID of the implementation statement can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  optional string ImplementationUuid = 2;
+
+  // Mitigating Factor Description
+  // A human-readable description of this mitigating factor.
+  string Description = 3;
+
+  // Properties
+  repeated Property Props = 4;
+
+  // Links
+  repeated Link Links = 5;
+
+  // Subjects
+  repeated SubjectReference Subjects = 6;
+}
+
+// Required Asset
+// Identifies an asset required to achieve remediation.
+message RequiredAsset {
+  // Required Universally Unique Identifier
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this required asset elsewhere in this or other OSCAL instances. The locally defined UUID of the asset can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  string Uuid = 1;
+
+  // Subjects
+  repeated SubjectReference Subjects = 2;
+
+  // Title for Required Asset
+  optional string Title = 3;
+
+  // Description of Required Asset
+  string Description = 4;
+
+  // Properties
+  repeated Property Props = 5;
+
+  // Links
+  repeated Link Links = 6;
+
+  // Remarks
+  optional string Remarks = 7;
+}
+
+// Task Type
+// The type of task.
+enum TaskType {
+  TASK_TYPE_UNKNOWN = 0;
+  TASK_TYPE_MILESTONE = 1;
+  TASK_TYPE_ACTION = 2;
+}
+
+// Event Timing
+// The timing under which the task is intended to occur.
+message EventTiming {
+  // On Date Condition
+  // The task must occur on the specified date.
+  optional string OnDate = 1;
+
+  // On Date Range Condition
+  // The task must occur within the specified date range.
+  message DateRange {
+    string Start = 1;
+    string End = 2;
+  }
+  optional DateRange WithinDateRange = 2;
+
+  // Frequency Condition
+  // The task is intended to occur at the specified frequency.
+  message Frequency {
+    int32 Period = 1;
+    enum TimeUnit {
+      UNIT_UNKNOWN = 0;
+      SECONDS = 1;
+      MINUTES = 2;
+      HOURS = 3;
+      DAYS = 4;
+      MONTHS = 5;
+      YEARS = 6;
+    }
+    TimeUnit Unit = 2;
+  }
+  optional Frequency AtFrequency = 3;
+}
+
+// Responsible Role
+// A reference to a role with responsibility for performing a function relative to the containing object, optionally associated with a set of persons and/or organizations that perform that role.
+message ResponsibleRole {
+  // Responsible Role ID
+  // A human-oriented identifier reference to a role performed.
+  string RoleId = 1;
+
+  // Properties
+  // Additional attributes related to the responsible role.
+  repeated Property Props = 2;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 3;
+
+  // Party UUIDs
+  // Identifiers for the persons or organizations that perform this role.
+  repeated string PartyUuids = 4;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 5;
+}
+
+
+// Task
+// Represents a scheduled event or milestone, which may be associated with a series of assessment actions.
+message Task {
+  // Task Universally Unique Identifier
+  // A globally unique identifier for this task.
+  string Uuid = 1;
+
+  TaskType Type = 2;
+
+  // Task Title
+  // The title for this task.
+  string Title = 3;
+
+  // Task Description
+  // A human-readable description of this task.
+  optional string Description = 4;
+
+  // Properties
+  // Additional attributes related to the task.
+  repeated Property Props = 5;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 6;
+
+  // Event Timing
+  // The timing under which the task is intended to occur.
+  optional EventTiming Timing = 7;
+
+  // Task Dependency
+  // Used to indicate that a task is dependent on another task.
+  message TaskDependency {
+    string TaskUuid = 1;
+    optional string Remarks = 2;
+  }
+  repeated TaskDependency Dependencies = 8;
+
+  // Sub-Tasks
+  // Nested tasks within this task.
+  repeated Task Tasks = 9;
+
+  // Associated Activity
+  // Identifies an individual activity to be performed as part of a task.
+  message AssociatedActivity {
+    // Activity Universally Unique Identifier Reference
+    string ActivityUuid = 1;
+
+    // Properties
+    repeated Property Props = 2;
+
+    // Links
+    repeated Link Links = 3;
+
+    // Responsible Roles
+    repeated ResponsibleRole ResponsibleRoles = 4;
+
+    // Subjects
+    repeated AssessmentSubject Subjects = 5;
+
+    // Remarks
+    optional string Remarks = 6;
+  }
+  repeated AssociatedActivity AssociatedActivities = 10;
+
+  // Subjects
+  // Subjects related to this task.
+  repeated AssessmentSubject Subjects = 11;
+
+  // Responsible Roles
+  // Roles responsible for executing this task.
+  repeated ResponsibleRole ResponsibleRoles = 12;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 13;
+}
+
+
+// Remediation Intent
+// Identifies whether this is a recommendation, a planned action, or a completed action.
+enum Lifecycle {
+  LIFECYCLE_UNKNOWN = 0;
+  LIFECYCLE_RECOMMENDATION = 1;
+  LIFECYCLE_PLANNED = 2;
+  LIFECYCLE_COMPLETED = 3;
+}
+
+// Risk Response
+// Describes either a recommended or an actual plan for addressing the risk.
+message Response {
+  // Remediation Universally Unique Identifier
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this remediation elsewhere in this or other OSCAL instances. The locally defined UUID of the risk response can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  string Uuid = 1;
+
+  // Remediation Intent
+  // Identifies whether this is a recommendation, such as from an assessor or tool, or an actual plan accepted by the system owner.
+  Lifecycle Lifecycle = 2;
+
+  // Response Title
+  // The title for this response activity.
+  string Title = 3;
+
+  // Response Description
+  // A human-readable description of this response plan.
+  string Description = 4;
+
+  // Properties
+  // Additional attributes related to the response.
+  repeated Property Props = 5;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 6;
+
+  // Origins
+  // The sources that provided or influenced this response.
+  repeated Origin Origins = 7;
+
+  repeated RequiredAsset RequiredAssets = 8;
+
+  // Tasks
+  // The tasks associated with executing this response.
+  repeated Task Tasks = 9;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 10;
+}
+
+// Risk Log
+// A log of all risk-related tasks.
+message RiskLog {
+  // Risk Log Entry
+  // Identifies an individual risk response.
+  message Entry {
+    // Risk Log Entry Universally Unique Identifier
+    string Uuid = 1;
+
+    // Title
+    optional string Title = 2;
+
+    // Risk Task Description
+    optional string Description = 3;
+
+    // Start
+    string Start = 4;
+
+    // End
+    optional string End = 5;
+
+    // Properties
+    repeated Property Props = 6;
+
+    // Links
+    repeated Link Links = 7;
+
+    // Logged By
+    repeated LoggedBy LoggedBy = 8;
+
+    // Status Change
+    optional RiskStatus StatusChange = 9;
+
+    // Related Responses
+    message RelatedResponse {
+      // Response Universally Unique Identifier Reference
+      string ResponseUuid = 1;
+
+      // Properties
+      repeated Property Props = 2;
+
+      // Links
+      repeated Link Links = 3;
+
+      // Related Tasks
+      repeated RelatedTask RelatedTasks = 4;
+
+      // Remarks
+      optional string Remarks = 5;
+    }
+    repeated RelatedResponse RelatedResponses = 10;
+
+    // Remarks
+    optional string Remarks = 11;
+  }
+  repeated Entry Entries = 1;
+}
+
+// Logged By
+// Used to indicate who created a log entry and in what role.
+message LoggedBy {
+  // Party UUID Reference
+  // A globally unique identifier for the party making the log entry.
+  string PartyUuid = 1;
+
+  // Actor Role
+  // A reference to the role in which the party is making the log entry.
+  optional string RoleId = 2;
+}
+
+
+// Identified Risk
+// An identified risk.
+message Risk {
+  // Risk Universally Unique Identifier
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this risk elsewhere in this or other OSCAL instances. The locally defined UUID of the risk can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+  string Uuid = 1;
+
+  // Risk Title
+  // The title for this risk.
+  string Title = 2;
+
+  // Risk Description
+  // A human-readable summary of the identified risk, to include a statement of how the risk impacts the system.
+  string Description = 3;
+
+  // Risk Statement
+  // An summary of impact for how the risk affects the system.
+  string Statement = 4;
+
+  // Properties
+  // Additional attributes related to the risk.
+  repeated Property Props = 5;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 6;
+
+  // Risk Status
+  // The current status of the risk.
+  RiskStatus Status = 7;
+
+  // Origins
+  // The sources that identified the risk.
+  repeated Origin Origins = 8;
+
+  // Threat Identifiers
+  // Identifies threats associated with the risk.
+  repeated ThreatId ThreatIds = 9;
+
+  // Characterizations
+  // A collection of descriptive data about the containing object from a specific origin.
+  repeated Characterization Characterizations = 10;
+
+  // Mitigating Factors
+  // Describes an existing mitigating factor that may affect the overall determination of the risk, with an optional link to an implementation statement in the SSP.
+  repeated MitigatingFactor MitigatingFactors = 11;
+
+  // Risk Resolution Deadline
+  // The date/time by which the risk must be resolved.
+  optional google.protobuf.Timestamp Deadline = 12;
+
+  // Remediations
+  // Describes either recommended or an actual plan for addressing the risk.
+  repeated Response Remediations = 13;
+
+  optional RiskLog RiskLog = 14;
+
+  repeated RelatedObservation RelatedObservations = 15;
+}
+
+// Assessment Log
+// A log of all assessment-related actions taken.
+message AssessmentLog {
+  // Assessment Log Entry
+  // Identifies the result of an action/task during the assessment.
+  message Entry {
+    // Universally Unique Identifier
+    string Uuid = 1;
+
+    // Action Title
+    optional string Title = 2;
+
+    // Action Description
+    optional string Description = 3;
+
+    // Start
+    string Start = 4;
+
+    // End
+    optional string End = 5;
+
+    // Properties
+    repeated Property Props = 6;
+
+    // Links
+    repeated Link Links = 7;
+
+    // Logged By
+    repeated LoggedBy LoggedBy = 8;
+
+    // Related Tasks
+    repeated RelatedTask RelatedTasks = 9;
+
+    // Remarks
+    optional string Remarks = 10;
+  }
+  repeated Entry Entries = 1;
+}
+
+// Assessment Part
+// A partition of an assessment plan or results, or a child of another part.
+message AssessmentPart {
+  // Part Identifier
+  // A globally unique identifier for this part.
+  optional string Uuid = 1;
+
+  // Part Name
+  // A textual label that uniquely identifies the part's semantic type.
+  enum PartName {
+    PART_NAME_UNKNOWN = 0;
+    ASSET = 1;
+    METHOD = 2;
+    OBJECTIVE = 3;
+  }
+  PartName Name = 2;
+
+  // Part Namespace
+  // A namespace qualifying the part's name.
+  optional string Ns = 3;
+
+  // Part Class
+  // A sub-type or characterization of the part's name.
+  optional string Class = 4;
+
+  // Part Title
+  // A name given to the part for display and navigation.
+  optional string Title = 5;
+
+  // Properties
+  // Additional attributes related to the assessment part.
+  repeated Property Props = 6;
+
+  // Part Text
+  // Permits multiple paragraphs, lists, tables, etc.
+  optional string Prose = 7;
+
+  // Nested Parts
+  // Child parts of this assessment part.
+  repeated AssessmentPart Parts = 8;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 9;
+}
+
+// Attestations
+// A set of textual statements, typically written by the assessor.
+message Attestation {
+  // Responsible Parties
+  repeated ResponsibleParty ResponsibleParties = 1;
+
+  // Parts
+  repeated AssessmentPart Parts = 2;
+}
+
+// Select Control
+// Used to select a control for inclusion/exclusion based on one or more control identifiers.
+message SelectControlById {
+  // Control Identifier Reference
+  // A reference to a control with a corresponding id value.
+  string ControlId = 1;
+
+  // Include Specific Statements
+  // Used to constrain the selection to only specifically identified statements.
+  repeated string StatementIds = 2;
+}
+
+// Select Objective
+// Used to select a control objective for inclusion/exclusion based on its identifier.
+message SelectObjectiveById {
+  // Objective ID
+  // Points to an assessment objective.
+  string ObjectiveId = 1;
+}
+
+// Reviewed Controls and Control Objectives
+// Identifies the controls being assessed and their control objectives.
+message ReviewedControls {
+  // Control Objective Description
+  // A human-readable description of control objectives.
+  optional string Description = 1;
+
+  // Properties
+  // Additional attributes related to the reviewed controls.
+  repeated Property Props = 2;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 3;
+
+  // Assessed Controls
+  // Identifies the controls being assessed.
+  message ControlSelection {
+    // Assessed Controls Description
+    // A human-readable description of in-scope controls specified for assessment.
+    optional string Description = 1;
+
+    // Properties
+    repeated Property Props = 2;
+
+    // Links
+    repeated Link Links = 3;
+
+    // Include All
+    // Specifies if all controls should be included.
+    optional IncludeAll IncludeAll = 4;
+
+    // Include Controls
+    // Explicitly included controls.
+    repeated SelectControlById IncludeControls = 5;
+
+    // Exclude Controls
+    // Explicitly excluded controls.
+    repeated SelectControlById ExcludeControls = 6;
+
+    // Remarks
+    // Additional explanatory notes.
+    optional string Remarks = 7;
+  }
+  repeated ControlSelection ControlSelections = 4;
+
+  // Referenced Control Objectives
+  // Identifies the control objectives of the assessment.
+  message ControlObjectiveSelection {
+    // Control Objectives Description
+    // A human-readable description of this collection of control objectives.
+    optional string Description = 1;
+
+    // Properties
+    repeated Property Props = 2;
+
+    // Links
+    repeated Link Links = 3;
+
+    // Include All
+    // Specifies if all objectives should be included.
+    optional IncludeAll IncludeAll = 4;
+
+    // Include Objectives
+    // Explicitly included objectives.
+    repeated SelectObjectiveById IncludeObjectives = 5;
+
+    // Exclude Objectives
+    // Explicitly excluded objectives.
+    repeated SelectObjectiveById ExcludeObjectives = 6;
+
+    // Remarks
+    // Additional explanatory notes.
+    optional string Remarks = 7;
+  }
+  repeated ControlObjectiveSelection ControlObjectiveSelections = 5;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 6;
+}
+
+enum State {
+  STATE_UNKNOWN = 0;
+  STATE_UNDER_DEVELOPMENT = 1;
+  STATE_OPERATIONAL = 2;
+  STATE_DISPOSITION = 3;
+  STATE_OTHER = 4;
+}
+
+// Status
+// Describes the operational status of the system component.
+message Status {
+  // State
+  // The operational status.
+  State State = 1;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 2;
+}
+
+enum Transport {
+  TRANSPORT_UNKNOWN = 0;
+  TRANSPORT_TCP = 1;
+  TRANSPORT_UDP = 2;
+}
+
+// Port Range
+// Defines the transport layer protocol port range for an IPv4-based or IPv6-based service.
+message PortRange {
+  // Start
+  // Indicates the starting port number in a port range for a transport layer protocol.
+  uint32 Start = 1;
+
+  // End
+  // Indicates the ending port number in a port range for a transport layer protocol.
+  uint32 End = 2;
+
+  // Transport
+  // Indicates the transport type.
+  Transport Transport = 3;
+}
+
+// Service Protocol Information
+// Information about the protocol used to provide a service.
+message Protocol {
+  // Service Protocol Information Universally Unique Identifier
+  // A globally unique identifier for this protocol instance.
+  optional string Uuid = 1;
+
+  // Protocol Name
+  // The common name of the protocol, typically from the IANA Service Name and Transport Protocol Port Number Registry.
+  string Name = 2;
+
+  // Protocol Title
+  // A human-readable name for the protocol (e.g., Transport Layer Security).
+  optional string Title = 3;
+
+  // Port Ranges
+  // The port ranges associated with this protocol.
+  repeated PortRange PortRanges = 4;
+}
+
+// Component
+// A defined component that can be part of an implemented system.
+message SystemComponent {
+  // Component Identifier
+  // A globally unique identifier for this component.
+  string Uuid = 1;
+
+  // Component Type
+  // A category describing the purpose of the component.
+  enum ComponentType {
+    COMPONENT_TYPE_UNKNOWN = 0;
+    COMPONENT_TYPE_THIS_SYSTEM = 1;
+    COMPONENT_TYPE_SYSTEM = 2;
+    COMPONENT_TYPE_INTERCONNECTION = 3;
+    COMPONENT_TYPE_SOFTWARE = 4;
+    COMPONENT_TYPE_HARDWARE = 5;
+    COMPONENT_TYPE_SERVICE = 6;
+    COMPONENT_TYPE_POLICY = 7;
+    COMPONENT_TYPE_PHYSICAL = 8;
+    COMPONENT_TYPE_PROCESS_PROCEDURE = 9;
+    COMPONENT_TYPE_PLAN = 10;
+    COMPONENT_TYPE_GUIDANCE = 11;
+    COMPONENT_TYPE_STANDARD = 12;
+    COMPONENT_TYPE_VALIDATION = 13;
+    COMPONENT_TYPE_NETWORK = 14;
+  }
+  ComponentType Type = 2;
+
+  // Component Title
+  // A human-readable name for the system component.
+  string Title = 3;
+
+  // Component Description
+  // A description of the component, including its function.
+  string Description = 4;
+
+  // Purpose
+  // A summary of the technological or business purpose of the component.
+  optional string Purpose = 5;
+
+  // Properties
+  // Additional attributes related to the component.
+  repeated Property Props = 6;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 7;
+
+
+  Status Status = 8;
+
+  // Responsible Roles
+  // Roles responsible for managing or implementing this component.
+  repeated ResponsibleRole ResponsibleRoles = 9;
+
+  // Protocols
+  // Protocols used by this component.
+  repeated Protocol Protocols = 10;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 11;
+}
+
+// Inventory Item
+// A single managed inventory item within the system.
+message InventoryItem {
+  // Inventory Item Universally Unique Identifier
+  // A globally unique identifier for this inventory item.
+  string Uuid = 1;
+
+  // Inventory Item Description
+  // A summary of the inventory item stating its purpose within the system.
+  string Description = 2;
+
+  // Properties
+  // Additional attributes related to the inventory item.
+  repeated Property Props = 3;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 4;
+
+  // Responsible Parties
+  // Parties responsible for this inventory item.
+  repeated ResponsibleParty ResponsibleParties = 5;
+
+  // Implemented Component
+  // The set of components that are implemented in a given system inventory item.
+  message ImplementedComponent {
+    // Component Universally Unique Identifier Reference
+    string ComponentUuid = 1;
+
+    // Properties
+    repeated Property Props = 2;
+
+    // Links
+    repeated Link Links = 3;
+
+    // Responsible Parties
+    repeated ResponsibleParty ResponsibleParties = 4;
+
+    // Remarks
+    optional string Remarks = 5;
+  }
+  repeated ImplementedComponent ImplementedComponents = 6;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 7;
+}
+
+// Functions Performed
+// Describes a function performed for a given authorized privilege by this user class.
+message FunctionPerformed {
+  // Function Name
+  // A string representing the function performed.
+  string Name = 1;
+}
+
+
+// Privilege
+// Identifies a specific system privilege held by the user, with an associated description and/or rationale.
+message AuthorizedPrivilege {
+  // Privilege Title
+  // A human-readable name for the privilege.
+  string Title = 1;
+
+  // Privilege Description
+  // A summary of the privilege's purpose within the system.
+  optional string Description = 2;
+
+  // Functions Performed
+  // The functions performed under this privilege.
+  repeated FunctionPerformed FunctionsPerformed = 3;
+}
+
+// System User
+// A type of user that interacts with the system based on an associated role.
+message SystemUser {
+  // User Universally Unique Identifier
+  // A globally unique identifier for this user class.
+  string Uuid = 1;
+
+  // User Title
+  // A name given to the user, used for display and navigation.
+  optional string Title = 2;
+
+  // User Short Name
+  // A short common name, abbreviation, or acronym for the user.
+  optional string ShortName = 3;
+
+  // User Description
+  // A summary of the user's purpose within the system.
+  optional string Description = 4;
+
+  // Properties
+  // Additional attributes related to the user.
+  repeated Property Props = 5;
+
+  // Links
+  // References to related resources.
+  repeated Link Links = 6;
+
+  // Role Identifiers
+  // Identifiers of roles associated with the user.
+  repeated string RoleIds = 7;
+
+  // Authorized Privileges
+  // Privileges that the user is authorized to perform.
+  repeated AuthorizedPrivilege AuthorizedPrivileges = 8;
+
+  // Remarks
+  // Additional explanatory notes.
+  optional string Remarks = 9;
+}
+
+// Assessment Assets
+// Identifies the assets used to perform this assessment, such as the assessment team, scanning tools, and assumptions.
+message AssessmentAssets {
+  // Components
+  // System components involved in the assessment.
+  repeated SystemComponent Components = 1;
+
+  // Assessment Platform
+  // Represents the toolset used to perform aspects of the assessment.
+  message AssessmentPlatform {
+    // Assessment Platform Universally Unique Identifier
+    string Uuid = 1;
+
+    // Assessment Platform Title
+    optional string Title = 2;
+
+    // Properties
+    repeated Property Props = 3;
+
+    // Links
+    repeated Link Links = 4;
+
+    // Uses Component
+    // The set of components that are used by the assessment platform.
+    message UsesComponent {
+      // Component Universally Unique Identifier Reference
+      string ComponentUuid = 1;
+
+      // Properties
+      repeated Property Props = 2;
+
+      // Links
+      repeated Link Links = 3;
+
+      // Responsible Parties
+      repeated ResponsibleParty ResponsibleParties = 4;
+
+      // Remarks
+      optional string Remarks = 5;
+    }
+    repeated UsesComponent UsesComponents = 5;
+
+    // Remarks
+    optional string Remarks = 6;
+  }
+  repeated AssessmentPlatform AssessmentPlatforms = 2;
+}
+
+// Local Definitions
+// Used to define data objects used in the assessment plan but not appearing in the referenced SSP.
+message LocalDefinitions {
+  // Components
+  repeated SystemComponent Components = 1;
+
+  // Inventory Items
+  repeated InventoryItem InventoryItems = 2;
+
+  // Users
+  repeated SystemUser Users = 3;
+
+  // Assessment Assets
+  optional AssessmentAssets AssessmentAssets = 4;
+
+  // Tasks
+  repeated Task Tasks = 5;
+}
+
 // TODO this is a partial implementation to support bidirectional implementation.
 // This should be fledged more completely as soon as possible.
 // Assessment Result
 // Used by the assessment results and POA&M. Identifies observations, findings, risks, deviations, and dispositions.
+
+// Assessment Result
+// Used by the assessment results and POA&M. In the assessment results, this identifies all of the assessment observations and findings, initial and residual risks, deviations, and disposition. In the POA&M, this identifies initial and residual risks, deviations, and disposition.
 message AssessmentResult {
   // Results Universally Unique Identifier
-  // A globally unique identifier for this set of results, used for cross-instance referencing.
+  // A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this set of results in this or other OSCAL instances. The locally defined UUID of the assessment result can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
   string Uuid = 1;
 
   // Results Title
@@ -555,103 +1512,38 @@ message AssessmentResult {
   string Description = 3;
 
   // Start Field
-  // Date/time stamp identifying the start of the evidence collection.
+  // Date/time stamp identifying the start of the evidence collection reflected in these results.
   google.protobuf.Timestamp Start = 4;
 
   // End Field
-  // Date/time stamp identifying the end of the evidence collection.
-  google.protobuf.Timestamp End = 5;
+  // Date/time stamp identifying the end of the evidence collection reflected in these results. In a continuous motoring scenario, this may contain the same value as start if appropriate.
+  optional google.protobuf.Timestamp End = 5;
 
   // Properties
-  // Additional attributes related to the assessment result.
+  // An attribute, characteristic, or quality of the containing object expressed as a namespace qualified name/value pair.
   repeated Property Props = 6;
 
   // Links
-  // References to related resources.
+  // A reference to a local or remote resource, that has a specific relation to the containing object.
   repeated Link Links = 7;
 
-//  // Local Definitions
-//  // Used to define data objects used in the assessment plan but not appearing in the referenced SSP.
-//  message LocalDefinitions {
-//    // Components
-//    repeated SystemComponent Components = 1;
-//
-//    // Inventory Items
-//    repeated InventoryItem InventoryItems = 2;
-//
-//    // Users
-//    repeated SystemUser Users = 3;
-//
-//    // Assessment Assets
-//    optional AssessmentAssets AssessmentAssets = 4;
-//
-//    // Tasks
-//    repeated Task Tasks = 5;
-//  }
-//  optional LocalDefinitions LocalDefinitions = 8;
+  optional LocalDefinitions LocalDefinitions = 8;
 
-//  // Reviewed Controls
-//  // Identifies the controls reviewed in the assessment.
-//  ReviewedControls ReviewedControls = 9;
+  // Reviewed Controls
+  // Identifies the controls reviewed in the assessment.
+  ReviewedControls ReviewedControls = 9;
 
-//  // Attestations
-//  // A set of textual statements, typically written by the assessor.
-//  message Attestation {
-//    // Responsible Parties
-//    repeated ResponsibleParty ResponsibleParties = 1;
-//
-//    // Parts
-//    repeated AssessmentPart Parts = 2;
-//  }
-//  repeated Attestation Attestations = 10;
+  repeated Attestation Attestations = 10;
 
-//  // Assessment Log
-//  // A log of all assessment-related actions taken.
-//  message AssessmentLog {
-//    // Assessment Log Entry
-//    // Identifies the result of an action/task during the assessment.
-//    message Entry {
-//      // Universally Unique Identifier
-//      string Uuid = 1;
-//
-//      // Action Title
-//      optional string Title = 2;
-//
-//      // Action Description
-//      optional string Description = 3;
-//
-//      // Start
-//      string Start = 4;
-//
-//      // End
-//      optional string End = 5;
-//
-//      // Properties
-//      repeated Property Props = 6;
-//
-//      // Links
-//      repeated Link Links = 7;
-//
-//      // Logged By
-//      repeated LoggedBy LoggedBy = 8;
-//
-//      // Related Tasks
-//      repeated RelatedTask RelatedTasks = 9;
-//
-//      // Remarks
-//      optional string Remarks = 10;
-//    }
-//    repeated Entry Entries = 1;
-//  }
-//  AssessmentLog AssessmentLog = 11;
+  optional AssessmentLog AssessmentLog = 11;
 
   // Observations
   // The observations made during the assessment.
   repeated Observation Observations = 12;
 
-//  // Risks
-//  // The risks identified during the assessment.
-//  repeated Risk Risks = 13;
+  // Risks
+  // The risks identified during the assessment.
+  repeated Risk Risks = 13;
 
   // Findings
   // The findings identified during the assessment.

@@ -34,13 +34,6 @@ message Step {
   string Description = 3;
 }
 
-message Task {
-  string Title = 1;
-  string SubjectId = 2;
-  string Description = 3;
-  repeated Activity Activities = 4;
-}
-
 message Activity {
   string Title = 1;
   string SubjectId = 2;
@@ -48,15 +41,6 @@ message Activity {
   string Type = 4;
   repeated Step Steps = 5;
   repeated string Tools = 6;
-}
-
-message Risk {
-  string Title = 1;
-  string SubjectId = 2;
-  string Description = 3;
-  string Statement = 4;
-  repeated Property Props = 5;
-  repeated Link Links = 6;
 }
 
 enum ExecutionStatus {
