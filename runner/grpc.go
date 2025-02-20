@@ -43,7 +43,8 @@ func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.E
 	return m.Impl.Eval(req)
 }
 
-// Message struct representing the streamed messages
+// Basic message struct without oscal goodness atm
+// representing the streamed messages
 type Message struct {
 	Text   string
 	IsLast bool
