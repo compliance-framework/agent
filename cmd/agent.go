@@ -440,11 +440,6 @@ func (ar *AgentRunner) runInstance() error {
 	return nil
 }
 
-type OSCALGoodnessPlusDelimitedMeta struct {
-	Text   string
-	IsLast bool
-}
-
 func (ar *AgentRunner) CatchAsyncPluginResults(resultsGRPCInstance *runner.ResultsGRPCInstance) (map[string]runner.Message, error) {
 	results := make(map[string]runner.Message)
 	var wg sync.WaitGroup
