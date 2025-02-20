@@ -17,8 +17,8 @@ func TestAgentCmd_ConfigurationValidation(t *testing.T) {
 		{
 			name: "Valid Configuration",
 			configYamlContent: `
-nats:
-  url: nats://localhost:4222
+api:
+  url: http://localhost:8080
 
 plugins:
   test-plugin:
@@ -27,7 +27,7 @@ plugins:
 			valid: true,
 		},
 		{
-			name: "No NATS Configuration",
+			name: "No API Configuration",
 			configYamlContent: `
 plugins:
   test-plugin:
@@ -38,8 +38,8 @@ plugins:
 		{
 			name: "No Plugin Configuration",
 			configYamlContent: `
-nats:
-  url: nats://localhost:4222
+api:
+  url: http://localhost:8080
 `,
 			valid: false,
 		},

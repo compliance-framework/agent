@@ -35,11 +35,26 @@ func (t *Task) ToProtoStep() *proto.Task {
 		activities[i] = a.ToProtoActivity()
 	}
 
+	// TODO We can't do anything with the activities yet, as we need to create them somewhere and associate them
+	// with the task rather than embed them.
+
 	return &proto.Task{
+		//Activities:  activities,
+		Uuid:        "",
+		Type:        0,
 		Title:       t.Title,
-		SubjectId:   t.SubjectId,
-		Description: t.Description,
-		Activities:  activities,
+		Description: &t.Description,
+		Subjects: []*proto.AssessmentSubject{
+			{
+				IncludeSubjects: []*proto.SelectSubjectById{
+					{
+						SubjectUuid: t.SubjectId,
+					},
+				},
+			},
+		},
+		ResponsibleRoles: nil,
+		Remarks:          nil,
 	}
 }
 

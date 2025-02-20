@@ -67,6 +67,10 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no plugins specified in config")
 	}
 
+	if ac.ApiConfig == nil {
+		return fmt.Errorf("no api config specified in config")
+	}
+
 	return nil
 }
 
