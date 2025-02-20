@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
@@ -393,9 +394,14 @@ func (ar *AgentRunner) runInstance() error {
 			}
 			resultLabels["_stream"] = streamId.String()
 
-			res, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: policyPath,
+			// instantiate catcher here for when resultsGRPCInstance is invoked in plugin
+			// this shouldn't block the thread
+
+			_, err := runnerInstance.Eval(&proto.EvalRequest{
+				BundlePath:          policyPath,
+				ResultsGRPCInstance: resultsGRPCInstance,
 			})
+
 			if err != nil {
 				endTimer := time.Now()
 				_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -415,14 +421,55 @@ func (ar *AgentRunner) runInstance() error {
 			//	ar.setupPoliciesTask.ToProtoStep(),
 			//}
 
-			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(res.GetResult()))
+			// Blocking call using wg + listen to client
+			results, err := runnerInstance.CatchAsyncPluginResults(client)
+
+			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(results))
 			if err != nil {
 				return err
 			}
+
 		}
 	}
 
 	return nil
+}
+
+type OSCALGoodnessPlusDelimitedMeta struct {
+	Text   string
+	IsLast bool
+}
+
+func (ar *AgentRunner) CatchAsyncPluginResults(client any) (map[string]OSCALGoodnessPlusDelimitedMeta, error) {
+	results := make(map[string]OSCALGoodnessPlusDelimitedMeta)
+	var wg sync.WaitGroup
+
+	// Get the stream (channel simulating gRPC stream)
+	msgStream, err := client.Listen()
+	if err != nil {
+		return nil, err
+	}
+
+	// Channel to signal completion
+	done := make(chan struct{})
+
+	// Goroutine to process incoming messages
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for msg := range msgStream {
+			results[msg.Text] = msg
+			if msg.IsLast {
+				close(done) // Signal completion when delimiter message is received
+				return
+			}
+		}
+	}()
+
+	// Block until the delimiter message is received
+	wg.Wait()
+
+	return results, nil
 }
 
 func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runner.Runner, error) {

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+
 	"github.com/compliance-framework/agent/runner/proto"
 )
 

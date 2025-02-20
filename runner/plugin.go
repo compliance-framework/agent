@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -10,7 +11,7 @@ import (
 type Runner interface {
 	Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error)
 	PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error)
-	Eval(request *proto.EvalRequest) (*proto.EvalResponse, error)
+	Eval(listenerClient any) (bool, error)
 }
 
 type RunnerGRPCPlugin struct {
