@@ -394,9 +394,7 @@ func (ar *AgentRunner) runInstance() error {
 			}
 			resultLabels["_stream"] = streamId.String()
 
-			// instantiate catcher here for when resultsGRPCInstance is invoked in plugin
-			// this shouldn't block the thread
-
+			// add resultsGRPCInstance here for the Eval method in the plugin to set up and stream back to CatchAsyncPluginResults
 			_, err := runnerInstance.Eval(&proto.EvalRequest{
 				BundlePath:          policyPath,
 				ResultsGRPCInstance: resultsGRPCInstance,
