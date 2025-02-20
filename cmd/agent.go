@@ -395,6 +395,13 @@ func (ar *AgentRunner) runInstance() error {
 			resultLabels["_stream"] = streamId.String()
 
 			// add resultsGRPCInstance here for the Eval method in the plugin to set up and stream back to CatchAsyncPluginResults
+			var wg sync.WaitGroup
+
+			// Start gRPC server
+			resultsGRPCInstance := runnerInstance.NewResultsGRPCInstance()
+			wg.Add(1)
+			go resultsGRPCInstance.StartGRPCServer(&wg)
+
 			_, err := runnerInstance.Eval(&proto.EvalRequest{
 				BundlePath:          policyPath,
 				ResultsGRPCInstance: resultsGRPCInstance,
@@ -420,7 +427,7 @@ func (ar *AgentRunner) runInstance() error {
 			//}
 
 			// Blocking call using wg + listen to client
-			results, err := runnerInstance.CatchAsyncPluginResults(client)
+			results, err := runnerInstance.CatchAsyncPluginResults(resultsGRPCInstance)
 
 			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(results))
 			if err != nil {
@@ -438,35 +445,23 @@ type OSCALGoodnessPlusDelimitedMeta struct {
 	IsLast bool
 }
 
-func (ar *AgentRunner) CatchAsyncPluginResults(client any) (map[string]OSCALGoodnessPlusDelimitedMeta, error) {
-	results := make(map[string]OSCALGoodnessPlusDelimitedMeta)
+func (ar *AgentRunner) CatchAsyncPluginResults(resultsGRPCInstance *runner.ResultsGRPCInstance) (map[string]runner.Message, error) {
+	results := make(map[string]runner.Message)
 	var wg sync.WaitGroup
 
-	// Get the stream (channel simulating gRPC stream)
-	msgStream, err := client.Listen()
-	if err != nil {
-		return nil, err
-	}
-
-	// Channel to signal completion
-	done := make(chan struct{})
-
-	// Goroutine to process incoming messages
+	// Goroutine to consume messages
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for msg := range msgStream {
+		for msg := range resultsGRPCInstance.msgChan {
 			results[msg.Text] = msg
 			if msg.IsLast {
-				close(done) // Signal completion when delimiter message is received
 				return
 			}
 		}
 	}()
 
-	// Block until the delimiter message is received
-	wg.Wait()
-
+	wg.Wait() // Block until all messages are received
 	return results, nil
 }
 

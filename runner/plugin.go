@@ -11,7 +11,8 @@ import (
 type Runner interface {
 	Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error)
 	PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error)
-	Eval(listenerClient any) (bool, error)
+	Eval(request *proto.EvalRequest) (*proto.EvalResponse, error)
+	NewResultsGRPCInstance() *ResultsGRPCInstance
 }
 
 type RunnerGRPCPlugin struct {
