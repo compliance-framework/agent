@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,8 +16,10 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
+	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -28,8 +29,6 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-
-	"github.com/compliance-framework/configuration-service/sdk"
 )
 
 type apiConfig struct {
@@ -71,6 +70,13 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
+	return nil
+}
+
+type resultHelper struct{}
+
+func (*resultHelper) Result() error {
+	fmt.Println("Result called")
 	return nil
 }
 
@@ -397,9 +403,12 @@ func (ar *AgentRunner) runInstance() error {
 			}
 			resultLabels["_stream"] = streamId.String()
 
-			res, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: policyPath,
-			})
+			// create client here
+			// do we initialise it here?
+			// and then pass Eval the class in order to call methods?
+
+			res, err := runnerInstance.Eval(policyPath, &resultHelper{})
+
 			if err != nil {
 				endTimer := time.Now()
 				_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{

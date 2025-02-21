@@ -1,0 +1,16 @@
+syntax = "proto3";
+package proto;
+option go_package = "./proto";
+
+
+message ResultRequest {
+
+}
+
+message ResultResponse {
+    
+}
+
+service AddHelper {
+   rpc Result(proto.ResultRequest) returns (proto.ResultResponse);
+}

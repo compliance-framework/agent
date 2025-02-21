@@ -46,7 +46,10 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
-message EvalRequest { string bundlePath = 1; }
+message EvalRequest {
+  string bundlePath = 1;
+  uint32 add_server = 2;
+}
 
 /**
  * EvalResponse is the result of an assessment check
