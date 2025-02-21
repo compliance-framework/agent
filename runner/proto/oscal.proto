@@ -662,13 +662,13 @@ enum TaskType {
 message EventTiming {
   // On Date Condition
   // The task must occur on the specified date.
-  optional string OnDate = 1;
+  optional google.protobuf.Timestamp OnDate = 1;
 
   // On Date Range Condition
   // The task must occur within the specified date range.
   message DateRange {
-    string Start = 1;
-    string End = 2;
+    google.protobuf.Timestamp Start = 1;
+    google.protobuf.Timestamp End = 2;
   }
   optional DateRange WithinDateRange = 2;
 
@@ -860,10 +860,10 @@ message RiskLog {
     optional string Description = 3;
 
     // Start
-    string Start = 4;
+    google.protobuf.Timestamp Start = 4;
 
     // End
-    optional string End = 5;
+    optional google.protobuf.Timestamp End = 5;
 
     // Properties
     repeated Property Props = 6;
@@ -991,10 +991,10 @@ message AssessmentLog {
     optional string Description = 3;
 
     // Start
-    string Start = 4;
+    google.protobuf.Timestamp Start = 4;
 
     // End
-    optional string End = 5;
+    optional google.protobuf.Timestamp End = 5;
 
     // Properties
     repeated Property Props = 6;
