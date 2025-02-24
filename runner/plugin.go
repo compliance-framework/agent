@@ -22,12 +22,18 @@ type RunnerGRPCPlugin struct {
 }
 
 func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
-	proto.RegisterRunnerServer(s, &GRPCServer{Impl: p.Impl})
+	proto.RegisterRunnerServer(s, &GRPCServer{
+		Impl: p.Impl,
+		broker: broker,
+	})
 	return nil
 }
 
 func (p *RunnerGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
-	return &GRPCClient{client: proto.NewRunnerClient(c)}, nil
+	return &GRPCClient{
+		client: proto.NewRunnerClient(c),
+		broker: broker,
+	}, nil
 }
 
 var HandshakeConfig = plugin.HandshakeConfig{
