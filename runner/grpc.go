@@ -9,23 +9,22 @@ import (
 	"google.golang.org/grpc"
 )
 
-// GRPCClient is an implementation of KV that talks over RPC.
-type GRPCClient struct {
-	client proto.RunnerClient
-	broker *plugin.GRPCBroker
-}
-
-func (m *GRPCClient) Configure(req *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
-	return m.client.Configure(context.Background(), req)
-}
-
-func (m *GRPCClient) PrepareForEval(req *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error) {
-	return m.client.PrepareForEval(context.Background(), req)
-}
-
 type AddHelper interface {
 	AddResult(*proto.AssessmentResult) error
 }
+
+type GRPCAddHelperClient struct{ client proto.AddHelperClient }
+
+func (m *GRPCAddHelperClient) AddResult(assesmentResult *proto.AssessmentResult) error {
+	_, err := m.client.AddResult(context.Background(), &proto.ResultRequest{
+		Result: assesmentResult,
+	})
+	if err != nil {
+		hclog.Default().Error("Error adding result", err)
+	}
+	return err
+}
+
 type GRPCAddHelperServer struct {
 	// This is the real implementation
 	Impl AddHelper
@@ -39,8 +38,25 @@ func (m *GRPCAddHelperServer) AddResult(ctx context.Context, req *proto.ResultRe
 	return &proto.ResultResponse{}, err
 }
 
-func (m *GRPCClient) Eval(bundlePath string, a AddHelper) (*proto.EvalResponse, error) {
+// GRPCClient is an implementation of KV that talks over RPC.
+type GRPCClient struct {
+	client proto.RunnerClient
+	broker *plugin.GRPCBroker
+}
 
+func (m *GRPCClient) Configure(config map[string]string) (*proto.ConfigureResponse, error) {
+	req := &proto.ConfigureRequest{
+		Config: config,
+	}
+	return m.client.Configure(context.Background(), req)
+}
+
+func (m *GRPCClient) PrepareForEval() (*proto.PrepareForEvalResponse, error) {
+	req := &proto.PrepareForEvalRequest{}
+	return m.client.PrepareForEval(context.Background(), req)
+}
+
+func (m *GRPCClient) Eval(bundlePath string, a AddHelper) (*proto.EvalResponse, error) {
 	addHelperServer := &GRPCAddHelperServer{Impl: a}
 
 	var s *grpc.Server
@@ -65,23 +81,11 @@ type GRPCServer struct {
 }
 
 func (m *GRPCServer) Configure(ctx context.Context, req *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
-	return m.Impl.Configure(req)
+	return m.Impl.Configure(req.Config)
 }
 
 func (m *GRPCServer) PrepareForEval(ctx context.Context, req *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error) {
-	return m.Impl.PrepareForEval(req)
-}
-
-type GRPCAddHelperClient struct{ client proto.AddHelperClient }
-
-func (m *GRPCAddHelperClient) AddResult(assesmentResult *proto.AssessmentResult) error {
-	_, err := m.client.AddResult(context.Background(), &proto.ResultRequest{
-		Result: assesmentResult,
-	})
-	if err != nil {
-		hclog.Default().Error("Error adding result", err)
-	}
-	return err
+	return m.Impl.PrepareForEval()
 }
 
 func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.EvalResponse, error) {

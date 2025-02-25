@@ -4,14 +4,8 @@ option go_package = "./proto";
 
 import "runner/proto/oscal.proto";
 
-message ResultRequest {
-  AssessmentResult Result = 1;
-}
+message ResultRequest { AssessmentResult Result = 1; }
 
-message ResultResponse {
+message ResultResponse {}
 
-}
-
-service AddHelper {
-  rpc AddResult(ResultRequest) returns (ResultResponse);
-}
+service AddHelper { rpc AddResult(ResultRequest) returns (ResultResponse); }

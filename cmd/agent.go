@@ -31,6 +31,26 @@ import (
 	"github.com/spf13/viper"
 )
 
+// TODO: Where should this live?
+type resultHelper struct {
+	results []*proto.AssessmentResult
+}
+
+func NewResultsHelper() *resultHelper {
+	return &resultHelper{
+		results: []*proto.AssessmentResult{},
+	}
+}
+
+func (h *resultHelper) AddResult(assessmentResult *proto.AssessmentResult) error {
+	h.results = append(h.results, assessmentResult)
+	return nil
+}
+
+func (h *resultHelper) GetResults() []*proto.AssessmentResult {
+	return h.results
+}
+
 type apiConfig struct {
 	Url string `json:"url"`
 }
@@ -70,14 +90,6 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
-	return nil
-}
-
-type resultHelper struct{}
-
-func (*resultHelper) AddResult(assesmentResult *proto.AssessmentResult) error {
-	fmt.Println("Result called")
-	fmt.Println(assesmentResult)
 	return nil
 }
 
@@ -359,9 +371,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-			Config: pluginConfig.Config,
-		})
+		_, err = runnerInstance.Configure(pluginConfig.Config)
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -374,7 +384,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
+		_, err = runnerInstance.PrepareForEval()
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -404,11 +414,12 @@ func (ar *AgentRunner) runInstance() error {
 			}
 			resultLabels["_stream"] = streamId.String()
 
-			// create client here
-			// do we initialise it here?
-			// and then pass Eval the class in order to call methods?
+			// Create a new results helper for the plugin to send results back to
+			resultsHelper := NewResultsHelper()
 
-			res, err := runnerInstance.Eval(policyPath, &resultHelper{})
+			_, err := runnerInstance.Eval(policyPath, resultsHelper)
+
+			results := resultsHelper.GetResults()
 
 			if err != nil {
 				endTimer := time.Now()
@@ -422,16 +433,13 @@ func (ar *AgentRunner) runInstance() error {
 				return err
 			}
 
-			logger.Debug("Obtained results from running plugin", "res", res)
+			logger.Debug("Obtained results from running plugin", "results", results)
 
-			//setupTasks := []*proto.Task{
-			//	ar.setupPluginTask.ToProtoStep(),
-			//	ar.setupPoliciesTask.ToProtoStep(),
-			//}
-
-			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(res.GetResult()))
-			if err != nil {
-				return err
+			for _, result := range results {
+				_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(result))
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

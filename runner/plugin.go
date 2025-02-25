@@ -9,8 +9,8 @@ import (
 )
 
 type Runner interface {
-	Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error)
-	PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error)
+	Configure(config map[string]string) (*proto.ConfigureResponse, error)
+	PrepareForEval() (*proto.PrepareForEvalResponse, error)
 	Eval(bundlePath string, a AddHelper) (*proto.EvalResponse, error)
 }
 
@@ -23,7 +23,7 @@ type RunnerGRPCPlugin struct {
 
 func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
 	proto.RegisterRunnerServer(s, &GRPCServer{
-		Impl: p.Impl,
+		Impl:   p.Impl,
 		broker: broker,
 	})
 	return nil
