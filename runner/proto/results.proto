@@ -2,15 +2,16 @@ syntax = "proto3";
 package proto;
 option go_package = "./proto";
 
+import "runner/proto/oscal.proto";
 
 message ResultRequest {
-
+  AssessmentResult Result = 1;
 }
 
 message ResultResponse {
-    
+
 }
 
 service AddHelper {
-   rpc Result(proto.ResultRequest) returns (proto.ResultResponse);
+  rpc AddResult(ResultRequest) returns (ResultResponse);
 }

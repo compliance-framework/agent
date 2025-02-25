@@ -75,8 +75,9 @@ func (ac *agentConfig) validate() error {
 
 type resultHelper struct{}
 
-func (*resultHelper) Result() error {
+func (*resultHelper) AddResult(assesmentResult *proto.AssessmentResult) error {
 	fmt.Println("Result called")
+	fmt.Println(assesmentResult)
 	return nil
 }
 

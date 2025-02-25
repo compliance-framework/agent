@@ -24,15 +24,15 @@ func (m *GRPCClient) PrepareForEval(req *proto.PrepareForEvalRequest) (*proto.Pr
 }
 
 type AddHelper interface {
-	Result() error
+	AddResult(*proto.AssessmentResult) error
 }
 type GRPCAddHelperServer struct {
 	// This is the real implementation
 	Impl AddHelper
 }
 
-func (m *GRPCAddHelperServer) Result(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.Result()
+func (m *GRPCAddHelperServer) AddResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
+	err = m.Impl.AddResult(req.Result)
 	if err != nil {
 		return nil, err
 	}
@@ -74,11 +74,12 @@ func (m *GRPCServer) PrepareForEval(ctx context.Context, req *proto.PrepareForEv
 
 type GRPCAddHelperClient struct{ client proto.AddHelperClient }
 
-func (m *GRPCAddHelperClient) Result() error {
-	_, err := m.client.Result(context.Background(), &proto.ResultRequest{})
+func (m *GRPCAddHelperClient) AddResult(assesmentResult *proto.AssessmentResult) error {
+	_, err := m.client.AddResult(context.Background(), &proto.ResultRequest{
+		Result: assesmentResult,
+	})
 	if err != nil {
-		hclog.Default().Info("Harry WaZ eRe", err)
-		return err
+		hclog.Default().Error("Error adding result", err)
 	}
 	return err
 }
