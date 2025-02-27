@@ -9,14 +9,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-type AddHelper interface {
-	AddResult(*proto.AssessmentResult) error
+type ApiHelper interface {
+	CreateResult(*proto.AssessmentResult) error
 }
 
-type GRPCAddHelperClient struct{ client proto.AddHelperClient }
+type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCAddHelperClient) AddResult(assesmentResult *proto.AssessmentResult) error {
-	_, err := m.client.AddResult(context.Background(), &proto.ResultRequest{
+func (m *GRPCApiHelperClient) CreateResult(assesmentResult *proto.AssessmentResult) error {
+	_, err := m.client.CreateResult(context.Background(), &proto.ResultRequest{
 		Result: assesmentResult,
 	})
 	if err != nil {
@@ -25,13 +25,13 @@ func (m *GRPCAddHelperClient) AddResult(assesmentResult *proto.AssessmentResult)
 	return err
 }
 
-type GRPCAddHelperServer struct {
+type GRPCApiHelperServer struct {
 	// This is the real implementation
-	Impl AddHelper
+	Impl ApiHelper
 }
 
-func (m *GRPCAddHelperServer) AddResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.AddResult(req.Result)
+func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
+	err = m.Impl.CreateResult(req.Result)
 	if err != nil {
 		return nil, err
 	}
@@ -56,13 +56,13 @@ func (m *GRPCClient) PrepareForEval() (*proto.PrepareForEvalResponse, error) {
 	return m.client.PrepareForEval(context.Background(), req)
 }
 
-func (m *GRPCClient) Eval(bundlePath string, a AddHelper) (*proto.EvalResponse, error) {
-	addHelperServer := &GRPCAddHelperServer{Impl: a}
+func (m *GRPCClient) Eval(bundlePath string, a ApiHelper) (*proto.EvalResponse, error) {
+	addHelperServer := &GRPCApiHelperServer{Impl: a}
 
 	var s *grpc.Server
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
 		s = grpc.NewServer(opts...)
-		proto.RegisterAddHelperServer(s, addHelperServer)
+		proto.RegisterApiHelperServer(s, addHelperServer)
 
 		return s
 	}
@@ -95,7 +95,7 @@ func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.E
 	}
 	defer conn.Close()
 
-	a := &GRPCAddHelperClient{proto.NewAddHelperClient(conn)}
+	a := &GRPCApiHelperClient{proto.NewApiHelperClient(conn)}
 
 	return m.Impl.Eval(req.BundlePath, a)
 }

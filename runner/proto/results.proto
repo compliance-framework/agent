@@ -8,4 +8,4 @@ message ResultRequest { AssessmentResult Result = 1; }
 
 message ResultResponse {}
 
-service AddHelper { rpc AddResult(ResultRequest) returns (ResultResponse); }
+service ApiHelper { rpc CreateResult(ResultRequest) returns (ResultResponse); }

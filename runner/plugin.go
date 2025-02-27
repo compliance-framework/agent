@@ -11,7 +11,7 @@ import (
 type Runner interface {
 	Configure(config map[string]string) (*proto.ConfigureResponse, error)
 	PrepareForEval() (*proto.PrepareForEvalResponse, error)
-	Eval(bundlePath string, a AddHelper) (*proto.EvalResponse, error)
+	Eval(bundlePath string, a ApiHelper) (*proto.EvalResponse, error)
 }
 
 type RunnerGRPCPlugin struct {

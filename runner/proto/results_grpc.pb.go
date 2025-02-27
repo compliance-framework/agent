@@ -19,87 +19,87 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	AddHelper_AddResult_FullMethodName = "/proto.AddHelper/AddResult"
+	ApiHelper_CreateResult_FullMethodName = "/proto.ApiHelper/CreateResult"
 )
 
-// AddHelperClient is the client API for AddHelper service.
+// ApiHelperClient is the client API for ApiHelper service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type AddHelperClient interface {
-	AddResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
+type ApiHelperClient interface {
+	CreateResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
 }
 
-type addHelperClient struct {
+type apiHelperClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewAddHelperClient(cc grpc.ClientConnInterface) AddHelperClient {
-	return &addHelperClient{cc}
+func NewApiHelperClient(cc grpc.ClientConnInterface) ApiHelperClient {
+	return &apiHelperClient{cc}
 }
 
-func (c *addHelperClient) AddResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error) {
+func (c *apiHelperClient) CreateResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error) {
 	out := new(ResultResponse)
-	err := c.cc.Invoke(ctx, AddHelper_AddResult_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, ApiHelper_CreateResult_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// AddHelperServer is the server API for AddHelper service.
-// All implementations should embed UnimplementedAddHelperServer
+// ApiHelperServer is the server API for ApiHelper service.
+// All implementations should embed UnimplementedApiHelperServer
 // for forward compatibility
-type AddHelperServer interface {
-	AddResult(context.Context, *ResultRequest) (*ResultResponse, error)
+type ApiHelperServer interface {
+	CreateResult(context.Context, *ResultRequest) (*ResultResponse, error)
 }
 
-// UnimplementedAddHelperServer should be embedded to have forward compatible implementations.
-type UnimplementedAddHelperServer struct {
+// UnimplementedApiHelperServer should be embedded to have forward compatible implementations.
+type UnimplementedApiHelperServer struct {
 }
 
-func (UnimplementedAddHelperServer) AddResult(context.Context, *ResultRequest) (*ResultResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddResult not implemented")
+func (UnimplementedApiHelperServer) CreateResult(context.Context, *ResultRequest) (*ResultResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateResult not implemented")
 }
 
-// UnsafeAddHelperServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to AddHelperServer will
+// UnsafeApiHelperServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ApiHelperServer will
 // result in compilation errors.
-type UnsafeAddHelperServer interface {
-	mustEmbedUnimplementedAddHelperServer()
+type UnsafeApiHelperServer interface {
+	mustEmbedUnimplementedApiHelperServer()
 }
 
-func RegisterAddHelperServer(s grpc.ServiceRegistrar, srv AddHelperServer) {
-	s.RegisterService(&AddHelper_ServiceDesc, srv)
+func RegisterApiHelperServer(s grpc.ServiceRegistrar, srv ApiHelperServer) {
+	s.RegisterService(&ApiHelper_ServiceDesc, srv)
 }
 
-func _AddHelper_AddResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ApiHelper_CreateResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResultRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AddHelperServer).AddResult(ctx, in)
+		return srv.(ApiHelperServer).CreateResult(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AddHelper_AddResult_FullMethodName,
+		FullMethod: ApiHelper_CreateResult_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AddHelperServer).AddResult(ctx, req.(*ResultRequest))
+		return srv.(ApiHelperServer).CreateResult(ctx, req.(*ResultRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// AddHelper_ServiceDesc is the grpc.ServiceDesc for AddHelper service.
+// ApiHelper_ServiceDesc is the grpc.ServiceDesc for ApiHelper service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var AddHelper_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "proto.AddHelper",
-	HandlerType: (*AddHelperServer)(nil),
+var ApiHelper_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.ApiHelper",
+	HandlerType: (*ApiHelperServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "AddResult",
-			Handler:    _AddHelper_AddResult_Handler,
+			MethodName: "CreateResult",
+			Handler:    _ApiHelper_CreateResult_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

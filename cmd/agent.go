@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/open-policy-agent/opa/rego"
@@ -33,22 +34,22 @@ import (
 
 // TODO: Where should this live?
 type resultHelper struct {
-	results []*proto.AssessmentResult
+	client       *sdk.Client
+	streamId     uuid.UUID
+	resultLabels map[string]string
 }
 
-func NewResultsHelper() *resultHelper {
+func NewResultsHelper(client *sdk.Client, streamId uuid.UUID, resultLabels map[string]string) *resultHelper {
 	return &resultHelper{
-		results: []*proto.AssessmentResult{},
+		client:       client,
+		streamId:     streamId,
+		resultLabels: resultLabels,
 	}
 }
 
-func (h *resultHelper) AddResult(assessmentResult *proto.AssessmentResult) error {
-	h.results = append(h.results, assessmentResult)
-	return nil
-}
-
-func (h *resultHelper) GetResults() []*proto.AssessmentResult {
-	return h.results
+func (h *resultHelper) CreateResult(assessmentResult *proto.AssessmentResult) error {
+	_, err := h.client.Results.Create(h.streamId, h.resultLabels, runner.ResultProtoToOscal(assessmentResult))
+	return err
 }
 
 type apiConfig struct {
@@ -415,11 +416,9 @@ func (ar *AgentRunner) runInstance() error {
 			resultLabels["_stream"] = streamId.String()
 
 			// Create a new results helper for the plugin to send results back to
-			resultsHelper := NewResultsHelper()
+			resultsHelper := NewResultsHelper(client, streamId, resultLabels)
 
 			_, err := runnerInstance.Eval(policyPath, resultsHelper)
-
-			results := resultsHelper.GetResults()
 
 			if err != nil {
 				endTimer := time.Now()
@@ -431,15 +430,6 @@ func (ar *AgentRunner) runInstance() error {
 					End:         &endTimer,
 				})
 				return err
-			}
-
-			logger.Debug("Obtained results from running plugin", "results", results)
-
-			for _, result := range results {
-				_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(result))
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
