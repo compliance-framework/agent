@@ -93,31 +93,42 @@ message OriginActor {
   // References to related resources.
   repeated Link Links = 5;
 }
+// For automation, SelectSubjectByID doesn't work for a few reasons:
+// - In disconnected environments, we will not be able to collect the subjects ID from th API
+// - Even if we were in a connected environment, we'd need some way of knowing what to even look for in the API.
 
-// Select Assessment Subject
-// Identifies a set of assessment subjects to include/exclude by UUID.
-message SelectSubjectById {
-  // Subject Universally Unique Identifier Reference
-  // A machine-oriented identifier reference to a component, inventory-item, location, party, user, or resource using it's UUID.
-  string SubjectUuid = 1;
+// We could much better represent a "subject" from a plugin perspective by stating it's properties or identifying characteristics.
+// That would help us to have unique "subjects" that have been identified by the plugin and agent testing for controls.
 
-  // Subject Universally Unique Identifier Reference Type
-  // Used to indicate the type of object pointed to by the uuid-ref within a subject.
-  SubjectType Type = 2;
-
-  // Properties
-  // Additional attributes related to the subject.
-  repeated Property Props = 3;
-
-  // Links
-  // References to related resources.
-  repeated Link Links = 4;
-
-  // Remarks
-  // Additional explanatory notes.
-  optional string Remarks = 5;
-}
-
+// A few examples:
+// A Linux Machine:
+// types: ["machine". "server", "host"]
+// ips: [192.168.1.1, 192.168.100.234, fe80::67b:4334:9779:9dcc]
+// macs: [3a:ff:84:2e:3b:54, 36:09:ef:45:3c:80]
+// name: "kube-worker-1"
+//
+// A VCS repository
+// types: ["source code", "software repository"]
+// host: github.com
+// organisation: containersol
+// repository: compliance-framework-api
+//
+// An RDS Instance
+// type: ["database", "mysql", "rds", "aws rds"]
+// Account: XXX
+// Region: XXX
+// Name: XXX
+//
+// An AWS EC2 Instance
+// types: ["virtual machine", "vm", "AWS EC2"]
+// Account: XXX
+// Region: XXX
+// Name: XXX
+// Distro: XXX
+//
+//
+// That should give us a reasonable view of what we are testing against, and easy enough to fill from the plugin, because
+// the plugin knows what it is trying to test and has the best chance of identifying the "uniqueness" of what it is testing against.
 enum SubjectType {
   SUBJECT_TYPE_UNKNOWN = 0;
   SUBJECT_TYPE_COMPONENT = 1;
@@ -128,57 +139,26 @@ enum SubjectType {
   SUBJECT_TYPE_RESOURCE = 6;
 }
 
-message IncludeAll {
+message Subject {
+  // An enum to represent what type of subject the plugin is testing.
+  SubjectType type = 1; // Software / Service / User
 
-}
+  // A human-readable title and description of the subject being included in this assessment.
+  string title = 2;
+  optional string description = 3;
 
-// Subject of Assessment
-// Identifies system elements being assessed, such as components, inventory items, and locations. In the assessment plan, this identifies a planned assessment subject. In the assessment results this is an actual assessment subject, and reflects any changes from the plan. exactly what will be the focus of this assessment. Any subjects not identified in this way are out-of-scope.
-message AssessmentSubject {
-  // Subject Type
-  // Indicates the type of assessment subject, such as a component, inventory, item, location, or party represented by this selection statement.
-  SubjectType Type = 1;
-
-  // Include Subjects Description
-  // A human-readable description of the collection of subjects being included in this assessment.
-  optional string Description = 2;
+  // The properties which identify this subject clearly
+  map<string, string> properties = 4;
 
   // Properties
   // Additional attributes related to the assessment subject.
-  repeated Property Props = 3;
+  repeated Property Props = 5;
 
   // Links
   // References to related resources.
-  repeated Link Links = 4;
-
-  // Include All
-  // Specifies if all subjects should be included.
-  optional IncludeAll IncludeAll = 5;
-
-  // Include Subjects
-  // Subjects explicitly included in the assessment.
-  repeated SelectSubjectById IncludeSubjects = 6;
-
-  // Exclude Subjects
-  // Subjects explicitly excluded from the assessment.
-  repeated SelectSubjectById ExcludeSubjects = 7;
-
-  // Remarks
-  // Additional explanatory notes.
-  optional string Remarks = 8;
+  repeated Link Links = 6;
 }
 
-// Identified Subject
-// Used to detail assessment subjects that were identified by this task.
-message IdentifiedSubject {
-  // Assessment Subject Placeholder Universally Unique Identifier Reference
-  // A machine-oriented identifier reference to a unique assessment subject placeholder defined by this task.
-  string SubjectPlaceholderUuid = 1;
-
-  // Subjects
-  // Assessment subjects identified by this task.
-  repeated AssessmentSubject Subjects = 2;
-}
 
 // Responsible Party
 // A reference to a set of persons and/or organizations that have responsibility for performing the referenced role in the context of the containing object.
@@ -1539,4 +1519,10 @@ message AssessmentResult {
   // Remarks
   // Additional explanatory notes.
   optional string Remarks = 15;
+
+  // The Subjects that this result relates to.
+  // We can attach multiple subjects to a result.
+  // For example if we test a compound implementation, for example Mongo DB ports and Firewall rules under one
+  // plugin, we want to specify both in the result.
+  repeated Subject subjects = 16;
 }
