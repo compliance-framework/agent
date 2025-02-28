@@ -4,7 +4,10 @@ option go_package = "./proto";
 
 import "runner/proto/oscal.proto";
 
-message ResultRequest { AssessmentResult Result = 1; }
+message ResultRequest {
+  AssessmentResult Result   = 1;
+  string           StreamId = 2;
+}
 
 message ResultResponse {}
 

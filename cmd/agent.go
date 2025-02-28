@@ -15,7 +15,6 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
-	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
@@ -24,33 +23,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
-
-// TODO: Where should this live?
-type resultHelper struct {
-	client       *sdk.Client
-	streamId     uuid.UUID
-	resultLabels map[string]string
-}
-
-func NewResultsHelper(client *sdk.Client, streamId uuid.UUID, resultLabels map[string]string) *resultHelper {
-	return &resultHelper{
-		client:       client,
-		streamId:     streamId,
-		resultLabels: resultLabels,
-	}
-}
-
-func (h *resultHelper) CreateResult(assessmentResult *proto.AssessmentResult) error {
-	_, err := h.client.Results.Create(h.streamId, h.resultLabels, runner.ResultProtoToOscal(assessmentResult))
-	return err
-}
 
 type apiConfig struct {
 	Url string `json:"url"`
@@ -347,16 +325,21 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
-		resultLabels := pluginConfig.Labels
-		resultLabels["_plugin"] = pluginName
-		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
+		resultLabels := map[string]string{
+			"_agent":  "concom",
+			"_plugin": pluginName,
+		}
 
 		streamId, err := sdk.SeededUUID(resultLabels)
 		if err != nil {
 			return err
 		}
 
+		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
 		resultLabels["_stream"] = streamId.String()
+		for k, v := range pluginConfig.Labels {
+			resultLabels[k] = v
+		}
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
@@ -403,20 +386,8 @@ func (ar *AgentRunner) runInstance() error {
 			// TODO we need a way to get the plugin, policy and agent version at runtime.
 			resultLabels["_policy"] = policyPath
 
-			streamId, err = sdk.SeededUUID(map[string]string{
-				"plugin": pluginName,
-				"policy": policyPath,
-				// Uniquely identify this agent.
-				// If a set of machines is running the same agent config, each should have a unique UUID.
-				"hostname": os.Getenv("HOSTNAME"),
-			})
-			if err != nil {
-				return err
-			}
-			resultLabels["_stream"] = streamId.String()
-
 			// Create a new results helper for the plugin to send results back to
-			resultsHelper := NewResultsHelper(client, streamId, resultLabels)
+			resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
 
 			_, err := runnerInstance.Eval(policyPath, resultsHelper)
 

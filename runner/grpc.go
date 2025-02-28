@@ -10,14 +10,15 @@ import (
 )
 
 type ApiHelper interface {
-	CreateResult(*proto.AssessmentResult) error
+	CreateResult(*proto.AssessmentResult, string) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateResult(assesmentResult *proto.AssessmentResult) error {
+func (m *GRPCApiHelperClient) CreateResult(assesmentResult *proto.AssessmentResult, streamId string) error {
 	_, err := m.client.CreateResult(context.Background(), &proto.ResultRequest{
-		Result: assesmentResult,
+		Result:   assesmentResult,
+		StreamId: streamId,
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", err)
@@ -31,7 +32,7 @@ type GRPCApiHelperServer struct {
 }
 
 func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.CreateResult(req.Result)
+	err = m.Impl.CreateResult(req.Result, req.StreamId)
 	if err != nil {
 		return nil, err
 	}
