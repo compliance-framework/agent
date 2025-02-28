@@ -2,8 +2,45 @@ package runner
 
 import (
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/configuration-service/sdk"
 	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
+	"github.com/google/uuid"
+	"github.com/hashicorp/go-hclog"
 )
+
+type resultHelper struct {
+	logger        hclog.Logger
+	client        *sdk.Client
+	agentStreamId uuid.UUID
+	resultLabels  map[string]string
+}
+
+func NewResultsHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Client, resultLabels map[string]string) *resultHelper {
+	logger = logger.Named("results-helper")
+	return &resultHelper{
+		logger:        logger,
+		agentStreamId: agentStreamId,
+		client:        client,
+		resultLabels:  resultLabels,
+	}
+}
+
+func (h *resultHelper) CreateResult(assessmentResult *proto.AssessmentResult, streamIdString string) error {
+	mymap := map[string]string{
+		"agentStreamId": h.agentStreamId.String(),
+		"streamId":      streamIdString,
+	}
+
+	streamId, err := sdk.SeededUUID(mymap)
+
+	h.logger.Trace("Generated StreamId from map", "streamId", streamId, "map", mymap)
+
+	if err != nil {
+		return err
+	}
+	_, err = h.client.Results.Create(streamId, h.resultLabels, ResultProtoToOscal(assessmentResult))
+	return err
+}
 
 func LinksProtoToOscal(links []*proto.Link) *[]oscaltypes113.Link {
 	results := make([]oscaltypes113.Link, 0)

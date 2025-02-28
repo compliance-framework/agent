@@ -1,0 +1,14 @@
+syntax = "proto3";
+package proto;
+option go_package = "./proto";
+
+import "runner/proto/oscal.proto";
+
+message ResultRequest {
+  AssessmentResult Result   = 1;
+  string           StreamId = 2;
+}
+
+message ResultResponse {}
+
+service ApiHelper { rpc CreateResult(ResultRequest) returns (ResultResponse); }

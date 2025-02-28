@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,9 +15,10 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
-	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
+	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -28,8 +28,6 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-
-	"github.com/compliance-framework/configuration-service/sdk"
 )
 
 type apiConfig struct {
@@ -327,16 +325,21 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
-		resultLabels := pluginConfig.Labels
-		resultLabels["_plugin"] = pluginName
-		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
+		resultLabels := map[string]string{
+			"_agent":  "concom",
+			"_plugin": pluginName,
+		}
 
 		streamId, err := sdk.SeededUUID(resultLabels)
 		if err != nil {
 			return err
 		}
 
+		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
 		resultLabels["_stream"] = streamId.String()
+		for k, v := range pluginConfig.Labels {
+			resultLabels[k] = v
+		}
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
@@ -352,9 +355,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-			Config: pluginConfig.Config,
-		})
+		_, err = runnerInstance.Configure(pluginConfig.Config)
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -367,7 +368,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
+		_, err = runnerInstance.PrepareForEval()
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -385,21 +386,11 @@ func (ar *AgentRunner) runInstance() error {
 			// TODO we need a way to get the plugin, policy and agent version at runtime.
 			resultLabels["_policy"] = policyPath
 
-			streamId, err = sdk.SeededUUID(map[string]string{
-				"plugin": pluginName,
-				"policy": policyPath,
-				// Uniquely identify this agent.
-				// If a set of machines is running the same agent config, each should have a unique UUID.
-				"hostname": os.Getenv("HOSTNAME"),
-			})
-			if err != nil {
-				return err
-			}
-			resultLabels["_stream"] = streamId.String()
+			// Create a new results helper for the plugin to send results back to
+			resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
 
-			res, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: policyPath,
-			})
+			_, err := runnerInstance.Eval(policyPath, resultsHelper)
+
 			if err != nil {
 				endTimer := time.Now()
 				_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -409,18 +400,6 @@ func (ar *AgentRunner) runInstance() error {
 					Start:       startTimer,
 					End:         &endTimer,
 				})
-				return err
-			}
-
-			logger.Debug("Obtained results from running plugin", "res", res)
-
-			//setupTasks := []*proto.Task{
-			//	ar.setupPluginTask.ToProtoStep(),
-			//	ar.setupPoliciesTask.ToProtoStep(),
-			//}
-
-			_, err = client.Results.Create(streamId, resultLabels, runner.ResultProtoToOscal(res.GetResult()))
-			if err != nil {
 				return err
 			}
 		}
