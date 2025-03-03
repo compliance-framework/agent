@@ -2,9 +2,10 @@ syntax = "proto3";
 package proto;
 option go_package = "./proto";
 
-import "runner/proto/eval.proto";
-
-message Empty {}
+enum ExecutionStatus {
+  SUCCESS = 0;
+  FAILURE = 1;
+}
 
 message ConfigureRequest {
   map<string, string> config = 1;
@@ -20,8 +21,22 @@ message PrepareForEvalResponse {
   bytes value = 1;
 }
 
+message EvalRequest {
+  string bundlePath = 1;
+  uint32 apiServer = 2;
+}
+
+/**
+ * EvalResponse is the result of an assessment check
+ * Results are sent back by the plugins using the Result service defined
+ * separately.
+ */
+message EvalResponse {
+  ExecutionStatus Status = 1;
+}
+
 service Runner {
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);
   rpc PrepareForEval(PrepareForEvalRequest) returns (PrepareForEvalResponse);
-  rpc Eval(proto.EvalRequest) returns (proto.EvalResponse);
+  rpc Eval(EvalRequest) returns (EvalResponse);
 }

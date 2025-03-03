@@ -294,7 +294,8 @@ func (ObservationMethod) EnumDescriptor() ([]byte, []int) {
 }
 
 // Observation Type
-// Identifies the nature of the observation. More than one may be used to further qualify and enable filtering.
+// Identifies the nature of the observation. More than one may be used to
+// further qualify and enable filtering.
 type ObservationType int32
 
 const (
@@ -468,7 +469,8 @@ func (TaskType) EnumDescriptor() ([]byte, []int) {
 }
 
 // Remediation Intent
-// Identifies whether this is a recommendation, a planned action, or a completed action.
+// Identifies whether this is a recommendation, a planned action, or a completed
+// action.
 type Lifecycle int32
 
 const (
@@ -879,11 +881,13 @@ func (SystemComponent_ComponentType) EnumDescriptor() ([]byte, []int) {
 }
 
 // Property
-// An attribute, characteristic, or quality of the containing object expressed as a namespace qualified name/value pair.
+// An attribute, characteristic, or quality of the containing object expressed
+// as a namespace qualified name/value pair.
 type Property struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Property Name
-	// A textual label, within a namespace, that identifies a specific attribute, characteristic, or quality of the property's containing object.
+	// A textual label, within a namespace, that identifies a specific attribute,
+	// characteristic, or quality of the property's containing object.
 	Name string `protobuf:"bytes,1,opt,name=Name,proto3" json:"Name,omitempty"`
 	// Property Value
 	// Indicates the value of the attribute, characteristic, or quality.
@@ -892,10 +896,12 @@ type Property struct {
 	// A unique identifier for a property.
 	Uuid *string `protobuf:"bytes,3,opt,name=Uuid,proto3,oneof" json:"Uuid,omitempty"`
 	// Property Namespace
-	// A namespace qualifying the property's name. This allows different organizations to associate distinct semantics with the same name.
+	// A namespace qualifying the property's name. This allows different
+	// organizations to associate distinct semantics with the same name.
 	Ns *string `protobuf:"bytes,4,opt,name=Ns,proto3,oneof" json:"Ns,omitempty"`
 	// Property Class
-	// A textual label that provides a sub-type or characterization of the property's name.
+	// A textual label that provides a sub-type or characterization of the
+	// property's name.
 	Class *string `protobuf:"bytes,5,opt,name=Class,proto3,oneof" json:"Class,omitempty"`
 	// Property Group
 	// An identifier for relating distinct sets of properties.
@@ -992,16 +998,21 @@ type Link struct {
 	// A resolvable URL reference to a resource.
 	Href string `protobuf:"bytes,1,opt,name=Href,proto3" json:"Href,omitempty"`
 	// Link Relation Type
-	// Describes the type of relationship provided by the link's hypertext reference. This can be an indicator of the link's purpose.
+	// Describes the type of relationship provided by the link's hypertext
+	// reference. This can be an indicator of the link's purpose.
 	Rel *LinkRelationship `protobuf:"varint,2,opt,name=Rel,proto3,enum=proto.LinkRelationship,oneof" json:"Rel,omitempty"`
 	// Media Type
-	// A label that indicates the nature of a resource, as a data serialization or format.
+	// A label that indicates the nature of a resource, as a data serialization or
+	// format.
 	MediaType *string `protobuf:"bytes,3,opt,name=MediaType,proto3,oneof" json:"MediaType,omitempty"`
 	// Resource Fragment
-	// In case where the href points to a back-matter/resource, this value will indicate the URI fragment to append to any rlink associated with the resource. This value MUST be URI encoded.
+	// In case where the href points to a back-matter/resource, this value will
+	// indicate the URI fragment to append to any rlink associated with the
+	// resource. This value MUST be URI encoded.
 	ResourceFragment *string `protobuf:"bytes,4,opt,name=ResourceFragment,proto3,oneof" json:"ResourceFragment,omitempty"`
 	// Link Text
-	// A textual label to associate with the link, which may be used for presentation in a tool.
+	// A textual label to associate with the link, which may be used for
+	// presentation in a tool.
 	Text          *string `protobuf:"bytes,5,opt,name=Text,proto3,oneof" json:"Text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1073,17 +1084,20 @@ func (x *Link) GetText() string {
 }
 
 // Originating Actor
-// The actor that produces an observation, a finding, or a risk. One or more actor types can be used to specify a person that is using a tool.
+// The actor that produces an observation, a finding, or a risk. One or more
+// actor types can be used to specify a person that is using a tool.
 type OriginActor struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Actor Type
 	// The kind of actor.
 	Type ActorType `protobuf:"varint,1,opt,name=Type,proto3,enum=proto.ActorType" json:"Type,omitempty"`
 	// Actor Universally Unique Identifier Reference
-	// A machine-oriented identifier reference to the tool or person based on the associated type.
+	// A machine-oriented identifier reference to the tool or person based on the
+	// associated type.
 	ActorUuid string `protobuf:"bytes,2,opt,name=ActorUuid,proto3" json:"ActorUuid,omitempty"`
 	// Actor Role
-	// For a party, this can optionally be used to specify the role the actor was performing.
+	// For a party, this can optionally be used to specify the role the actor was
+	// performing.
 	RoleId *string `protobuf:"bytes,3,opt,name=RoleId,proto3,oneof" json:"RoleId,omitempty"`
 	// Properties
 	// Additional attributes related to the actor.
@@ -1165,10 +1179,12 @@ func (x *OriginActor) GetLinks() []*Link {
 type SelectSubjectById struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Subject Universally Unique Identifier Reference
-	// A machine-oriented identifier reference to a component, inventory-item, location, party, user, or resource using it's UUID.
+	// A machine-oriented identifier reference to a component, inventory-item,
+	// location, party, user, or resource using it's UUID.
 	SubjectUuid string `protobuf:"bytes,1,opt,name=SubjectUuid,proto3" json:"SubjectUuid,omitempty"`
 	// Subject Universally Unique Identifier Reference Type
-	// Used to indicate the type of object pointed to by the uuid-ref within a subject.
+	// Used to indicate the type of object pointed to by the uuid-ref within a
+	// subject.
 	Type SubjectType `protobuf:"varint,2,opt,name=Type,proto3,enum=proto.SubjectType" json:"Type,omitempty"`
 	// Properties
 	// Additional attributes related to the subject.
@@ -1285,14 +1301,21 @@ func (*IncludeAll) Descriptor() ([]byte, []int) {
 }
 
 // Subject of Assessment
-// Identifies system elements being assessed, such as components, inventory items, and locations. In the assessment plan, this identifies a planned assessment subject. In the assessment results this is an actual assessment subject, and reflects any changes from the plan. exactly what will be the focus of this assessment. Any subjects not identified in this way are out-of-scope.
+// Identifies system elements being assessed, such as components, inventory
+// items, and locations. In the assessment plan, this identifies a planned
+// assessment subject. In the assessment results this is an actual assessment
+// subject, and reflects any changes from the plan. exactly what will be the
+// focus of this assessment. Any subjects not identified in this way are
+// out-of-scope.
 type AssessmentSubject struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Subject Type
-	// Indicates the type of assessment subject, such as a component, inventory, item, location, or party represented by this selection statement.
+	// Indicates the type of assessment subject, such as a component, inventory,
+	// item, location, or party represented by this selection statement.
 	Type SubjectType `protobuf:"varint,1,opt,name=Type,proto3,enum=proto.SubjectType" json:"Type,omitempty"`
 	// Include Subjects Description
-	// A human-readable description of the collection of subjects being included in this assessment.
+	// A human-readable description of the collection of subjects being included
+	// in this assessment.
 	Description *string `protobuf:"bytes,2,opt,name=Description,proto3,oneof" json:"Description,omitempty"`
 	// Properties
 	// Additional attributes related to the assessment subject.
@@ -1407,7 +1430,8 @@ func (x *AssessmentSubject) GetRemarks() string {
 type IdentifiedSubject struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Assessment Subject Placeholder Universally Unique Identifier Reference
-	// A machine-oriented identifier reference to a unique assessment subject placeholder defined by this task.
+	// A machine-oriented identifier reference to a unique assessment subject
+	// placeholder defined by this task.
 	SubjectPlaceholderUuid string `protobuf:"bytes,1,opt,name=SubjectPlaceholderUuid,proto3" json:"SubjectPlaceholderUuid,omitempty"`
 	// Subjects
 	// Assessment subjects identified by this task.
@@ -1461,7 +1485,8 @@ func (x *IdentifiedSubject) GetSubjects() []*AssessmentSubject {
 }
 
 // Responsible Party
-// A reference to a set of persons and/or organizations that have responsibility for performing the referenced role in the context of the containing object.
+// A reference to a set of persons and/or organizations that have responsibility
+// for performing the referenced role in the context of the containing object.
 type ResponsibleParty struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Responsible Role
@@ -1549,7 +1574,8 @@ func (x *ResponsibleParty) GetRemarks() string {
 }
 
 // Task Reference
-// Identifies an individual task for which the containing object is a consequence of.
+// Identifies an individual task for which the containing object is a
+// consequence of.
 type RelatedTask struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Task Universally Unique Identifier Reference
@@ -1657,7 +1683,8 @@ func (x *RelatedTask) GetRemarks() string {
 }
 
 // Origin
-// Identifies the source of the finding, such as a tool, interviewed person, or activity.
+// Identifies the source of the finding, such as a tool, interviewed person, or
+// activity.
 type Origin struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Actors
@@ -1773,7 +1800,8 @@ func (x *ImplementationStatus) GetRemarks() string {
 }
 
 // Objective Status
-// A determination of if the objective is satisfied or not within a given system.
+// A determination of if the objective is satisfied or not within a given
+// system.
 type ObjectiveStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Objective Status State
@@ -1841,18 +1869,21 @@ func (x *ObjectiveStatus) GetRemarks() string {
 }
 
 // Objective Status
-// Captures an assessor's conclusions regarding the degree to which an objective is satisfied.
+// Captures an assessor's conclusions regarding the degree to which an objective
+// is satisfied.
 type FindingTarget struct {
 	state protoimpl.MessageState   `protogen:"open.v1"`
 	Type  FindingTarget_TargetType `protobuf:"varint,1,opt,name=Type,proto3,enum=proto.FindingTarget_TargetType" json:"Type,omitempty"`
 	// Finding Target Identifier Reference
-	// A machine-oriented identifier reference for a specific target qualified by the type.
+	// A machine-oriented identifier reference for a specific target qualified by
+	// the type.
 	TargetId string `protobuf:"bytes,2,opt,name=TargetId,proto3" json:"TargetId,omitempty"`
 	// Objective Status Title
 	// The title for this objective status.
 	Title *string `protobuf:"bytes,3,opt,name=Title,proto3,oneof" json:"Title,omitempty"`
 	// Objective Status Description
-	// A human-readable description of the assessor's conclusions regarding the degree to which an objective is satisfied.
+	// A human-readable description of the assessor's conclusions regarding the
+	// degree to which an objective is satisfied.
 	Description *string `protobuf:"bytes,4,opt,name=Description,proto3,oneof" json:"Description,omitempty"`
 	// Properties
 	// Additional attributes related to the finding target.
@@ -1861,7 +1892,8 @@ type FindingTarget struct {
 	// References to related resources.
 	Links []*Link `protobuf:"bytes,6,rep,name=Links,proto3" json:"Links,omitempty"`
 	// Objective Status
-	// A determination of if the objective is satisfied or not within a given system.
+	// A determination of if the objective is satisfied or not within a given
+	// system.
 	Status *ObjectiveStatus `protobuf:"bytes,7,opt,name=Status,proto3" json:"Status,omitempty"`
 	// Implementation Status
 	// The implementation status of the objective.
@@ -1967,11 +1999,13 @@ func (x *FindingTarget) GetRemarks() string {
 }
 
 // Related Observation
-// Relates the finding to a set of referenced observations that were used to determine the finding.
+// Relates the finding to a set of referenced observations that were used to
+// determine the finding.
 type RelatedObservation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Observation Universally Unique Identifier Reference
-	// A machine-oriented identifier reference to an observation defined in the list of observations.
+	// A machine-oriented identifier reference to an observation defined in the
+	// list of observations.
 	ObservationUuid string `protobuf:"bytes,1,opt,name=ObservationUuid,proto3" json:"ObservationUuid,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -2015,7 +2049,8 @@ func (x *RelatedObservation) GetObservationUuid() string {
 }
 
 // Associated Risk
-// Relates the finding to a set of referenced risks that were used to determine the finding.
+// Relates the finding to a set of referenced risks that were used to determine
+// the finding.
 type RelatedRisk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Risk Universally Unique Identifier Reference
@@ -2151,14 +2186,18 @@ func (x *RelevantEvidence) GetRemarks() string {
 }
 
 // Identifies the Subject
-// A human-oriented identifier reference to a resource. Use type to indicate whether the identified resource is a component, inventory item, location, user, or something else.
+// A human-oriented identifier reference to a resource. Use type to indicate
+// whether the identified resource is a component, inventory item, location,
+// user, or something else.
 type SubjectReference struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Subject Universally Unique Identifier Reference
-	// A machine-oriented identifier reference to a component, inventory-item, location, party, user, or resource using its UUID.
+	// A machine-oriented identifier reference to a component, inventory-item,
+	// location, party, user, or resource using its UUID.
 	SubjectUuid string `protobuf:"bytes,1,opt,name=SubjectUuid,proto3" json:"SubjectUuid,omitempty"`
 	// Subject Universally Unique Identifier Reference Type
-	// Used to indicate the type of object pointed to by the uuid-ref within a subject.
+	// Used to indicate the type of object pointed to by the uuid-ref within a
+	// subject.
 	Type SubjectType `protobuf:"varint,2,opt,name=Type,proto3,enum=proto.SubjectType" json:"Type,omitempty"`
 	// Subject Reference Title
 	// The title or name for the referenced subject.
@@ -2253,7 +2292,13 @@ func (x *SubjectReference) GetRemarks() string {
 type Finding struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Finding Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this finding in this or other OSCAL instances. The locally defined UUID of the finding can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this finding in this or other OSCAL
+	// instances. The locally defined UUID of the finding can be used to reference
+	// the data item locally or globally (e.g., in an imported OSCAL instance).
+	// This UUID should be assigned per-subject, which means it should be
+	// consistently used to identify the same subject across revisions of the
+	// document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Finding Title
 	// The title for this finding.
@@ -2274,13 +2319,16 @@ type Finding struct {
 	// The objective status and target of the finding.
 	Target *FindingTarget `protobuf:"bytes,7,opt,name=Target,proto3" json:"Target,omitempty"`
 	// Implementation Statement UUID
-	// A reference to the implementation statement in the SSP related to this finding.
+	// A reference to the implementation statement in the SSP related to this
+	// finding.
 	ImplementationStatementUuid *string `protobuf:"bytes,8,opt,name=ImplementationStatementUuid,proto3,oneof" json:"ImplementationStatementUuid,omitempty"`
 	// Related Observation
-	// Relates the finding to a set of referenced observations that were used to determine the finding.
+	// Relates the finding to a set of referenced observations that were used to
+	// determine the finding.
 	RelatedObservations []*RelatedObservation `protobuf:"bytes,9,rep,name=RelatedObservations,proto3" json:"RelatedObservations,omitempty"`
 	// Associated Risk
-	// Relates the finding to a set of referenced risks that were used to determine the finding.
+	// Relates the finding to a set of referenced risks that were used to
+	// determine the finding.
 	RelatedRisks []*RelatedRisk `protobuf:"bytes,10,rep,name=RelatedRisks,proto3" json:"RelatedRisks,omitempty"`
 	// Remarks
 	// Additional explanatory notes.
@@ -2401,7 +2449,8 @@ func (x *Finding) GetRemarks() string {
 type Observation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Observation Universally Unique Identifier
-	// A globally unique identifier for this observation, used for cross-instance referencing.
+	// A globally unique identifier for this observation, used for cross-instance
+	// referencing.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Observation Title
 	// The title for this observation.
@@ -2419,7 +2468,8 @@ type Observation struct {
 	// Identifies how the observation was made.
 	Methods []ObservationMethod `protobuf:"varint,6,rep,packed,name=Methods,proto3,enum=proto.ObservationMethod" json:"Methods,omitempty"`
 	// Observation Type
-	// Identifies the nature of the observation. More than one may be used to further qualify and enable filtering.
+	// Identifies the nature of the observation. More than one may be used to
+	// further qualify and enable filtering.
 	Types []ObservationType `protobuf:"varint,7,rep,packed,name=Types,proto3,enum=proto.ObservationType" json:"Types,omitempty"`
 	// Origins
 	// The sources of the observation, such as tools or activities.
@@ -2434,7 +2484,8 @@ type Observation struct {
 	// Date/time stamp identifying when the observation information was collected.
 	Collected *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=Collected,proto3" json:"Collected,omitempty"`
 	// Expires Field
-	// Date/time identifying when the observation information is out-of-date and no longer valid.
+	// Date/time identifying when the observation information is out-of-date and
+	// no longer valid.
 	Expires *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=Expires,proto3,oneof" json:"Expires,omitempty"`
 	// Remarks
 	// Additional explanatory notes.
@@ -2633,14 +2684,17 @@ func (x *ThreatId) GetId() string {
 }
 
 // Facet
-// An individual characteristic that is part of a larger set produced by the same actor.
+// An individual characteristic that is part of a larger set produced by the
+// same actor.
 type Facet struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Facet Name
 	// The name of the risk metric within the specified system.
 	Name string `protobuf:"bytes,1,opt,name=Name,proto3" json:"Name,omitempty"`
 	// Naming System
-	// Specifies the naming system under which this risk metric is organized, which allows for the same names to be used in different systems controlled by different parties. This avoids the potential of a name clash.
+	// Specifies the naming system under which this risk metric is organized,
+	// which allows for the same names to be used in different systems controlled
+	// by different parties. This avoids the potential of a name clash.
 	System string `protobuf:"bytes,2,opt,name=System,proto3" json:"System,omitempty"`
 	// Facet Value
 	// Indicates the value of the facet.
@@ -2731,7 +2785,8 @@ func (x *Facet) GetRemarks() string {
 }
 
 // Characterization
-// A collection of descriptive data about the containing object from a specific origin.
+// A collection of descriptive data about the containing object from a specific
+// origin.
 type Characterization struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Properties
@@ -2807,14 +2862,28 @@ func (x *Characterization) GetFacets() []*Facet {
 }
 
 // Mitigating Factors
-// Describes an existing mitigating factor that may affect the overall determination of the risk, with an optional link to an implementation statement in the SSP.
+// Describes an existing mitigating factor that may affect the overall
+// determination of the risk, with an optional link to an implementation
+// statement in the SSP.
 type MitigatingFactor struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Mitigating Factor Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this mitigating factor elsewhere in this or other OSCAL instances. The locally defined UUID of the mitigating factor can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this mitigating factor elsewhere in this or
+	// other OSCAL instances. The locally defined UUID of the mitigating factor
+	// can be used to reference the data item locally or globally (e.g., in an
+	// imported OSCAL instance). This UUID should be assigned per-subject, which
+	// means it should be consistently used to identify the same subject across
+	// revisions of the document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Implementation UUID
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this implementation statement elsewhere in this or other OSCAL instancess. The locally defined UUID of the implementation statement can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this implementation statement elsewhere in
+	// this or other OSCAL instancess. The locally defined UUID of the
+	// implementation statement can be used to reference the data item locally or
+	// globally (e.g., in an imported OSCAL instance). This UUID should be
+	// assigned per-subject, which means it should be consistently used to
+	// identify the same subject across revisions of the document.
 	ImplementationUuid *string `protobuf:"bytes,2,opt,name=ImplementationUuid,proto3,oneof" json:"ImplementationUuid,omitempty"`
 	// Mitigating Factor Description
 	// A human-readable description of this mitigating factor.
@@ -2906,7 +2975,13 @@ func (x *MitigatingFactor) GetSubjects() []*SubjectReference {
 type RequiredAsset struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this required asset elsewhere in this or other OSCAL instances. The locally defined UUID of the asset can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this required asset elsewhere in this or
+	// other OSCAL instances. The locally defined UUID of the asset can be used to
+	// reference the data item locally or globally (e.g., in an imported OSCAL
+	// instance). This UUID should be assigned per-subject, which means it should
+	// be consistently used to identify the same subject across revisions of the
+	// document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Subjects
 	Subjects []*SubjectReference `protobuf:"bytes,2,rep,name=Subjects,proto3" json:"Subjects,omitempty"`
@@ -3068,7 +3143,9 @@ func (x *EventTiming) GetAtFrequency() *EventTiming_Frequency {
 }
 
 // Responsible Role
-// A reference to a role with responsibility for performing a function relative to the containing object, optionally associated with a set of persons and/or organizations that perform that role.
+// A reference to a role with responsibility for performing a function relative
+// to the containing object, optionally associated with a set of persons and/or
+// organizations that perform that role.
 type ResponsibleRole struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Responsible Role ID
@@ -3156,7 +3233,8 @@ func (x *ResponsibleRole) GetRemarks() string {
 }
 
 // Task
-// Represents a scheduled event or milestone, which may be associated with a series of assessment actions.
+// Represents a scheduled event or milestone, which may be associated with a
+// series of assessment actions.
 type Task struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Task Universally Unique Identifier
@@ -3322,10 +3400,17 @@ func (x *Task) GetRemarks() string {
 type Response struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Remediation Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this remediation elsewhere in this or other OSCAL instances. The locally defined UUID of the risk response can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this remediation elsewhere in this or other
+	// OSCAL instances. The locally defined UUID of the risk response can be used
+	// to reference the data item locally or globally (e.g., in an imported OSCAL
+	// instance). This UUID should be assigned per-subject, which means it should
+	// be consistently used to identify the same subject across revisions of the
+	// document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Remediation Intent
-	// Identifies whether this is a recommendation, such as from an assessor or tool, or an actual plan accepted by the system owner.
+	// Identifies whether this is a recommendation, such as from an assessor or
+	// tool, or an actual plan accepted by the system owner.
 	Lifecycle Lifecycle `protobuf:"varint,2,opt,name=Lifecycle,proto3,enum=proto.Lifecycle" json:"Lifecycle,omitempty"`
 	// Response Title
 	// The title for this response activity.
@@ -3562,13 +3647,20 @@ func (x *LoggedBy) GetRoleId() string {
 type Risk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Risk Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this risk elsewhere in this or other OSCAL instances. The locally defined UUID of the risk can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this risk elsewhere in this or other OSCAL
+	// instances. The locally defined UUID of the risk can be used to reference
+	// the data item locally or globally (e.g., in an imported OSCAL instance).
+	// This UUID should be assigned per-subject, which means it should be
+	// consistently used to identify the same subject across revisions of the
+	// document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Risk Title
 	// The title for this risk.
 	Title string `protobuf:"bytes,2,opt,name=Title,proto3" json:"Title,omitempty"`
 	// Risk Description
-	// A human-readable summary of the identified risk, to include a statement of how the risk impacts the system.
+	// A human-readable summary of the identified risk, to include a statement of
+	// how the risk impacts the system.
 	Description string `protobuf:"bytes,3,opt,name=Description,proto3" json:"Description,omitempty"`
 	// Risk Statement
 	// An summary of impact for how the risk affects the system.
@@ -3589,10 +3681,13 @@ type Risk struct {
 	// Identifies threats associated with the risk.
 	ThreatIds []*ThreatId `protobuf:"bytes,9,rep,name=ThreatIds,proto3" json:"ThreatIds,omitempty"`
 	// Characterizations
-	// A collection of descriptive data about the containing object from a specific origin.
+	// A collection of descriptive data about the containing object from a
+	// specific origin.
 	Characterizations []*Characterization `protobuf:"bytes,10,rep,name=Characterizations,proto3" json:"Characterizations,omitempty"`
 	// Mitigating Factors
-	// Describes an existing mitigating factor that may affect the overall determination of the risk, with an optional link to an implementation statement in the SSP.
+	// Describes an existing mitigating factor that may affect the overall
+	// determination of the risk, with an optional link to an implementation
+	// statement in the SSP.
 	MitigatingFactors []*MitigatingFactor `protobuf:"bytes,11,rep,name=MitigatingFactors,proto3" json:"MitigatingFactors,omitempty"`
 	// Risk Resolution Deadline
 	// The date/time by which the risk must be resolved.
@@ -3970,7 +4065,8 @@ func (x *Attestation) GetParts() []*AssessmentPart {
 }
 
 // Select Control
-// Used to select a control for inclusion/exclusion based on one or more control identifiers.
+// Used to select a control for inclusion/exclusion based on one or more control
+// identifiers.
 type SelectControlById struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Control Identifier Reference
@@ -4028,7 +4124,8 @@ func (x *SelectControlById) GetStatementIds() []string {
 }
 
 // Select Objective
-// Used to select a control objective for inclusion/exclusion based on its identifier.
+// Used to select a control objective for inclusion/exclusion based on its
+// identifier.
 type SelectObjectiveById struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Objective ID
@@ -4228,14 +4325,17 @@ func (x *Status) GetRemarks() string {
 }
 
 // Port Range
-// Defines the transport layer protocol port range for an IPv4-based or IPv6-based service.
+// Defines the transport layer protocol port range for an IPv4-based or
+// IPv6-based service.
 type PortRange struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Start
-	// Indicates the starting port number in a port range for a transport layer protocol.
+	// Indicates the starting port number in a port range for a transport layer
+	// protocol.
 	Start uint32 `protobuf:"varint,1,opt,name=Start,proto3" json:"Start,omitempty"`
 	// End
-	// Indicates the ending port number in a port range for a transport layer protocol.
+	// Indicates the ending port number in a port range for a transport layer
+	// protocol.
 	End uint32 `protobuf:"varint,2,opt,name=End,proto3" json:"End,omitempty"`
 	// Transport
 	// Indicates the transport type.
@@ -4303,7 +4403,8 @@ type Protocol struct {
 	// A globally unique identifier for this protocol instance.
 	Uuid *string `protobuf:"bytes,1,opt,name=Uuid,proto3,oneof" json:"Uuid,omitempty"`
 	// Protocol Name
-	// The common name of the protocol, typically from the IANA Service Name and Transport Protocol Port Number Registry.
+	// The common name of the protocol, typically from the IANA Service Name and
+	// Transport Protocol Port Number Registry.
 	Name string `protobuf:"bytes,2,opt,name=Name,proto3" json:"Name,omitempty"`
 	// Protocol Title
 	// A human-readable name for the protocol (e.g., Transport Layer Security).
@@ -4624,7 +4725,8 @@ func (x *InventoryItem) GetRemarks() string {
 }
 
 // Functions Performed
-// Describes a function performed for a given authorized privilege by this user class.
+// Describes a function performed for a given authorized privilege by this user
+// class.
 type FunctionPerformed struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Function Name
@@ -4672,7 +4774,8 @@ func (x *FunctionPerformed) GetName() string {
 }
 
 // Privilege
-// Identifies a specific system privilege held by the user, with an associated description and/or rationale.
+// Identifies a specific system privilege held by the user, with an associated
+// description and/or rationale.
 type AuthorizedPrivilege struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Privilege Title
@@ -4868,7 +4971,8 @@ func (x *SystemUser) GetRemarks() string {
 }
 
 // Assessment Assets
-// Identifies the assets used to perform this assessment, such as the assessment team, scanning tools, and assumptions.
+// Identifies the assets used to perform this assessment, such as the assessment
+// team, scanning tools, and assumptions.
 type AssessmentAssets struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Components
@@ -4924,7 +5028,8 @@ func (x *AssessmentAssets) GetAssessmentPlatforms() []*AssessmentAssets_Assessme
 }
 
 // Local Definitions
-// Used to define data objects used in the assessment plan but not appearing in the referenced SSP.
+// Used to define data objects used in the assessment plan but not appearing in
+// the referenced SSP.
 type LocalDefinitions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Components
@@ -5007,11 +5112,20 @@ func (x *LocalDefinitions) GetTasks() []*Task {
 }
 
 // Assessment Result
-// Used by the assessment results and POA&M. In the assessment results, this identifies all of the assessment observations and findings, initial and residual risks, deviations, and disposition. In the POA&M, this identifies initial and residual risks, deviations, and disposition.
+// Used by the assessment results and POA&M. In the assessment results, this
+// identifies all of the assessment observations and findings, initial and
+// residual risks, deviations, and disposition. In the POA&M, this identifies
+// initial and residual risks, deviations, and disposition.
 type AssessmentResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Results Universally Unique Identifier
-	// A machine-oriented, globally unique identifier with cross-instance scope that can be used to reference this set of results in this or other OSCAL instances. The locally defined UUID of the assessment result can be used to reference the data item locally or globally (e.g., in an imported OSCAL instance). This UUID should be assigned per-subject, which means it should be consistently used to identify the same subject across revisions of the document.
+	// A machine-oriented, globally unique identifier with cross-instance scope
+	// that can be used to reference this set of results in this or other OSCAL
+	// instances. The locally defined UUID of the assessment result can be used to
+	// reference the data item locally or globally (e.g., in an imported OSCAL
+	// instance). This UUID should be assigned per-subject, which means it should
+	// be consistently used to identify the same subject across revisions of the
+	// document.
 	Uuid string `protobuf:"bytes,1,opt,name=Uuid,proto3" json:"Uuid,omitempty"`
 	// Results Title
 	// The title for this set of results.
@@ -5020,16 +5134,21 @@ type AssessmentResult struct {
 	// A human-readable description of this set of test results.
 	Description string `protobuf:"bytes,3,opt,name=Description,proto3" json:"Description,omitempty"`
 	// Start Field
-	// Date/time stamp identifying the start of the evidence collection reflected in these results.
+	// Date/time stamp identifying the start of the evidence collection reflected
+	// in these results.
 	Start *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=Start,proto3" json:"Start,omitempty"`
 	// End Field
-	// Date/time stamp identifying the end of the evidence collection reflected in these results. In a continuous motoring scenario, this may contain the same value as start if appropriate.
+	// Date/time stamp identifying the end of the evidence collection reflected in
+	// these results. In a continuous motoring scenario, this may contain the same
+	// value as start if appropriate.
 	End *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=End,proto3,oneof" json:"End,omitempty"`
 	// Properties
-	// An attribute, characteristic, or quality of the containing object expressed as a namespace qualified name/value pair.
+	// An attribute, characteristic, or quality of the containing object expressed
+	// as a namespace qualified name/value pair.
 	Props []*Property `protobuf:"bytes,6,rep,name=Props,proto3" json:"Props,omitempty"`
 	// Links
-	// A reference to a local or remote resource, that has a specific relation to the containing object.
+	// A reference to a local or remote resource, that has a specific relation to
+	// the containing object.
 	Links            []*Link           `protobuf:"bytes,7,rep,name=Links,proto3" json:"Links,omitempty"`
 	LocalDefinitions *LocalDefinitions `protobuf:"bytes,8,opt,name=LocalDefinitions,proto3,oneof" json:"LocalDefinitions,omitempty"`
 	// Reviewed Controls
@@ -5793,7 +5912,8 @@ func (x *AssessmentLog_Entry) GetRemarks() string {
 type ReviewedControls_ControlSelection struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Assessed Controls Description
-	// A human-readable description of in-scope controls specified for assessment.
+	// A human-readable description of in-scope controls specified for
+	// assessment.
 	Description *string `protobuf:"bytes,1,opt,name=Description,proto3,oneof" json:"Description,omitempty"`
 	// Properties
 	Props []*Property `protobuf:"bytes,2,rep,name=Props,proto3" json:"Props,omitempty"`
@@ -6001,7 +6121,8 @@ func (x *ReviewedControls_ControlObjectiveSelection) GetRemarks() string {
 }
 
 // Implemented Component
-// The set of components that are implemented in a given system inventory item.
+// The set of components that are implemented in a given system inventory
+// item.
 type InventoryItem_ImplementedComponent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Component Universally Unique Identifier Reference
