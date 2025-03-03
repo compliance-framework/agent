@@ -7,17 +7,17 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
-message ConfigureRequest { map<string, string> config = 1; }
+message ConfigureRequest {map<string, string> config = 1;}
 
-message ConfigureResponse { bytes value = 1; }
+message ConfigureResponse {bytes value = 1;}
 
 message PrepareForEvalRequest {}
 
-message PrepareForEvalResponse { bytes value = 1; }
+message PrepareForEvalResponse {bytes value = 1;}
 
 message EvalRequest {
   string bundlePath = 1;
-  uint32 add_server = 2;
+  uint32 apiServer = 2;
 }
 
 /**
@@ -25,7 +25,7 @@ message EvalRequest {
  * Results are sent back by the plugins using the Result service defined
  * separately.
  */
-message EvalResponse { ExecutionStatus Status = 1; }
+message EvalResponse {ExecutionStatus Status = 1;}
 
 service Runner {
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);

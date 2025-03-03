@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/compliance-framework/agent/runner/proto"
 	"net/http"
 	"os"
 	"os/exec"
@@ -355,7 +356,9 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.Configure(pluginConfig.Config)
+		_, err = runnerInstance.Configure(&proto.ConfigureRequest{
+			Config: pluginConfig.Config,
+		})
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
@@ -389,7 +392,9 @@ func (ar *AgentRunner) runInstance() error {
 			// Create a new results helper for the plugin to send results back to
 			resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
 
-			_, err := runnerInstance.Eval(policyPath, resultsHelper)
+			_, err := runnerInstance.Eval(&proto.EvalRequest{
+				BundlePath: policyPath,
+			}, resultsHelper)
 
 			if err != nil {
 				endTimer := time.Now()

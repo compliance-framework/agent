@@ -67,7 +67,7 @@ func (m *GRPCClient) Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalR
 	brokerID := m.broker.NextId()
 	go m.broker.AcceptAndServe(brokerID, serverFunc)
 
-	request.AddServer = brokerID
+	request.ApiServer = brokerID
 	resp, err := m.client.Eval(context.Background(), request)
 	return resp, err
 }
@@ -86,7 +86,7 @@ func (m *GRPCServer) PrepareForEval(ctx context.Context, req *proto.PrepareForEv
 }
 
 func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.EvalResponse, error) {
-	conn, err := m.broker.Dial(req.AddServer)
+	conn, err := m.broker.Dial(req.ApiServer)
 	if err != nil {
 		return nil, err
 	}
