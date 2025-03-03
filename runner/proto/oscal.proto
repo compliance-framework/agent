@@ -488,7 +488,10 @@ message Finding {
   // Remarks
   // Additional explanatory notes.
   optional string Remarks = 11;
-}
+
+  // Labels
+  map<string,string> Labels = 12;
+} 
 
 // Observation Method
 // Identifies how the observation was made.
@@ -568,6 +571,9 @@ message Observation {
   // Remarks
   // Additional explanatory notes.
   optional string Remarks = 13;
+
+  // Labels
+  map<string,string> Labels = 14;
 }
 
 // Risk Status
