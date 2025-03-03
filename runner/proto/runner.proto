@@ -7,13 +7,19 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
-message ConfigureRequest {map<string, string> config = 1;}
+message ConfigureRequest {
+  map<string, string> config = 1;
+}
 
-message ConfigureResponse {bytes value = 1;}
+message ConfigureResponse {
+  bytes value = 1;
+}
 
 message PrepareForEvalRequest {}
 
-message PrepareForEvalResponse {bytes value = 1;}
+message PrepareForEvalResponse {
+  bytes value = 1;
+}
 
 message EvalRequest {
   string bundlePath = 1;

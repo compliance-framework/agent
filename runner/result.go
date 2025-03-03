@@ -25,20 +25,26 @@ func NewResultsHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.
 	}
 }
 
-func (h *resultHelper) CreateResult(assessmentResult *proto.AssessmentResult, streamIdString string) error {
-	mymap := map[string]string{
+func (h *resultHelper) CreateResult(streamID string, labels map[string]string, result *proto.AssessmentResult) error {
+	streamSeedMap := map[string]string{
 		"agentStreamId": h.agentStreamId.String(),
-		"streamId":      streamIdString,
+		"streamId":      streamID,
 	}
 
-	streamId, err := sdk.SeededUUID(mymap)
+	streamId, err := sdk.SeededUUID(streamSeedMap)
 
-	h.logger.Trace("Generated StreamId from map", "streamId", streamId, "map", mymap)
+	h.logger.Trace("Generated StreamId from map", "streamId", streamId, "streamSeedMap", streamSeedMap)
 
 	if err != nil {
 		return err
 	}
-	_, err = h.client.Results.Create(streamId, h.resultLabels, ResultProtoToOscal(assessmentResult))
+
+	resultLabels := h.resultLabels
+	for k, v := range labels {
+		resultLabels[k] = v
+	}
+
+	_, err = h.client.Results.Create(streamId, resultLabels, ResultProtoToOscal(result))
 	return err
 }
 
