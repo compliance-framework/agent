@@ -45,19 +45,15 @@ type GRPCClient struct {
 	broker *plugin.GRPCBroker
 }
 
-func (m *GRPCClient) Configure(config map[string]string) (*proto.ConfigureResponse, error) {
-	req := &proto.ConfigureRequest{
-		Config: config,
-	}
-	return m.client.Configure(context.Background(), req)
+func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
+	return m.client.Configure(context.Background(), request)
 }
 
-func (m *GRPCClient) PrepareForEval() (*proto.PrepareForEvalResponse, error) {
-	req := &proto.PrepareForEvalRequest{}
-	return m.client.PrepareForEval(context.Background(), req)
+func (m *GRPCClient) PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error) {
+	return m.client.PrepareForEval(context.Background(), request)
 }
 
-func (m *GRPCClient) Eval(bundlePath string, a ApiHelper) (*proto.EvalResponse, error) {
+func (m *GRPCClient) Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error) {
 	addHelperServer := &GRPCApiHelperServer{Impl: a}
 
 	var s *grpc.Server
@@ -71,8 +67,8 @@ func (m *GRPCClient) Eval(bundlePath string, a ApiHelper) (*proto.EvalResponse, 
 	brokerID := m.broker.NextId()
 	go m.broker.AcceptAndServe(brokerID, serverFunc)
 
-	req := &proto.EvalRequest{BundlePath: bundlePath, AddServer: brokerID}
-	resp, err := m.client.Eval(context.Background(), req)
+	request.AddServer = brokerID
+	resp, err := m.client.Eval(context.Background(), request)
 	return resp, err
 }
 
@@ -82,11 +78,11 @@ type GRPCServer struct {
 }
 
 func (m *GRPCServer) Configure(ctx context.Context, req *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
-	return m.Impl.Configure(req.Config)
+	return m.Impl.Configure(req)
 }
 
 func (m *GRPCServer) PrepareForEval(ctx context.Context, req *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error) {
-	return m.Impl.PrepareForEval()
+	return m.Impl.PrepareForEval(req)
 }
 
 func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.EvalResponse, error) {
@@ -98,5 +94,5 @@ func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.E
 
 	a := &GRPCApiHelperClient{proto.NewApiHelperClient(conn)}
 
-	return m.Impl.Eval(req.BundlePath, a)
+	return m.Impl.Eval(req, a)
 }

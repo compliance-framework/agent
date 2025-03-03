@@ -9,9 +9,9 @@ import (
 )
 
 type Runner interface {
-	Configure(config map[string]string) (*proto.ConfigureResponse, error)
-	PrepareForEval() (*proto.PrepareForEvalResponse, error)
-	Eval(bundlePath string, a ApiHelper) (*proto.EvalResponse, error)
+	Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error)
+	PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error)
+	Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error)
 }
 
 type RunnerGRPCPlugin struct {

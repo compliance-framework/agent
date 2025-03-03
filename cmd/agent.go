@@ -368,7 +368,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.PrepareForEval()
+		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
