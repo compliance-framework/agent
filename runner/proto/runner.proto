@@ -31,7 +31,9 @@ message EvalRequest {
  * Results are sent back by the plugins using the Result service defined
  * separately.
  */
-message EvalResponse {ExecutionStatus Status = 1;}
+message EvalResponse {
+  ExecutionStatus Status = 1;
+}
 
 service Runner {
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);

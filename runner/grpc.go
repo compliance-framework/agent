@@ -55,12 +55,12 @@ func (m *GRPCClient) PrepareForEval(request *proto.PrepareForEvalRequest) (*prot
 }
 
 func (m *GRPCClient) Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error) {
-	addHelperServer := &GRPCApiHelperServer{Impl: a}
+	apiHelperServer := &GRPCApiHelperServer{Impl: a}
 
 	var s *grpc.Server
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
 		s = grpc.NewServer(opts...)
-		proto.RegisterApiHelperServer(s, addHelperServer)
+		proto.RegisterApiHelperServer(s, apiHelperServer)
 
 		return s
 	}
