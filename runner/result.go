@@ -890,12 +890,15 @@ func ResultProtoToSDK(result *proto.AssessmentResult, streamId uuid.UUID, result
 	endTime := result.GetEnd().AsTime()
 
 	stringToUUID, err := uuid.Parse(result.GetUuid())
+
+	stringToUUIDpointer := &stringToUUID
+
 	if err != nil {
-		return nil, err
+		stringToUUIDpointer = nil
 	}
 
 	return &sdk.Result{
-		UUID:     &stringToUUID,
+		UUID:     stringToUUIDpointer,
 		StreamID: streamId,
 		Labels:   resultLabels,
 
