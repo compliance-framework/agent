@@ -44,7 +44,7 @@ func (h *resultHelper) CreateResult(streamID string, labels map[string]string, r
 		resultLabels[k] = v
 	}
 
-	_, err = h.client.Results.Create(streamId, resultLabels, ResultProtoToOscal(result))
+	_, err = h.client.Results.Create(ResultProtoToOscal(result, streamId, resultLabels))
 	return err
 }
 
@@ -881,10 +881,19 @@ func AssessmentLogProtoToOscal(log *proto.AssessmentLog) *oscaltypes113.Assessme
 	}
 }
 
-func ResultProtoToOscal(result *proto.AssessmentResult) *oscaltypes113.Result {
+func ResultProtoToOscal(result *proto.AssessmentResult, streamId uuid.UUID, resultLabels map[string]string) (*sdk.Result, error) {
 	endTime := result.GetEnd().AsTime()
-	return &oscaltypes113.Result{
-		UUID:             result.GetUuid(),
+
+	stringToUUID, err := uuid.Parse(result.GetUuid())
+	if err != nil {
+		return nil, err
+	}
+
+	return &sdk.Result{
+		UUID:     stringToUUID,
+		StreamID: streamId,
+		Labels:   resultLabels,
+
 		Title:            result.GetTitle(),
 		Description:      result.GetDescription(),
 		Start:            result.GetStart().AsTime(),
@@ -899,5 +908,5 @@ func ResultProtoToOscal(result *proto.AssessmentResult) *oscaltypes113.Result {
 		LocalDefinitions: nil,
 		ReviewedControls: *ReviewedControlProtoToOscal(result.GetReviewedControls()),
 		Risks:            RisksProtoToOscal(result.GetRisks()),
-	}
+	}, nil
 }
