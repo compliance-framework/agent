@@ -44,7 +44,12 @@ func (h *resultHelper) CreateResult(streamID string, labels map[string]string, r
 		resultLabels[k] = v
 	}
 
-	_, err = h.client.Results.Create(ResultProtoToOscal(result, streamId, resultLabels))
+	transformedResultAPI, err := ResultProtoToSDK(result, streamId, resultLabels)
+	if err != nil {
+		return err
+	}
+
+	_, err = h.client.Results.Create(transformedResultAPI)
 	return err
 }
 
@@ -673,18 +678,10 @@ func FindingTargetProtoToOscal(target *proto.FindingTarget) *oscaltypes113.Findi
 	}
 }
 
-func ObservationsProtoToOscal(observations []*proto.Observation) *[]oscaltypes113.Observation {
-	results := make([]oscaltypes113.Observation, 0)
-	for _, observation := range observations {
-		results = append(results, *ObservationProtoToOscal(observation))
-	}
-	return &results
-}
-
-func ObservationProtoToOscal(observation *proto.Observation) *oscaltypes113.Observation {
+func ObservationProtoToSDK(observation *proto.Observation) *sdk.Observation {
 	expires := observation.GetExpires().AsTime()
 
-	return &oscaltypes113.Observation{
+	return &sdk.Observation{
 		UUID:             observation.GetUuid(),
 		Title:            observation.GetTitle(),
 		Description:      observation.GetDescription(),
@@ -701,16 +698,16 @@ func ObservationProtoToOscal(observation *proto.Observation) *oscaltypes113.Obse
 	}
 }
 
-func FindingsProtoToOscal(findings []*proto.Finding) *[]oscaltypes113.Finding {
-	results := make([]oscaltypes113.Finding, 0)
+func FindingsProtoToSDK(findings []*proto.Finding) *[]sdk.Finding {
+	results := make([]sdk.Finding, 0)
 	for _, finding := range findings {
-		results = append(results, *FindingProtoToOscal(finding))
+		results = append(results, *FindingProtoToSDK(finding))
 	}
 	return &results
 }
 
-func FindingProtoToOscal(finding *proto.Finding) *oscaltypes113.Finding {
-	return &oscaltypes113.Finding{
+func FindingProtoToSDK(finding *proto.Finding) *sdk.Finding {
+	return &sdk.Finding{
 		UUID:                        finding.GetUuid(),
 		Title:                       finding.GetTitle(),
 		Description:                 finding.GetDescription(),
@@ -881,7 +878,15 @@ func AssessmentLogProtoToOscal(log *proto.AssessmentLog) *oscaltypes113.Assessme
 	}
 }
 
-func ResultProtoToOscal(result *proto.AssessmentResult, streamId uuid.UUID, resultLabels map[string]string) (*sdk.Result, error) {
+func ObservationsProtoToSDK(observations []*proto.Observation) *[]sdk.Observation {
+	results := make([]sdk.Observation, 0)
+	for _, observation := range observations {
+		results = append(results, *ObservationProtoToSDK(observation))
+	}
+	return &results
+}
+
+func ResultProtoToSDK(result *proto.AssessmentResult, streamId uuid.UUID, resultLabels map[string]string) (*sdk.Result, error) {
 	endTime := result.GetEnd().AsTime()
 
 	stringToUUID, err := uuid.Parse(result.GetUuid())
@@ -890,7 +895,7 @@ func ResultProtoToOscal(result *proto.AssessmentResult, streamId uuid.UUID, resu
 	}
 
 	return &sdk.Result{
-		UUID:     stringToUUID,
+		UUID:     &stringToUUID,
 		StreamID: streamId,
 		Labels:   resultLabels,
 
@@ -898,8 +903,8 @@ func ResultProtoToOscal(result *proto.AssessmentResult, streamId uuid.UUID, resu
 		Description:      result.GetDescription(),
 		Start:            result.GetStart().AsTime(),
 		End:              &endTime,
-		Observations:     ObservationsProtoToOscal(result.GetObservations()),
-		Findings:         FindingsProtoToOscal(result.GetFindings()),
+		Observations:     ObservationsProtoToSDK(result.GetObservations()),
+		Findings:         FindingsProtoToSDK(result.GetFindings()),
 		Links:            LinksProtoToOscal(result.GetLinks()),
 		Props:            PropertiesProtoToOscal(result.GetProps()),
 		Remarks:          result.GetRemarks(),

@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/compliance-framework/agent/runner/proto"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,12 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/compliance-framework/agent/runner/proto"
+
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
-	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -361,7 +361,9 @@ func (ar *AgentRunner) runInstance() error {
 		})
 		if err != nil {
 			endTimer := time.Now()
-			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
+			_, err = client.Results.Create(&sdk.Result{
+				StreamID:    streamId,
+				Labels:      resultLabels,
 				Title:       "Agent has failed to configure plugin.",
 				Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
 				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
@@ -374,7 +376,9 @@ func (ar *AgentRunner) runInstance() error {
 		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
 		if err != nil {
 			endTimer := time.Now()
-			_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
+			_, err = client.Results.Create(&sdk.Result{
+				StreamID:    streamId,
+				Labels:      resultLabels,
 				Title:       "Agent has failed to prepare plugin for eval.",
 				Remarks:     "Agent has failed to prepare plugin for eval. Fix agent to continue receiving results",
 				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
@@ -398,7 +402,9 @@ func (ar *AgentRunner) runInstance() error {
 
 			if err != nil {
 				endTimer := time.Now()
-				_, err = client.Results.Create(streamId, resultLabels, &oscaltypes113.Result{
+				_, err = client.Results.Create(&sdk.Result{
+					StreamID:    streamId,
+					Labels:      resultLabels,
 					Title:       "Agent has failed to execute policies.",
 					Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
 					Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
