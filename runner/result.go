@@ -44,12 +44,12 @@ func (h *resultHelper) CreateResult(streamID string, labels map[string]string, r
 		resultLabels[k] = v
 	}
 
-	transformedResultAPI, err := ResultProtoToSDK(result, streamId, resultLabels)
+	sdkResult, err := ResultProtoToSDK(result, streamId, resultLabels)
 	if err != nil {
 		return err
 	}
 
-	_, err = h.client.Results.Create(transformedResultAPI)
+	_, err = h.client.Results.Create(sdkResult)
 	return err
 }
 
@@ -678,6 +678,14 @@ func FindingTargetProtoToOscal(target *proto.FindingTarget) *oscaltypes113.Findi
 	}
 }
 
+func ObservationsProtoToSDK(observations []*proto.Observation) *[]sdk.Observation {
+	results := make([]sdk.Observation, 0)
+	for _, observation := range observations {
+		results = append(results, *ObservationProtoToSDK(observation))
+	}
+	return &results
+}
+
 func ObservationProtoToSDK(observation *proto.Observation) *sdk.Observation {
 	expires := observation.GetExpires().AsTime()
 
@@ -695,6 +703,7 @@ func ObservationProtoToSDK(observation *proto.Observation) *sdk.Observation {
 		Methods:          ObservationMethodsProtoToOscal(observation.GetMethods()),
 		Origins:          OriginsProtoToOscal(observation.GetOrigins()),
 		Types:            ObservationTypesProtoToOscal(observation.GetTypes()),
+		Labels:           observation.GetLabels(),
 	}
 }
 
@@ -719,6 +728,7 @@ func FindingProtoToSDK(finding *proto.Finding) *sdk.Finding {
 		RelatedObservations:         RelatedObservationsProtoToOscal(finding.GetRelatedObservations()),
 		RelatedRisks:                RelatedRisksProtoToOscal(finding.GetRelatedRisks()),
 		Target:                      *FindingTargetProtoToOscal(finding.GetTarget()),
+		Labels:                      finding.GetLabels(),
 	}
 }
 
@@ -878,30 +888,24 @@ func AssessmentLogProtoToOscal(log *proto.AssessmentLog) *oscaltypes113.Assessme
 	}
 }
 
-func ObservationsProtoToSDK(observations []*proto.Observation) *[]sdk.Observation {
-	results := make([]sdk.Observation, 0)
-	for _, observation := range observations {
-		results = append(results, *ObservationProtoToSDK(observation))
-	}
-	return &results
-}
-
 func ResultProtoToSDK(result *proto.AssessmentResult, streamId uuid.UUID, resultLabels map[string]string) (*sdk.Result, error) {
 	endTime := result.GetEnd().AsTime()
 
-	stringToUUID, err := uuid.Parse(result.GetUuid())
+	var UUID *uuid.UUID
 
-	stringToUUIDpointer := &stringToUUID
+	if result.GetUuid() != "" {
+		UUIDParsed, err := uuid.Parse(result.GetUuid())
+		UUID = &UUIDParsed
 
-	if err != nil {
-		stringToUUIDpointer = nil
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &sdk.Result{
-		UUID:     stringToUUIDpointer,
-		StreamID: streamId,
-		Labels:   resultLabels,
-
+		UUID:             UUID,
+		StreamID:         streamId,
+		Labels:           resultLabels,
 		Title:            result.GetTitle(),
 		Description:      result.GetDescription(),
 		Start:            result.GetStart().AsTime(),
