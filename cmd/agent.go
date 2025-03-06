@@ -383,7 +383,7 @@ func (ar *AgentRunner) runInstance() error {
 		resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
 
 		_, err = runnerInstance.Eval(&proto.EvalRequest{
-			BundlePaths: policyPaths,
+			PolicyPaths: policyPaths,
 		}, resultsHelper)
 
 		if err != nil {

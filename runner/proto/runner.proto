@@ -17,7 +17,7 @@ message ConfigureResponse {
 }
 
 message EvalRequest {
-  repeated string bundlePaths = 1;
+  repeated string policyPaths = 1;
   uint32 apiServer = 2;
 }
 
