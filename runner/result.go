@@ -25,7 +25,7 @@ func NewResultsHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.
 	}
 }
 
-func (h *resultHelper) CreateResult(streamID string, labels map[string]string, result *proto.AssessmentResult) error {
+func (h *resultHelper) CreateResult(streamID string, labels map[string]string, policyPath string, result *proto.AssessmentResult) error {
 	streamSeedMap := map[string]string{
 		"agentStreamId": h.agentStreamId.String(),
 		"streamId":      streamID,
@@ -40,6 +40,7 @@ func (h *resultHelper) CreateResult(streamID string, labels map[string]string, r
 	}
 
 	resultLabels := h.resultLabels
+	resultLabels["_policy"] = policyPath
 	for k, v := range labels {
 		resultLabels[k] = v
 	}

@@ -1,5 +1,6 @@
 syntax = "proto3";
 package proto;
+
 option go_package = "./proto";
 
 enum ExecutionStatus {
@@ -15,14 +16,8 @@ message ConfigureResponse {
   bytes value = 1;
 }
 
-message PrepareForEvalRequest {}
-
-message PrepareForEvalResponse {
-  bytes value = 1;
-}
-
 message EvalRequest {
-  string bundlePath = 1;
+  repeated string bundlePaths = 1;
   uint32 apiServer = 2;
 }
 
@@ -37,6 +32,5 @@ message EvalResponse {
 
 service Runner {
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);
-  rpc PrepareForEval(PrepareForEvalRequest) returns (PrepareForEvalResponse);
   rpc Eval(EvalRequest) returns (EvalResponse);
 }

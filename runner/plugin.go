@@ -10,7 +10,6 @@ import (
 
 type Runner interface {
 	Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error)
-	PrepareForEval(request *proto.PrepareForEvalRequest) (*proto.PrepareForEvalResponse, error)
 	Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error)
 }
 

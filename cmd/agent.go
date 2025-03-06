@@ -373,46 +373,31 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		_, err = runnerInstance.PrepareForEval(&proto.PrepareForEvalRequest{})
+		policyPaths := make([]string, len(pluginConfig.Policies))
+
+		for _, inputBundle := range pluginConfig.Policies {
+			policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
+		}
+
+		// Create a new results helper for the plugin to send results back to
+		resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
+
+		_, err = runnerInstance.Eval(&proto.EvalRequest{
+			BundlePaths: policyPaths,
+		}, resultsHelper)
+
 		if err != nil {
 			endTimer := time.Now()
 			_, err = client.Results.Create(&sdk.Result{
 				StreamID:    streamId,
 				Labels:      resultLabels,
-				Title:       "Agent has failed to prepare plugin for eval.",
-				Remarks:     "Agent has failed to prepare plugin for eval. Fix agent to continue receiving results",
+				Title:       "Agent has failed to execute policies.",
+				Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
 				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
 				Start:       startTimer,
 				End:         &endTimer,
 			})
 			return err
-		}
-
-		for _, inputBundle := range pluginConfig.Policies {
-			policyPath := ar.policyLocations[string(inputBundle)]
-			// TODO we need a way to get the plugin, policy and agent version at runtime.
-			resultLabels["_policy"] = policyPath
-
-			// Create a new results helper for the plugin to send results back to
-			resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
-
-			_, err := runnerInstance.Eval(&proto.EvalRequest{
-				BundlePath: policyPath,
-			}, resultsHelper)
-
-			if err != nil {
-				endTimer := time.Now()
-				_, err = client.Results.Create(&sdk.Result{
-					StreamID:    streamId,
-					Labels:      resultLabels,
-					Title:       "Agent has failed to execute policies.",
-					Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
-					Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
-					Start:       startTimer,
-					End:         &endTimer,
-				})
-				return err
-			}
 		}
 	}
 

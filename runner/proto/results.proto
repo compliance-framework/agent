@@ -1,13 +1,15 @@
 syntax = "proto3";
 package proto;
-option go_package = "./proto";
 
 import "runner/proto/oscal.proto";
+
+option go_package = "./proto";
 
 message ResultRequest {
   string streamID = 1;
   map<string, string> labels = 2;
-  AssessmentResult Result = 3;
+  string policyPath = 3;
+  AssessmentResult result = 4;
 }
 
 message ResultResponse {}
