@@ -373,7 +373,7 @@ func (ar *AgentRunner) runInstance() error {
 			return err
 		}
 
-		policyPaths := make([]string, len(pluginConfig.Policies))
+		policyPaths := make([]string, 0, len(pluginConfig.Policies))
 
 		for _, inputBundle := range pluginConfig.Policies {
 			policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
@@ -382,6 +382,7 @@ func (ar *AgentRunner) runInstance() error {
 		// Create a new results helper for the plugin to send results back to
 		resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
 
+		// TODO: Send failed results to the database?
 		_, err = runnerInstance.Eval(&proto.EvalRequest{
 			PolicyPaths: policyPaths,
 		}, resultsHelper)

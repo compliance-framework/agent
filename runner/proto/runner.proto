@@ -27,7 +27,7 @@ message EvalRequest {
  * separately.
  */
 message EvalResponse {
-  ExecutionStatus Status = 1;
+  ExecutionStatus status = 1;
 }
 
 service Runner {

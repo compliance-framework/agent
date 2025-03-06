@@ -23,7 +23,7 @@ func (m *GRPCApiHelperClient) CreateResult(streamId string, labels map[string]st
 		PolicyPath: policyPath,
 	})
 	if err != nil {
-		hclog.Default().Error("Error adding result", err)
+		hclog.Default().Error("Error adding result", "error", err)
 	}
 	return err
 }
