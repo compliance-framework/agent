@@ -19,9 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Runner_Configure_FullMethodName      = "/proto.Runner/Configure"
-	Runner_PrepareForEval_FullMethodName = "/proto.Runner/PrepareForEval"
-	Runner_Eval_FullMethodName           = "/proto.Runner/Eval"
+	Runner_Configure_FullMethodName = "/proto.Runner/Configure"
+	Runner_Eval_FullMethodName      = "/proto.Runner/Eval"
 )
 
 // RunnerClient is the client API for Runner service.
@@ -29,7 +28,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RunnerClient interface {
 	Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error)
-	PrepareForEval(ctx context.Context, in *PrepareForEvalRequest, opts ...grpc.CallOption) (*PrepareForEvalResponse, error)
 	Eval(ctx context.Context, in *EvalRequest, opts ...grpc.CallOption) (*EvalResponse, error)
 }
 
@@ -50,15 +48,6 @@ func (c *runnerClient) Configure(ctx context.Context, in *ConfigureRequest, opts
 	return out, nil
 }
 
-func (c *runnerClient) PrepareForEval(ctx context.Context, in *PrepareForEvalRequest, opts ...grpc.CallOption) (*PrepareForEvalResponse, error) {
-	out := new(PrepareForEvalResponse)
-	err := c.cc.Invoke(ctx, Runner_PrepareForEval_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *runnerClient) Eval(ctx context.Context, in *EvalRequest, opts ...grpc.CallOption) (*EvalResponse, error) {
 	out := new(EvalResponse)
 	err := c.cc.Invoke(ctx, Runner_Eval_FullMethodName, in, out, opts...)
@@ -73,7 +62,6 @@ func (c *runnerClient) Eval(ctx context.Context, in *EvalRequest, opts ...grpc.C
 // for forward compatibility
 type RunnerServer interface {
 	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
-	PrepareForEval(context.Context, *PrepareForEvalRequest) (*PrepareForEvalResponse, error)
 	Eval(context.Context, *EvalRequest) (*EvalResponse, error)
 }
 
@@ -83,9 +71,6 @@ type UnimplementedRunnerServer struct {
 
 func (UnimplementedRunnerServer) Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Configure not implemented")
-}
-func (UnimplementedRunnerServer) PrepareForEval(context.Context, *PrepareForEvalRequest) (*PrepareForEvalResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PrepareForEval not implemented")
 }
 func (UnimplementedRunnerServer) Eval(context.Context, *EvalRequest) (*EvalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Eval not implemented")
@@ -120,24 +105,6 @@ func _Runner_Configure_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Runner_PrepareForEval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PrepareForEvalRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(RunnerServer).PrepareForEval(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Runner_PrepareForEval_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RunnerServer).PrepareForEval(ctx, req.(*PrepareForEvalRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Runner_Eval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EvalRequest)
 	if err := dec(in); err != nil {
@@ -166,10 +133,6 @@ var Runner_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Configure",
 			Handler:    _Runner_Configure_Handler,
-		},
-		{
-			MethodName: "PrepareForEval",
-			Handler:    _Runner_PrepareForEval_Handler,
 		},
 		{
 			MethodName: "Eval",

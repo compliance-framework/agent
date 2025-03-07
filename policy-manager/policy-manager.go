@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/rego"
-	"slices"
-	"strings"
 )
 
 type EvalOutput struct {
@@ -23,11 +24,11 @@ type PolicyManager struct {
 	loaderOptions []func(r *rego.Rego)
 }
 
-func New(ctx context.Context, logger hclog.Logger, bundlePath string) *PolicyManager {
+func New(ctx context.Context, logger hclog.Logger, policyPath string) *PolicyManager {
 	return &PolicyManager{
 		logger: logger,
 		loaderOptions: []func(r *rego.Rego){
-			rego.LoadBundle(bundlePath),
+			rego.LoadBundle(policyPath),
 		},
 	}
 }
