@@ -10,8 +10,8 @@ message ComplianceInformationRequest {
   repeated Finding Findings = 2;
 }
 
-message ResultResponse {}
+message CreateObservationsAndFindingsResponse {}
 
 service ApiHelper {
-  rpc CreateResult(ComplianceInformationRequest) returns (ResultResponse);
+  rpc CreateObservationsAndFindings(ComplianceInformationRequest) returns (CreateObservationsAndFindingsResponse);
 }
