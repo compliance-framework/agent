@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -14,7 +13,7 @@ type apiHelper struct {
 	agentLabels map[string]string
 }
 
-func NewApiHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Client, agentLabels map[string]string) *apiHelper {
+func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string) *apiHelper {
 	logger = logger.Named("api-helper")
 	return &apiHelper{
 		logger:      logger,
@@ -23,13 +22,14 @@ func NewApiHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Clie
 	}
 }
 
-func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, req *proto.ComplianceInformationRequest) error {
-	observations := *ObservationsProtoToSdk(req.GetObservations())
-	findings := *FindingsProtoToSdk(req.GetFindings())
+func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, obs []*proto.Observation, finds []*proto.Finding) error {
+	observations := *ObservationsProtoToSdk(obs)
+	findings := *FindingsProtoToSdk(finds)
 
+	// Merge agent, config and finding labels all together.
 	for key, finding := range findings {
-		labels := finding.Labels
-		for k, v := range h.agentLabels {
+		labels := h.agentLabels
+		for k, v := range finding.Labels {
 			labels[k] = v
 		}
 		findings[key].Labels = labels

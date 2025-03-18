@@ -304,8 +304,6 @@ func (ar *AgentRunner) runDaemon() {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runInstance() error {
-	startTimer := time.Now()
-
 	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
 		BaseURL: ar.config.ApiConfig.Url,
 	})
@@ -326,20 +324,12 @@ func (ar *AgentRunner) runInstance() error {
 			Level:  hclog.Level(ar.config.logVerbosity()),
 		})
 
-		resultLabels := map[string]string{
+		labels := map[string]string{
 			"_agent":  "concom",
 			"_plugin": pluginName,
 		}
-
-		streamId, err := sdk.SeededUUID(resultLabels)
-		if err != nil {
-			return err
-		}
-
-		resultLabels["_hostname"] = os.Getenv("HOSTNAME")
-		resultLabels["_stream"] = streamId.String()
 		for k, v := range pluginConfig.Labels {
-			resultLabels[k] = v
+			labels[k] = v
 		}
 
 		source := ar.pluginLocations[pluginConfig.Source]
@@ -360,16 +350,17 @@ func (ar *AgentRunner) runInstance() error {
 			Config: pluginConfig.Config,
 		})
 		if err != nil {
-			endTimer := time.Now()
-			_, err = client.Results.Create(&sdk.Result{
-				StreamID:    streamId,
-				Labels:      resultLabels,
-				Title:       "Agent has failed to configure plugin.",
-				Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
-				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
-				Start:       startTimer,
-				End:         &endTimer,
-			})
+			// What do we do here ?
+			//endTimer := time.Now()
+			//_, err = client.Results.Create(&sdk.Result{
+			//	StreamID:    streamId,
+			//	Labels:      resultLabels,
+			//	Title:       "Agent has failed to configure plugin.",
+			//	Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
+			//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+			//	Start:       startTimer,
+			//	End:         &endTimer,
+			//})
 			return err
 		}
 
@@ -380,7 +371,7 @@ func (ar *AgentRunner) runInstance() error {
 		}
 
 		// Create a new results helper for the plugin to send results back to
-		resultsHelper := runner.NewApiHelper(logger, streamId, client, resultLabels)
+		resultsHelper := runner.NewApiHelper(logger, client, labels)
 
 		// TODO: Send failed results to the database?
 		_, err = runnerInstance.Eval(&proto.EvalRequest{
@@ -388,16 +379,17 @@ func (ar *AgentRunner) runInstance() error {
 		}, resultsHelper)
 
 		if err != nil {
-			endTimer := time.Now()
-			_, err = client.Results.Create(&sdk.Result{
-				StreamID:    streamId,
-				Labels:      resultLabels,
-				Title:       "Agent has failed to execute policies.",
-				Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
-				Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
-				Start:       startTimer,
-				End:         &endTimer,
-			})
+			// What do we do here ?
+			//endTimer := time.Now()
+			//_, err = client.Results.Create(&sdk.Result{
+			//	StreamID:    streamId,
+			//	Labels:      resultLabels,
+			//	Title:       "Agent has failed to execute policies.",
+			//	Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
+			//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+			//	Start:       startTimer,
+			//	End:         &endTimer,
+			//})
 			return err
 		}
 	}
