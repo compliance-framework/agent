@@ -2,6 +2,8 @@ module github.com/compliance-framework/agent
 
 go 1.23.2
 
+replace github.com/compliance-framework/configuration-service => ../configuration-service
+
 require (
 	github.com/compliance-framework/configuration-service v0.0.5
 	github.com/compliance-framework/gooci v0.0.0-20250113172942-411c6f0468f0

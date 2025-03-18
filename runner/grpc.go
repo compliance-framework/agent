@@ -10,17 +10,15 @@ import (
 )
 
 type ApiHelper interface {
-	CreateResult(streamID string, labels map[string]string, policyPath string, result *proto.AssessmentResult) error
+	CreateObservationsAndFindings([]*proto.Observation, []*proto.Finding) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateResult(streamId string, labels map[string]string, policyPath string, assesmentResult *proto.AssessmentResult) error {
-	_, err := m.client.CreateResult(context.Background(), &proto.ResultRequest{
-		Result:     assesmentResult,
-		StreamID:   streamId,
-		Labels:     labels,
-		PolicyPath: policyPath,
+func (m *GRPCApiHelperClient) CreateObservationsAndFindings(observations []*proto.Observation, findings []*proto.Finding) error {
+	_, err := m.client.CreateResult(context.Background(), &proto.ComplianceInformationRequest{
+		Observations: observations,
+		Findings:     findings,
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", "error", err)
@@ -33,8 +31,8 @@ type GRPCApiHelperServer struct {
 	Impl ApiHelper
 }
 
-func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.CreateResult(req.GetStreamID(), req.GetLabels(), req.GetPolicyPath(), req.GetResult())
+func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ComplianceInformationRequest) (resp *proto.ResultResponse, err error) {
+	err = m.Impl.CreateObservationsAndFindings(req.GetObservations(), req.GetFindings())
 	if err != nil {
 		return nil, err
 	}

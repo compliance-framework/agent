@@ -3,7 +3,7 @@ package runner
 import (
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
-	oscaltypes113 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
+	"github.com/compliance-framework/configuration-service/sdk/types"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 )
@@ -54,34 +54,34 @@ func (h *resultHelper) CreateResult(streamID string, labels map[string]string, p
 	return err
 }
 
-func LinksProtoToOscal(links []*proto.Link) *[]oscaltypes113.Link {
-	results := make([]oscaltypes113.Link, 0)
+func LinksProtoToSdk(links []*proto.Link) *[]types.Link {
+	results := make([]types.Link, 0)
 	for _, link := range links {
-		results = append(results, *LinkProtoToOscal(link))
+		results = append(results, *LinkProtoToSdk(link))
 	}
 	return &results
 }
 
-func LinkProtoToOscal(link *proto.Link) *oscaltypes113.Link {
-	return &oscaltypes113.Link{
+func LinkProtoToSdk(link *proto.Link) *types.Link {
+	return &types.Link{
 		Href:             link.GetHref(),
 		MediaType:        link.GetMediaType(),
-		Rel:              link.GetRel().String(),
+		Rel:              link.GetRel(),
 		ResourceFragment: link.GetResourceFragment(),
 		Text:             link.GetText(),
 	}
 }
 
-func PropertiesProtoToOscal(properties []*proto.Property) *[]oscaltypes113.Property {
-	results := make([]oscaltypes113.Property, 0)
+func PropertiesProtoToSdk(properties []*proto.Property) *[]types.Property {
+	results := make([]types.Property, 0)
 	for _, property := range properties {
-		results = append(results, *PropertyProtoToOscal(property))
+		results = append(results, *PropertyProtoToSdk(property))
 	}
 	return &results
 }
 
-func PropertyProtoToOscal(property *proto.Property) *oscaltypes113.Property {
-	return &oscaltypes113.Property{
+func PropertyProtoToSdk(property *proto.Property) *types.Property {
+	return &types.Property{
 		Class:   property.GetClass(),
 		Group:   property.GetGroup(),
 		Name:    property.GetName(),
@@ -92,834 +92,256 @@ func PropertyProtoToOscal(property *proto.Property) *oscaltypes113.Property {
 	}
 }
 
-func RelevantEvidencesProtoToOscal(evidences []*proto.RelevantEvidence) *[]oscaltypes113.RelevantEvidence {
-	results := make([]oscaltypes113.RelevantEvidence, 0)
+func RelevantEvidencesProtoToSdk(evidences []*proto.RelevantEvidence) *[]types.RelevantEvidence {
+	results := make([]types.RelevantEvidence, 0)
 	for _, evidence := range evidences {
-		results = append(results, *RelevantEvidenceProtoToOscal(evidence))
+		results = append(results, *RelevantEvidenceProtoToSdk(evidence))
 	}
 	return &results
 }
 
-func RelevantEvidenceProtoToOscal(evidence *proto.RelevantEvidence) *oscaltypes113.RelevantEvidence {
-	return &oscaltypes113.RelevantEvidence{
+func RelevantEvidenceProtoToSdk(evidence *proto.RelevantEvidence) *types.RelevantEvidence {
+	return &types.RelevantEvidence{
 		Description: evidence.GetDescription(),
 		Href:        evidence.GetHref(),
-		Links:       LinksProtoToOscal(evidence.Links),
-		Props:       PropertiesProtoToOscal(evidence.Props),
+		Links:       LinksProtoToSdk(evidence.Links),
+		Props:       PropertiesProtoToSdk(evidence.Props),
 		Remarks:     evidence.GetRemarks(),
 	}
 }
 
-func ResponsiblePartiesProtoToOscal(parties []*proto.ResponsibleParty) *[]oscaltypes113.ResponsibleParty {
-	results := make([]oscaltypes113.ResponsibleParty, 0)
-	for _, party := range parties {
-		results = append(results, *ResponsiblePartyProtoToOscal(party))
-	}
-	return &results
-}
-
-func ResponsiblePartyProtoToOscal(party *proto.ResponsibleParty) *oscaltypes113.ResponsibleParty {
-	return &oscaltypes113.ResponsibleParty{
-		Links:      LinksProtoToOscal(party.GetLinks()),
-		PartyUuids: party.GetPartyUuids(),
-		Props:      PropertiesProtoToOscal(party.GetProps()),
-		Remarks:    party.GetRemarks(),
-		RoleId:     party.GetRoleId(),
-	}
-}
-
-func RelatedRisksProtoToOscal(risks []*proto.RelatedRisk) *[]oscaltypes113.AssociatedRisk {
-	results := make([]oscaltypes113.AssociatedRisk, 0)
-	for _, risk := range risks {
-		results = append(results, *RelatedRiskProtoToOscal(risk))
-	}
-	return &results
-}
-
-func RelatedRiskProtoToOscal(risk *proto.RelatedRisk) *oscaltypes113.AssociatedRisk {
-	return &oscaltypes113.AssociatedRisk{
-		RiskUuid: risk.GetRiskUuid(),
-	}
-}
-
-func ExcludeSubjectsProtoToOscal(subjects []*proto.SelectSubjectById) *[]oscaltypes113.SelectSubjectById {
-	results := make([]oscaltypes113.SelectSubjectById, 0)
+func SubjectReferencesProtoToSdk(subjects []*proto.SubjectReference) *[]types.SubjectReference {
+	results := make([]types.SubjectReference, 0)
 	for _, subject := range subjects {
-		results = append(results, *ExcludeSubjectProtoToOscal(subject))
+		results = append(results, *SubjectReferenceProtoToSdk(subject))
 	}
 	return &results
 }
 
-func ExcludeSubjectProtoToOscal(selectedSubject *proto.SelectSubjectById) *oscaltypes113.SelectSubjectById {
-	return &oscaltypes113.SelectSubjectById{
-		Links:       LinksProtoToOscal(selectedSubject.GetLinks()),
-		Props:       PropertiesProtoToOscal(selectedSubject.GetProps()),
-		Remarks:     selectedSubject.GetRemarks(),
-		SubjectUuid: selectedSubject.GetSubjectUuid(),
-		Type:        selectedSubject.GetType().String(),
+func SubjectReferenceProtoToSdk(subject *proto.SubjectReference) *types.SubjectReference {
+	return &types.SubjectReference{
+		Title:      subject.GetTitle(),
+		Remarks:    subject.GetRemarks(),
+		Type:       subject.GetType(),
+		Attributes: subject.GetAttributes(),
+		Links:      LinksProtoToSdk(subject.GetLinks()),
+		Props:      PropertiesProtoToSdk(subject.GetProps()),
 	}
 }
 
-func IncludeSubjectsProtoToOscal(subjects []*proto.SelectSubjectById) *[]oscaltypes113.SelectSubjectById {
-	results := make([]oscaltypes113.SelectSubjectById, 0)
-	for _, subject := range subjects {
-		results = append(results, *IncludeSubjectProtoToOscal(subject))
-	}
-	return &results
-}
-
-func IncludeSubjectProtoToOscal(selectedSubject *proto.SelectSubjectById) *oscaltypes113.SelectSubjectById {
-	return &oscaltypes113.SelectSubjectById{
-		Links:       LinksProtoToOscal(selectedSubject.GetLinks()),
-		Props:       PropertiesProtoToOscal(selectedSubject.GetProps()),
-		Remarks:     selectedSubject.GetRemarks(),
-		SubjectUuid: selectedSubject.GetSubjectUuid(),
-		Type:        selectedSubject.GetType().String(),
-	}
-}
-
-func IncludeAllSubjectsProtoToOscal(subjects []*proto.IncludeAll) *[]oscaltypes113.IncludeAll {
-	results := make([]oscaltypes113.IncludeAll, 0)
-	for _, subject := range subjects {
-		results = append(results, *IncludeAllSubjectProtoToOscal(subject))
-	}
-	return &results
-}
-
-func IncludeAllSubjectProtoToOscal(selectedSubject *proto.IncludeAll) *oscaltypes113.IncludeAll {
-	return &oscaltypes113.IncludeAll{}
-}
-
-func SubjectReferencesProtoToOscal(subjects []*proto.SubjectReference) *[]oscaltypes113.SubjectReference {
-	results := make([]oscaltypes113.SubjectReference, 0)
-	for _, subject := range subjects {
-		results = append(results, *SubjectReferenceProtoToOscal(subject))
-	}
-	return &results
-}
-
-func SubjectReferenceProtoToOscal(subject *proto.SubjectReference) *oscaltypes113.SubjectReference {
-	return &oscaltypes113.SubjectReference{
-		Links:       LinksProtoToOscal(subject.GetLinks()),
-		Props:       PropertiesProtoToOscal(subject.GetProps()),
-		Remarks:     subject.GetRemarks(),
-		SubjectUuid: subject.GetSubjectUuid(),
-		Title:       subject.GetTitle(),
-		Type:        subject.GetType().String(),
-	}
-}
-
-func SubjectsProtoToOscal(subjects []*proto.AssessmentSubject) *[]oscaltypes113.AssessmentSubject {
-	results := make([]oscaltypes113.AssessmentSubject, 0)
-	for _, subject := range subjects {
-		results = append(results, *SubjectProtoToOscal(subject))
-	}
-	return &results
-}
-
-func SubjectProtoToOscal(subject *proto.AssessmentSubject) *oscaltypes113.AssessmentSubject {
-	return &oscaltypes113.AssessmentSubject{
-		Description:     subject.GetDescription(),
-		ExcludeSubjects: ExcludeSubjectsProtoToOscal(subject.GetExcludeSubjects()),
-		IncludeAll:      IncludeAllSubjectProtoToOscal(subject.GetIncludeAll()),
-		IncludeSubjects: IncludeSubjectsProtoToOscal(subject.GetIncludeSubjects()),
-		Links:           LinksProtoToOscal(subject.GetLinks()),
-		Props:           PropertiesProtoToOscal(subject.GetProps()),
-		Remarks:         subject.GetRemarks(),
-		Type:            subject.GetType().String(),
-	}
-}
-
-func IdentifiedSubjectsProtoToOscal(subjects []*proto.IdentifiedSubject) *[]oscaltypes113.IdentifiedSubject {
-	results := make([]oscaltypes113.IdentifiedSubject, 0)
-	for _, subject := range subjects {
-		results = append(results, *IdentifiedSubjectProtoToOscal(subject))
-	}
-	return &results
-}
-
-func IdentifiedSubjectProtoToOscal(subject *proto.IdentifiedSubject) *oscaltypes113.IdentifiedSubject {
-	return &oscaltypes113.IdentifiedSubject{
-		SubjectPlaceholderUuid: subject.GetSubjectPlaceholderUuid(),
-		Subjects:               *SubjectsProtoToOscal(subject.GetSubjects()),
-	}
-}
-
-func RelatedTasksProtoToOscal(tasks []*proto.RelatedTask) *[]oscaltypes113.RelatedTask {
-	results := make([]oscaltypes113.RelatedTask, 0)
-	for _, _task := range tasks {
-		results = append(results, *RelatedTaskProtoToOscal(_task))
-	}
-	return &results
-}
-
-func RelatedTaskProtoToOscal(task *proto.RelatedTask) *oscaltypes113.RelatedTask {
-	return &oscaltypes113.RelatedTask{
-		IdentifiedSubject:  IdentifiedSubjectProtoToOscal(task.GetIdentifiedSubject()),
-		Links:              LinksProtoToOscal(task.GetLinks()),
-		Props:              PropertiesProtoToOscal(task.GetProps()),
-		Remarks:            task.GetRemarks(),
-		ResponsibleParties: ResponsiblePartiesProtoToOscal(task.GetResponsibleParties()),
-		Subjects:           SubjectsProtoToOscal(task.GetSubjects()),
-		TaskUuid:           task.GetTaskUuid(),
-	}
-}
-
-func OriginsProtoToOscal(origins []*proto.Origin) *[]oscaltypes113.Origin {
-	results := make([]oscaltypes113.Origin, 0)
+func OriginsProtoToSdk(origins []*proto.Origin) *[]types.Origin {
+	results := make([]types.Origin, 0)
 	for _, origin := range origins {
-		results = append(results, *OriginProtoToOscal(origin))
+		results = append(results, *OriginProtoToSdk(origin))
 	}
 	return &results
 }
 
-func OriginProtoToOscal(origin *proto.Origin) *oscaltypes113.Origin {
-	return &oscaltypes113.Origin{
-		Actors:       *OriginActorsProtoToOscal(origin.GetActors()),
-		RelatedTasks: RelatedTasksProtoToOscal(origin.GetRelatedTasks()),
+func OriginProtoToSdk(origin *proto.Origin) *types.Origin {
+	return &types.Origin{
+		Actors: *OriginActorsProtoToSdk(origin.GetActors()),
 	}
 }
 
-func OriginActorsProtoToOscal(actors []*proto.OriginActor) *[]oscaltypes113.OriginActor {
-	results := make([]oscaltypes113.OriginActor, 0)
+func OriginActorsProtoToSdk(actors []*proto.OriginActor) *[]types.OriginActor {
+	results := make([]types.OriginActor, 0)
 	for _, actor := range actors {
-		results = append(results, *OriginActorProtoToOscal(actor))
+		results = append(results, *OriginActorProtoToSdk(actor))
 	}
 	return &results
 }
 
-func OriginActorProtoToOscal(actor *proto.OriginActor) *oscaltypes113.OriginActor {
-	return &oscaltypes113.OriginActor{
-		ActorUuid: actor.GetActorUuid(),
-		Links:     LinksProtoToOscal(actor.GetLinks()),
-		Props:     PropertiesProtoToOscal(actor.GetProps()),
-		RoleId:    actor.GetRoleId(),
-		Type:      actor.GetType().String(),
+func OriginActorProtoToSdk(actor *proto.OriginActor) *types.OriginActor {
+	return &types.OriginActor{
+		UUID:  actor.GetUUID(),
+		Title: actor.GetTitle(),
+		Type:  actor.GetType(),
+		Links: LinksProtoToSdk(actor.GetLinks()),
+		Props: PropertiesProtoToSdk(actor.GetProps()),
 	}
 }
 
-func ResponsibleRolesProtoToOscal(responsibleRoles []*proto.ResponsibleRole) *[]oscaltypes113.ResponsibleRole {
-	results := make([]oscaltypes113.ResponsibleRole, 0)
-	for _, responsibleRole := range responsibleRoles {
-		results = append(results, *ResponsibleRoleProtoToOscal(responsibleRole))
-	}
-	return &results
-}
-
-func ResponsibleRoleProtoToOscal(responsibleRole *proto.ResponsibleRole) *oscaltypes113.ResponsibleRole {
-	partyUuids := responsibleRole.GetPartyUuids()
-	return &oscaltypes113.ResponsibleRole{
-		Links:      LinksProtoToOscal(responsibleRole.GetLinks()),
-		Props:      PropertiesProtoToOscal(responsibleRole.GetProps()),
-		PartyUuids: &partyUuids,
-		Remarks:    responsibleRole.GetRemarks(),
-		RoleId:     responsibleRole.GetRoleId(),
-	}
-}
-
-func ThreatIDsProtoToOscal(threatIds []*proto.ThreatId) *[]oscaltypes113.ThreatId {
-	results := make([]oscaltypes113.ThreatId, 0)
+func ThreatIDsProtoToSdk(threatIds []*proto.ThreatId) *[]types.ThreatId {
+	results := make([]types.ThreatId, 0)
 	for _, threatId := range threatIds {
-		results = append(results, *ThreatIDProtoToOscal(threatId))
+		results = append(results, *ThreatIDProtoToSdk(threatId))
 	}
 	return &results
 }
 
-func ThreatIDProtoToOscal(threatId *proto.ThreatId) *oscaltypes113.ThreatId {
-	return &oscaltypes113.ThreatId{
+func ThreatIDProtoToSdk(threatId *proto.ThreatId) *types.ThreatId {
+	return &types.ThreatId{
 		Href:   threatId.GetHref(),
-		ID:     threatId.GetId(),
+		ID:     threatId.GetID(),
 		System: threatId.GetSystem(),
 	}
 }
 
-func LoggedBysProtoToOscal(logged []*proto.LoggedBy) *[]oscaltypes113.LoggedBy {
-	results := make([]oscaltypes113.LoggedBy, 0)
-	for _, logg := range logged {
-		results = append(results, *LoggedByProtoToOscal(logg))
-	}
-	return &results
-}
-
-func LoggedByProtoToOscal(logged *proto.LoggedBy) *oscaltypes113.LoggedBy {
-	return &oscaltypes113.LoggedBy{
-		PartyUuid: logged.GetPartyUuid(),
-		RoleId:    logged.GetRoleId(),
-	}
-}
-
-func RelatedResponsesProtoToOscal(responses []*proto.RiskLog_Entry_RelatedResponse) *[]oscaltypes113.RiskResponseReference {
-	results := make([]oscaltypes113.RiskResponseReference, 0)
-	for _, response := range responses {
-		results = append(results, *RelatedResponseProtoToOscal(response))
-	}
-	return &results
-}
-
-func RelatedResponseProtoToOscal(response *proto.RiskLog_Entry_RelatedResponse) *oscaltypes113.RiskResponseReference {
-	return &oscaltypes113.RiskResponseReference{
-		Links:        LinksProtoToOscal(response.GetLinks()),
-		Props:        PropertiesProtoToOscal(response.GetProps()),
-		RelatedTasks: RelatedTasksProtoToOscal(response.GetRelatedTasks()),
-		Remarks:      response.GetRemarks(),
-		ResponseUuid: response.GetResponseUuid(),
-	}
-}
-
-func RiskLogEntriesProtoToOscal(entries []*proto.RiskLog_Entry) *[]oscaltypes113.RiskLogEntry {
-	results := make([]oscaltypes113.RiskLogEntry, 0)
-	for _, entry := range entries {
-		results = append(results, *RiskLogEntryProtoToOscal(entry))
-	}
-	return &results
-}
-
-func RiskLogEntryProtoToOscal(entry *proto.RiskLog_Entry) *oscaltypes113.RiskLogEntry {
-	end := entry.GetEnd().AsTime()
-	return &oscaltypes113.RiskLogEntry{
-		Description:      entry.GetDescription(),
-		End:              &end,
-		Links:            LinksProtoToOscal(entry.GetLinks()),
-		LoggedBy:         LoggedBysProtoToOscal(entry.GetLoggedBy()),
-		Props:            PropertiesProtoToOscal(entry.GetProps()),
-		RelatedResponses: RelatedResponsesProtoToOscal(entry.GetRelatedResponses()),
-		Remarks:          entry.GetRemarks(),
-		Start:            entry.GetStart().AsTime(),
-		StatusChange:     entry.GetStatusChange().String(),
-		Title:            entry.GetTitle(),
-		UUID:             entry.GetUuid(),
-	}
-}
-
-func MitigatingFactorsProtoToOscal(factors []*proto.MitigatingFactor) *[]oscaltypes113.MitigatingFactor {
-	results := make([]oscaltypes113.MitigatingFactor, 0)
-	for _, factor := range factors {
-		results = append(results, *MitigatingFactorProtoToOscal(factor))
-	}
-	return &results
-}
-
-func MitigatingFactorProtoToOscal(factor *proto.MitigatingFactor) *oscaltypes113.MitigatingFactor {
-	return &oscaltypes113.MitigatingFactor{
-		Description:        factor.GetDescription(),
-		ImplementationUuid: factor.GetImplementationUuid(),
-		Links:              LinksProtoToOscal(factor.GetLinks()),
-		Props:              PropertiesProtoToOscal(factor.GetProps()),
-		Subjects:           SubjectReferencesProtoToOscal(factor.GetSubjects()),
-		UUID:               factor.GetUuid(),
-	}
-}
-
-func FacetsProtoToOscal(facets []*proto.Facet) *[]oscaltypes113.Facet {
-	results := make([]oscaltypes113.Facet, 0)
-	for _, facet := range facets {
-		results = append(results, *FacetProtoToOscal(facet))
-	}
-	return &results
-}
-
-func FacetProtoToOscal(facet *proto.Facet) *oscaltypes113.Facet {
-	return &oscaltypes113.Facet{
-		Links:   LinksProtoToOscal(facet.GetLinks()),
-		Name:    facet.GetName(),
-		Props:   PropertiesProtoToOscal(facet.GetProps()),
-		Remarks: facet.GetRemarks(),
-		System:  facet.GetSystem(),
-		Value:   facet.GetValue(),
-	}
-}
-
-func CharacterizationsProtoToOscal(characters []*proto.Characterization) *[]oscaltypes113.Characterization {
-	results := make([]oscaltypes113.Characterization, 0)
-	for _, character := range characters {
-		results = append(results, *CharacterizationProtoToOscal(character))
-	}
-	return &results
-}
-
-func CharacterizationProtoToOscal(character *proto.Characterization) *oscaltypes113.Characterization {
-	return &oscaltypes113.Characterization{
-		Facets: *FacetsProtoToOscal(character.GetFacets()),
-		Links:  LinksProtoToOscal(character.GetLinks()),
-		Origin: *OriginProtoToOscal(character.GetOrigin()),
-		Props:  PropertiesProtoToOscal(character.GetProps()),
-	}
-}
-
-func RiskLogProtoToOscal(log *proto.RiskLog) *oscaltypes113.RiskLog {
-	return &oscaltypes113.RiskLog{
-		Entries: *RiskLogEntriesProtoToOscal(log.GetEntries()),
-	}
-}
-
-func RisksProtoToOscal(risks []*proto.Risk) *[]oscaltypes113.Risk {
-	results := make([]oscaltypes113.Risk, 0)
+func RisksProtoToSdk(risks []*proto.RiskReference) *[]types.RiskReference {
+	results := make([]types.RiskReference, 0)
 	for _, risk := range risks {
-		results = append(results, *RiskProtoToOscal(risk))
+		results = append(results, *RiskProtoToSdk(risk))
 	}
 	return &results
 }
 
-func RiskProtoToOscal(risk *proto.Risk) *oscaltypes113.Risk {
-	deadline := risk.GetDeadline().AsTime()
-	return &oscaltypes113.Risk{
-		Characterizations:   CharacterizationsProtoToOscal(risk.GetCharacterizations()),
-		Deadline:            &deadline,
-		Description:         risk.GetDescription(),
-		Links:               LinksProtoToOscal(risk.GetLinks()),
-		MitigatingFactors:   MitigatingFactorsProtoToOscal(risk.GetMitigatingFactors()),
-		Origins:             OriginsProtoToOscal(risk.GetOrigins()),
-		Props:               PropertiesProtoToOscal(risk.GetProps()),
-		RelatedObservations: RelatedObservationsProtoToOscal(risk.GetRelatedObservations()),
-		Remediations:        ResponsesProtoToOscal(risk.GetRemediations()),
-		RiskLog:             RiskLogProtoToOscal(risk.GetRiskLog()),
-		Statement:           risk.GetStatement(),
-		Status:              risk.GetStatus().String(),
-		ThreatIds:           ThreatIDsProtoToOscal(risk.GetThreatIds()),
-		Title:               risk.GetTitle(),
-		UUID:                risk.GetUuid(),
+func RiskProtoToSdk(risk *proto.RiskReference) *types.RiskReference {
+	return &types.RiskReference{
+		Identifier: risk.GetIdentifier(),
+		Href:       risk.GetHref(),
+		Status:     risk.GetStatus(),
+		Origins:    OriginsProtoToSdk(risk.GetOrigins()),
+		ThreatIds:  ThreatIDsProtoToSdk(risk.GetThreatIds()),
 	}
 }
 
-func TaskDependenciesProtoToOscal(deps []*proto.Task_TaskDependency) *[]oscaltypes113.TaskDependency {
-	results := make([]oscaltypes113.TaskDependency, 0)
-	for _, dep := range deps {
-		results = append(results, *TaskDependencyProtoToOscal(dep))
+func StepsProtoToSdk(steps []*proto.Step) *[]types.Step {
+	results := make([]types.Step, 0)
+	for _, step := range steps {
+		results = append(results, *StepProtoToSdk(step))
 	}
 	return &results
 }
 
-func TaskDependencyProtoToOscal(dep *proto.Task_TaskDependency) *oscaltypes113.TaskDependency {
-	return &oscaltypes113.TaskDependency{
-		Remarks:  dep.GetRemarks(),
-		TaskUuid: dep.GetTaskUuid(),
+func StepProtoToSdk(step *proto.Step) *types.Step {
+	return &types.Step{
+		UUID:        step.GetUUID(),
+		Title:       step.GetTitle(),
+		Description: step.GetDescription(),
+		Remarks:     step.GetRemarks(),
+		Links:       LinksProtoToSdk(step.GetLinks()),
+		Props:       PropertiesProtoToSdk(step.GetProps()),
 	}
 }
 
-func AssociatedActivitiesProtoToOscal(activities []*proto.Task_AssociatedActivity) *[]oscaltypes113.AssociatedActivity {
-	results := make([]oscaltypes113.AssociatedActivity, 0)
+func ActivitiesProtoToSdk(activities []*proto.Activity) *[]types.Activity {
+	results := make([]types.Activity, 0)
 	for _, activity := range activities {
-		results = append(results, *AssociatedActivityProtoToOscal(activity))
+		results = append(results, *ActivityProtoToSdk(activity))
 	}
 	return &results
 }
 
-func AssociatedActivityProtoToOscal(ac *proto.Task_AssociatedActivity) *oscaltypes113.AssociatedActivity {
-	return &oscaltypes113.AssociatedActivity{
-		ActivityUuid:     ac.GetActivityUuid(),
-		Links:            LinksProtoToOscal(ac.GetLinks()),
-		Props:            PropertiesProtoToOscal(ac.GetProps()),
-		Remarks:          ac.GetRemarks(),
-		ResponsibleRoles: ResponsibleRolesProtoToOscal(ac.GetResponsibleRoles()),
-		Subjects:         *SubjectsProtoToOscal(ac.GetSubjects()),
+func ActivityProtoToSdk(risk *proto.Activity) *types.Activity {
+	return &types.Activity{
+		UUID:        risk.GetUUID(),
+		Title:       risk.GetTitle(),
+		Description: risk.GetDescription(),
+		Remarks:     risk.GetRemarks(),
+		Steps:       StepsProtoToSdk(risk.GetSteps()),
+		Links:       LinksProtoToSdk(risk.GetLinks()),
+		Props:       PropertiesProtoToSdk(risk.GetProps()),
 	}
 }
 
-func AtFrequencyProtoToOscal(freq *proto.EventTiming_Frequency) *oscaltypes113.FrequencyCondition {
-	return &oscaltypes113.FrequencyCondition{
-		Period: int(freq.GetPeriod()),
-		Unit:   freq.GetUnit().String(),
-	}
-}
-
-func OnDateProtoToOscal(timing *proto.EventTiming) *oscaltypes113.OnDateCondition {
-	return &oscaltypes113.OnDateCondition{
-		Date: timing.GetOnDate().AsTime(),
-	}
-}
-
-func OnDateRangeProtoToOscal(freq *proto.EventTiming_DateRange) *oscaltypes113.OnDateRangeCondition {
-	return &oscaltypes113.OnDateRangeCondition{
-		End:   freq.GetEnd().AsTime(),
-		Start: freq.GetStart().AsTime(),
-	}
-}
-
-func EventTimingProtoToOscal(timing *proto.EventTiming) *oscaltypes113.EventTiming {
-	return &oscaltypes113.EventTiming{
-		AtFrequency:     AtFrequencyProtoToOscal(timing.GetAtFrequency()),
-		OnDate:          OnDateProtoToOscal(timing),
-		WithinDateRange: OnDateRangeProtoToOscal(timing.GetWithinDateRange()),
-	}
-}
-
-func TasksProtoToOscal(tasks []*proto.Task) *[]oscaltypes113.Task {
-	results := make([]oscaltypes113.Task, 0)
-	for _, task := range tasks {
-		results = append(results, *TaskProtoToOscal(task))
+func ComponentReferencesProtoToSdk(activities []*proto.ComponentReference) *[]types.ComponentReference {
+	results := make([]types.ComponentReference, 0)
+	for _, activity := range activities {
+		results = append(results, *ComponentReferenceProtoToSdk(activity))
 	}
 	return &results
 }
 
-func TaskProtoToOscal(task *proto.Task) *oscaltypes113.Task {
-	return &oscaltypes113.Task{
-		AssociatedActivities: AssociatedActivitiesProtoToOscal(task.GetAssociatedActivities()),
-		Dependencies:         TaskDependenciesProtoToOscal(task.GetDependencies()),
-		Description:          task.GetDescription(),
-		Links:                LinksProtoToOscal(task.GetLinks()),
-		Props:                PropertiesProtoToOscal(task.GetProps()),
-		Remarks:              task.GetRemarks(),
-		ResponsibleRoles:     ResponsibleRolesProtoToOscal(task.GetResponsibleRoles()),
-		Subjects:             SubjectsProtoToOscal(task.GetSubjects()),
-		Tasks:                TasksProtoToOscal(task.GetTasks()),
-		Timing:               EventTimingProtoToOscal(task.GetTiming()),
-		Title:                task.GetTitle(),
-		Type:                 task.GetType().String(),
-		UUID:                 task.GetUuid(),
+func ComponentReferenceProtoToSdk(reference *proto.ComponentReference) *types.ComponentReference {
+	return &types.ComponentReference{
+		Identifier: reference.GetIdentifier(),
+		Href:       reference.GetHref(),
 	}
 }
 
-func RequiredAssetsProtoToOscal(assets []*proto.RequiredAsset) *[]oscaltypes113.RequiredAsset {
-	results := make([]oscaltypes113.RequiredAsset, 0)
-	for _, asset := range assets {
-		results = append(results, *RequiredAssetProtoToOscal(asset))
+func ControlReferencesProtoToSdk(controls []*proto.ControlReference) *[]types.ControlReference {
+	results := make([]types.ControlReference, 0)
+	for _, control := range controls {
+		results = append(results, *ControlReferenceProtoToSdk(control))
 	}
 	return &results
 }
 
-func RequiredAssetProtoToOscal(asset *proto.RequiredAsset) *oscaltypes113.RequiredAsset {
-	return &oscaltypes113.RequiredAsset{
-		Description: asset.GetDescription(),
-		Links:       LinksProtoToOscal(asset.GetLinks()),
-		Props:       PropertiesProtoToOscal(asset.GetProps()),
-		Remarks:     asset.GetRemarks(),
-		Subjects:    SubjectReferencesProtoToOscal(asset.GetSubjects()),
-		Title:       asset.GetTitle(),
-		UUID:        asset.GetUuid(),
-	}
-}
-
-func ResponsesProtoToOscal(responses []*proto.Response) *[]oscaltypes113.Response {
-	results := make([]oscaltypes113.Response, 0)
-	for _, response := range responses {
-		results = append(results, *ResponseProtoToOscal(response))
-	}
-	return &results
-}
-
-func ResponseProtoToOscal(response *proto.Response) *oscaltypes113.Response {
-	return &oscaltypes113.Response{
-		Description:    response.GetDescription(),
-		Lifecycle:      response.GetLifecycle().String(),
-		Links:          LinksProtoToOscal(response.GetLinks()),
-		Origins:        OriginsProtoToOscal(response.GetOrigins()),
-		Props:          PropertiesProtoToOscal(response.GetProps()),
-		Remarks:        response.GetRemarks(),
-		RequiredAssets: RequiredAssetsProtoToOscal(response.GetRequiredAssets()),
-		Tasks:          TasksProtoToOscal(response.GetTasks()),
-		Title:          response.GetTitle(),
-		UUID:           response.GetUuid(),
-	}
-}
-
-func ObservationTypesProtoToOscal(types []proto.ObservationType) *[]string {
-	results := make([]string, 0)
-	for _, _type := range types {
-		results = append(results, ObservationTypeProtoToOscal(_type))
-	}
-	return &results
-}
-
-func ObservationTypeProtoToOscal(_type proto.ObservationType) string {
-	return _type.String()
-}
-
-func ObservationMethodsProtoToOscal(methods []proto.ObservationMethod) []string {
-	results := make([]string, 0)
-	for _, method := range methods {
-		results = append(results, ObservationMethodProtoToOscal(method))
-	}
-	return results
-}
-
-func ObservationMethodProtoToOscal(method proto.ObservationMethod) string {
-	return method.String()
-}
-
-func RelatedObservationsProtoToOscal(observations []*proto.RelatedObservation) *[]oscaltypes113.RelatedObservation {
-	results := make([]oscaltypes113.RelatedObservation, 0)
-	for _, observation := range observations {
-		results = append(results, *RelatedObservationProtoToOscal(observation))
-	}
-	return &results
-}
-
-func RelatedObservationProtoToOscal(observation *proto.RelatedObservation) *oscaltypes113.RelatedObservation {
-	return &oscaltypes113.RelatedObservation{
-		ObservationUuid: observation.GetObservationUuid(),
-	}
-}
-
-func ImplementationStatusProtoToOscal(status *proto.ImplementationStatus) *oscaltypes113.ImplementationStatus {
-	return &oscaltypes113.ImplementationStatus{
-		Remarks: status.GetRemarks(),
-		State:   status.GetState().String(),
-	}
-}
-
-func ObjectiveStatusProtoToOscal(status *proto.ObjectiveStatus) *oscaltypes113.ObjectiveStatus {
-	return &oscaltypes113.ObjectiveStatus{
-		Reason:  status.GetReason(),
-		Remarks: status.GetRemarks(),
-		State:   status.GetState(),
-	}
-}
-
-func FindingTargetProtoToOscal(target *proto.FindingTarget) *oscaltypes113.FindingTarget {
-	return &oscaltypes113.FindingTarget{
-		Description:          target.GetDescription(),
-		ImplementationStatus: ImplementationStatusProtoToOscal(target.GetImplementationStatus()),
-		Links:                LinksProtoToOscal(target.GetLinks()),
-		Props:                PropertiesProtoToOscal(target.GetProps()),
-		Remarks:              target.GetRemarks(),
-		Status:               *ObjectiveStatusProtoToOscal(target.GetStatus()),
-		TargetId:             target.GetTargetId(),
-		Title:                target.GetTitle(),
-		Type:                 target.GetType().String(),
-	}
-}
-
-func ObservationsProtoToSDK(observations []*proto.Observation) *[]sdk.Observation {
-	results := make([]sdk.Observation, 0)
-	for _, observation := range observations {
-		results = append(results, *ObservationProtoToSDK(observation))
-	}
-	return &results
-}
-
-func ObservationProtoToSDK(observation *proto.Observation) *sdk.Observation {
-	expires := observation.GetExpires().AsTime()
-
-	return &sdk.Observation{
-		UUID:             observation.GetUuid(),
-		Title:            observation.GetTitle(),
-		Description:      observation.GetDescription(),
-		Remarks:          observation.GetRemarks(),
-		Collected:        observation.GetCollected().AsTime(),
-		Expires:          &expires,
-		Links:            LinksProtoToOscal(observation.GetLinks()),
-		Props:            PropertiesProtoToOscal(observation.GetProps()),
-		Subjects:         SubjectReferencesProtoToOscal(observation.GetSubjects()),
-		RelevantEvidence: RelevantEvidencesProtoToOscal(observation.GetRelevantEvidence()),
-		Methods:          ObservationMethodsProtoToOscal(observation.GetMethods()),
-		Origins:          OriginsProtoToOscal(observation.GetOrigins()),
-		Types:            ObservationTypesProtoToOscal(observation.GetTypes()),
-		Labels:           observation.GetLabels(),
-	}
-}
-
-func FindingsProtoToSDK(findings []*proto.Finding) *[]sdk.Finding {
-	results := make([]sdk.Finding, 0)
-	for _, finding := range findings {
-		results = append(results, *FindingProtoToSDK(finding))
-	}
-	return &results
-}
-
-func FindingProtoToSDK(finding *proto.Finding) *sdk.Finding {
-	return &sdk.Finding{
-		UUID:                        finding.GetUuid(),
-		Title:                       finding.GetTitle(),
-		Description:                 finding.GetDescription(),
-		ImplementationStatementUuid: finding.GetImplementationStatementUuid(),
-		Remarks:                     finding.GetRemarks(),
-		Links:                       LinksProtoToOscal(finding.GetLinks()),
-		Origins:                     OriginsProtoToOscal(finding.GetOrigins()),
-		Props:                       PropertiesProtoToOscal(finding.GetProps()),
-		RelatedObservations:         RelatedObservationsProtoToOscal(finding.GetRelatedObservations()),
-		RelatedRisks:                RelatedRisksProtoToOscal(finding.GetRelatedRisks()),
-		Target:                      *FindingTargetProtoToOscal(finding.GetTarget()),
-		Labels:                      finding.GetLabels(),
-	}
-}
-
-func SelectControlByIdsProtoToOscal(selectControls []*proto.SelectControlById) *[]oscaltypes113.AssessedControlsSelectControlById {
-	results := make([]oscaltypes113.AssessedControlsSelectControlById, 0)
-	for _, selectControl := range selectControls {
-		results = append(results, *SelectControlByIdProtoToOscal(selectControl))
-	}
-	return &results
-}
-
-func SelectControlByIdProtoToOscal(selectControl *proto.SelectControlById) *oscaltypes113.AssessedControlsSelectControlById {
-	statementIds := selectControl.GetStatementIds()
-	return &oscaltypes113.AssessedControlsSelectControlById{
-		ControlId:    selectControl.GetControlId(),
+func ControlReferenceProtoToSdk(control *proto.ControlReference) *types.ControlReference {
+	statementIds := control.GetStatementIds()
+	return &types.ControlReference{
+		Class:        control.GetClass(),
+		ControlId:    control.GetControlId(),
 		StatementIds: &statementIds,
 	}
 }
 
-func SelectObjectivesByIdsProtoToOscal(selectObjectives []*proto.SelectObjectiveById) *[]oscaltypes113.SelectObjectiveById {
-	results := make([]oscaltypes113.SelectObjectiveById, 0)
-	for _, selectObjective := range selectObjectives {
-		results = append(results, *SelectObjectiveByIdProtoToOscal(selectObjective))
+func RelatedObservationsProtoToSdk(observations []*proto.RelatedObservation) *[]types.RelatedObservation {
+	results := make([]types.RelatedObservation, 0)
+	for _, observation := range observations {
+		results = append(results, *RelatedObservationProtoToSdk(observation))
 	}
 	return &results
 }
 
-func SelectObjectiveByIdProtoToOscal(selectObjective *proto.SelectObjectiveById) *oscaltypes113.SelectObjectiveById {
-	return &oscaltypes113.SelectObjectiveById{
-		ObjectiveId: selectObjective.GetObjectiveId(),
+func RelatedObservationProtoToSdk(observation *proto.RelatedObservation) *types.RelatedObservation {
+	return &types.RelatedObservation{
+		ObservationUuid: observation.GetObservationUUID(),
 	}
 }
 
-func ControlSelectionsProtoToOscal(selections []*proto.ReviewedControls_ControlSelection) *[]oscaltypes113.AssessedControls {
-	results := make([]oscaltypes113.AssessedControls, 0)
-	for _, selection := range selections {
-		results = append(results, *ControlSelectionProtoToOscal(selection))
+func FindingStatusProtoToSdk(status *proto.FindingStatus) *types.FindingStatus {
+	return &types.FindingStatus{
+		Title:       status.GetTitle(),
+		Description: status.GetDescription(),
+		Remarks:     status.GetRemarks(),
+		State:       status.GetState(),
+		Links:       LinksProtoToSdk(status.GetLinks()),
+		Props:       PropertiesProtoToSdk(status.GetProps()),
+	}
+}
+
+func ObservationsProtoToSdk(observations []*proto.Observation) *[]types.Observation {
+	results := make([]types.Observation, 0)
+	for _, observation := range observations {
+		results = append(results, *ObservationProtoToSdk(observation))
 	}
 	return &results
 }
 
-func ControlSelectionProtoToOscal(selection *proto.ReviewedControls_ControlSelection) *oscaltypes113.AssessedControls {
-	return &oscaltypes113.AssessedControls{
-		Description:     selection.GetDescription(),
-		Links:           LinksProtoToOscal(selection.GetLinks()),
-		Props:           PropertiesProtoToOscal(selection.GetProps()),
-		Remarks:         selection.GetRemarks(),
-		ExcludeControls: SelectControlByIdsProtoToOscal(selection.GetExcludeControls()),
-		//IncludeAll:      finding.GetIncludeAll().(oscaltypes113.IncludeAll),
-		IncludeControls: SelectControlByIdsProtoToOscal(selection.GetIncludeControls()),
+func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
+	methods := observation.GetMethods()
+	return &types.Observation{
+		UUID:             observation.GetUUID(),
+		Title:            observation.GetTitle(),
+		Description:      observation.GetDescription(),
+		Remarks:          observation.GetRemarks(),
+		Collected:        observation.GetCollected().AsTime(),
+		Expires:          observation.GetExpires().AsTime(),
+		Methods:          &methods,
+		Links:            LinksProtoToSdk(observation.GetLinks()),
+		Props:            PropertiesProtoToSdk(observation.GetProps()),
+		Origins:          OriginsProtoToSdk(observation.GetOrigins()),
+		Subjects:         SubjectReferencesProtoToSdk(observation.GetSubjects()),
+		Activities:       ActivitiesProtoToSdk(observation.GetActivities()),
+		Components:       ComponentReferencesProtoToSdk(observation.GetComponents()),
+		RelevantEvidence: RelevantEvidencesProtoToSdk(observation.GetRelevantEvidence()),
 	}
 }
 
-func ReferencedControlObjectivesProtoToOscal(cos []*proto.ReviewedControls_ControlObjectiveSelection) *[]oscaltypes113.ReferencedControlObjectives {
-	results := make([]oscaltypes113.ReferencedControlObjectives, 0)
-	for _, co := range cos {
-		results = append(results, *ReferencedControlObjectiveProtoToOscal(co))
+func FindingsProtoToSdk(findings []*proto.Finding) *[]types.Finding {
+	results := make([]types.Finding, 0)
+	for _, finding := range findings {
+		results = append(results, *FindingProtoToSdk(finding))
 	}
 	return &results
 }
 
-func ReferencedControlObjectiveProtoToOscal(co *proto.ReviewedControls_ControlObjectiveSelection) *oscaltypes113.ReferencedControlObjectives {
-	return &oscaltypes113.ReferencedControlObjectives{
-		Description:       co.GetDescription(),
-		ExcludeObjectives: SelectObjectivesByIdsProtoToOscal(co.GetExcludeObjectives()),
-		//IncludeAll:        nil,
-		IncludeObjectives: SelectObjectivesByIdsProtoToOscal(co.GetIncludeObjectives()),
-		Links:             LinksProtoToOscal(co.GetLinks()),
-		Props:             PropertiesProtoToOscal(co.GetProps()),
-		Remarks:           co.GetRemarks(),
+func FindingProtoToSdk(finding *proto.Finding) *types.Finding {
+	return &types.Finding{
+		UUID:                finding.GetUUID(),
+		Title:               finding.GetTitle(),
+		Description:         finding.GetDescription(),
+		Remarks:             finding.GetRemarks(),
+		Labels:              finding.GetLabels(),
+		Origins:             OriginsProtoToSdk(finding.GetOrigins()),
+		Subjects:            SubjectReferencesProtoToSdk(finding.GetSubjects()),
+		Components:          ComponentReferencesProtoToSdk(finding.GetComponents()),
+		RelatedObservations: RelatedObservationsProtoToSdk(finding.GetRelatedObservations()),
+		Controls:            ControlReferencesProtoToSdk(finding.GetControls()),
+		Risks:               RisksProtoToSdk(finding.GetRisks()),
+		Status:              *FindingStatusProtoToSdk(finding.GetStatus()),
+		Links:               LinksProtoToSdk(finding.GetLinks()),
+		Props:               PropertiesProtoToSdk(finding.GetProps()),
 	}
-}
-
-func ReviewedControlsProtoToOscal(controls []*proto.ReviewedControls) *[]oscaltypes113.ReviewedControls {
-	results := make([]oscaltypes113.ReviewedControls, 0)
-	for _, control := range controls {
-		results = append(results, *ReviewedControlProtoToOscal(control))
-	}
-	return &results
-}
-
-func ReviewedControlProtoToOscal(reviewedControls *proto.ReviewedControls) *oscaltypes113.ReviewedControls {
-	return &oscaltypes113.ReviewedControls{
-		ControlObjectiveSelections: ReferencedControlObjectivesProtoToOscal(reviewedControls.GetControlObjectiveSelections()),
-		ControlSelections:          *ControlSelectionsProtoToOscal(reviewedControls.GetControlSelections()),
-		Description:                reviewedControls.GetDescription(),
-		Links:                      LinksProtoToOscal(reviewedControls.GetLinks()),
-		Props:                      PropertiesProtoToOscal(reviewedControls.GetProps()),
-		Remarks:                    reviewedControls.GetRemarks(),
-	}
-}
-
-func AssessmentPartsProtoToOscal(parts []*proto.AssessmentPart) *[]oscaltypes113.AssessmentPart {
-	results := make([]oscaltypes113.AssessmentPart, 0)
-	for _, part := range parts {
-		results = append(results, *AssessmentPartProtoToOscal(part))
-	}
-	return &results
-}
-
-func AssessmentPartProtoToOscal(part *proto.AssessmentPart) *oscaltypes113.AssessmentPart {
-	return &oscaltypes113.AssessmentPart{
-		Class: part.GetClass(),
-		Links: LinksProtoToOscal(part.GetLinks()),
-		Name:  part.GetName().String(),
-		Ns:    part.GetNs(),
-		Parts: AssessmentPartsProtoToOscal(part.GetParts()),
-		Props: PropertiesProtoToOscal(part.GetProps()),
-		Prose: part.GetProse(),
-		Title: part.GetTitle(),
-		UUID:  part.GetUuid(),
-	}
-}
-
-func AttestationsProtoToOscal(attestations []*proto.Attestation) *[]oscaltypes113.AttestationStatements {
-	results := make([]oscaltypes113.AttestationStatements, 0)
-	for _, attestation := range attestations {
-		results = append(results, *AttestationProtoToOscal(attestation))
-	}
-	return &results
-}
-
-func AttestationProtoToOscal(attestation *proto.Attestation) *oscaltypes113.AttestationStatements {
-	return &oscaltypes113.AttestationStatements{
-		Parts:              *AssessmentPartsProtoToOscal(attestation.GetParts()),
-		ResponsibleParties: ResponsiblePartiesProtoToOscal(attestation.GetResponsibleParties()),
-	}
-}
-
-func AssessmentLogEntriesProtoToOscal(entries []*proto.AssessmentLog_Entry) *[]oscaltypes113.AssessmentLogEntry {
-	results := make([]oscaltypes113.AssessmentLogEntry, 0)
-	for _, entry := range entries {
-		results = append(results, *AssessmentLogEntryProtoToOscal(entry))
-	}
-	return &results
-}
-
-func AssessmentLogEntryProtoToOscal(entry *proto.AssessmentLog_Entry) *oscaltypes113.AssessmentLogEntry {
-	end := entry.GetEnd().AsTime()
-	return &oscaltypes113.AssessmentLogEntry{
-		Description:  entry.GetDescription(),
-		End:          &end,
-		Links:        LinksProtoToOscal(entry.GetLinks()),
-		LoggedBy:     LoggedBysProtoToOscal(entry.GetLoggedBy()),
-		Props:        PropertiesProtoToOscal(entry.GetProps()),
-		RelatedTasks: RelatedTasksProtoToOscal(entry.GetRelatedTasks()),
-		Remarks:      entry.GetRemarks(),
-		Start:        entry.GetStart().AsTime(),
-		Title:        entry.GetTitle(),
-		UUID:         entry.GetUuid(),
-	}
-}
-
-func AssessmentLogProtoToOscal(log *proto.AssessmentLog) *oscaltypes113.AssessmentLog {
-	return &oscaltypes113.AssessmentLog{
-		Entries: *AssessmentLogEntriesProtoToOscal(log.GetEntries()),
-	}
-}
-
-func ResultProtoToSDK(result *proto.AssessmentResult, streamId uuid.UUID, resultLabels map[string]string) (*sdk.Result, error) {
-	endTime := result.GetEnd().AsTime()
-
-	var UUID *uuid.UUID
-
-	if result.GetUuid() != "" {
-		UUIDParsed, err := uuid.Parse(result.GetUuid())
-		UUID = &UUIDParsed
-
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &sdk.Result{
-		UUID:             UUID,
-		StreamID:         streamId,
-		Labels:           resultLabels,
-		Title:            result.GetTitle(),
-		Description:      result.GetDescription(),
-		Start:            result.GetStart().AsTime(),
-		End:              &endTime,
-		Observations:     ObservationsProtoToSDK(result.GetObservations()),
-		Findings:         FindingsProtoToSDK(result.GetFindings()),
-		Links:            LinksProtoToOscal(result.GetLinks()),
-		Props:            PropertiesProtoToOscal(result.GetProps()),
-		Remarks:          result.GetRemarks(),
-		AssessmentLog:    AssessmentLogProtoToOscal(result.GetAssessmentLog()),
-		Attestations:     AttestationsProtoToOscal(result.GetAttestations()),
-		LocalDefinitions: nil,
-		ReviewedControls: *ReviewedControlProtoToOscal(result.GetReviewedControls()),
-		Risks:            RisksProtoToOscal(result.GetRisks()),
-	}, nil
 }

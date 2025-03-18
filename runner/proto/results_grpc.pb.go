@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ApiHelperClient interface {
-	CreateResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error)
+	CreateResult(ctx context.Context, in *ComplianceInformationRequest, opts ...grpc.CallOption) (*ResultResponse, error)
 }
 
 type apiHelperClient struct {
@@ -37,7 +37,7 @@ func NewApiHelperClient(cc grpc.ClientConnInterface) ApiHelperClient {
 	return &apiHelperClient{cc}
 }
 
-func (c *apiHelperClient) CreateResult(ctx context.Context, in *ResultRequest, opts ...grpc.CallOption) (*ResultResponse, error) {
+func (c *apiHelperClient) CreateResult(ctx context.Context, in *ComplianceInformationRequest, opts ...grpc.CallOption) (*ResultResponse, error) {
 	out := new(ResultResponse)
 	err := c.cc.Invoke(ctx, ApiHelper_CreateResult_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -50,14 +50,14 @@ func (c *apiHelperClient) CreateResult(ctx context.Context, in *ResultRequest, o
 // All implementations should embed UnimplementedApiHelperServer
 // for forward compatibility
 type ApiHelperServer interface {
-	CreateResult(context.Context, *ResultRequest) (*ResultResponse, error)
+	CreateResult(context.Context, *ComplianceInformationRequest) (*ResultResponse, error)
 }
 
 // UnimplementedApiHelperServer should be embedded to have forward compatible implementations.
 type UnimplementedApiHelperServer struct {
 }
 
-func (UnimplementedApiHelperServer) CreateResult(context.Context, *ResultRequest) (*ResultResponse, error) {
+func (UnimplementedApiHelperServer) CreateResult(context.Context, *ComplianceInformationRequest) (*ResultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateResult not implemented")
 }
 
@@ -73,7 +73,7 @@ func RegisterApiHelperServer(s grpc.ServiceRegistrar, srv ApiHelperServer) {
 }
 
 func _ApiHelper_CreateResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ResultRequest)
+	in := new(ComplianceInformationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func _ApiHelper_CreateResult_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: ApiHelper_CreateResult_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApiHelperServer).CreateResult(ctx, req.(*ResultRequest))
+		return srv.(ApiHelperServer).CreateResult(ctx, req.(*ComplianceInformationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

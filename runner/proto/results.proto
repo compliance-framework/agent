@@ -1,19 +1,17 @@
 syntax = "proto3";
 package proto;
 
-import "runner/proto/oscal.proto";
+import "runner/proto/types.proto";
 
 option go_package = "./proto";
 
-message ResultRequest {
-  string streamID = 1;
-  map<string, string> labels = 2;
-  string policyPath = 3;
-  AssessmentResult result = 4;
+message ComplianceInformationRequest {
+  repeated Observation Observations = 1;
+  repeated Finding Findings = 2;
 }
 
 message ResultResponse {}
 
 service ApiHelper {
-  rpc CreateResult(ResultRequest) returns (ResultResponse);
+  rpc CreateResult(ComplianceInformationRequest) returns (ResultResponse);
 }
