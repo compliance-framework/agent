@@ -10,13 +10,13 @@ import (
 )
 
 type ApiHelper interface {
-	CreateObservationsAndFindings([]*proto.Observation, []*proto.Finding) error
+	CreateObservationsAndFindings(context.Context, []*proto.Observation, []*proto.Finding) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateObservationsAndFindings(observations []*proto.Observation, findings []*proto.Finding) error {
-	_, err := m.client.CreateResult(context.Background(), &proto.ComplianceInformationRequest{
+func (m *GRPCApiHelperClient) CreateObservationsAndFindings(ctx context.Context, observations []*proto.Observation, findings []*proto.Finding) error {
+	_, err := m.client.CreateObservationsAndFindings(ctx, &proto.ComplianceInformationRequest{
 		Observations: observations,
 		Findings:     findings,
 	})
@@ -31,12 +31,12 @@ type GRPCApiHelperServer struct {
 	Impl ApiHelper
 }
 
-func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ComplianceInformationRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.CreateObservationsAndFindings(req.GetObservations(), req.GetFindings())
+func (m *GRPCApiHelperServer) CreateObservationsAndFindings(ctx context.Context, req *proto.ComplianceInformationRequest) (resp *proto.CreateObservationsAndFindingsResponse, err error) {
+	err = m.Impl.CreateObservationsAndFindings(ctx, req.GetObservations(), req.GetFindings())
 	if err != nil {
 		return nil, err
 	}
-	return &proto.ResultResponse{}, err
+	return &proto.CreateObservationsAndFindingsResponse{}, err
 }
 
 // GRPCClient is an implementation of KV that talks over RPC.

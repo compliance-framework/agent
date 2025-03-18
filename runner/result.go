@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/google/uuid"
@@ -22,7 +23,7 @@ func NewApiHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Clie
 	}
 }
 
-func (h *apiHelper) CreateObservationsAndFindings(req *proto.ComplianceInformationRequest) error {
+func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, req *proto.ComplianceInformationRequest) error {
 	observations := *ObservationsProtoToSdk(req.GetObservations())
 	findings := *FindingsProtoToSdk(req.GetFindings())
 
@@ -34,5 +35,5 @@ func (h *apiHelper) CreateObservationsAndFindings(req *proto.ComplianceInformati
 		findings[key].Labels = labels
 	}
 
-	return h.client.ObservationsAndFindings.Create(observations, findings)
+	return h.client.ObservationsAndFindings.Create(ctx, observations, findings)
 }
