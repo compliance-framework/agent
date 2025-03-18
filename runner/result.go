@@ -8,50 +8,36 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
-type resultHelper struct {
+type apiHelper struct {
 	logger        hclog.Logger
 	client        *sdk.Client
 	agentStreamId uuid.UUID
-	resultLabels  map[string]string
+	agentLabels   map[string]string
 }
 
-func NewResultsHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Client, resultLabels map[string]string) *resultHelper {
-	logger = logger.Named("results-helper")
-	return &resultHelper{
+func NewApiHelper(logger hclog.Logger, agentStreamId uuid.UUID, client *sdk.Client, agentLabels map[string]string) *apiHelper {
+	logger = logger.Named("api-helper")
+	return &apiHelper{
 		logger:        logger,
 		agentStreamId: agentStreamId,
 		client:        client,
-		resultLabels:  resultLabels,
+		agentLabels:   agentLabels,
 	}
 }
 
-func (h *resultHelper) CreateResult(streamID string, labels map[string]string, policyPath string, result *proto.AssessmentResult) error {
-	streamSeedMap := map[string]string{
-		"agentStreamId": h.agentStreamId.String(),
-		"streamId":      streamID,
+func (h *apiHelper) CreateObservationsAndFindings(req *proto.ComplianceInformationRequest) error {
+	observations := *ObservationsProtoToSdk(req.GetObservations())
+	findings := *FindingsProtoToSdk(req.GetFindings())
+
+	for key, finding := range findings {
+		labels := finding.Labels
+		for k, v := range h.agentLabels {
+			labels[k] = v
+		}
+		findings[key].Labels = labels
 	}
 
-	streamId, err := sdk.SeededUUID(streamSeedMap)
-
-	h.logger.Trace("Generated StreamId from map", "streamId", streamId, "streamSeedMap", streamSeedMap)
-
-	if err != nil {
-		return err
-	}
-
-	resultLabels := h.resultLabels
-	resultLabels["_policy"] = policyPath
-	for k, v := range labels {
-		resultLabels[k] = v
-	}
-
-	sdkResult, err := ResultProtoToSDK(result, streamId, resultLabels)
-	if err != nil {
-		return err
-	}
-
-	_, err = h.client.Results.Create(sdkResult)
-	return err
+	return h.client.ObservationsAndFindings.Create(observations, findings)
 }
 
 func LinksProtoToSdk(links []*proto.Link) *[]types.Link {

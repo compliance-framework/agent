@@ -380,7 +380,7 @@ func (ar *AgentRunner) runInstance() error {
 		}
 
 		// Create a new results helper for the plugin to send results back to
-		resultsHelper := runner.NewResultsHelper(logger, streamId, client, resultLabels)
+		resultsHelper := runner.NewApiHelper(logger, streamId, client, resultLabels)
 
 		// TODO: Send failed results to the database?
 		_, err = runnerInstance.Eval(&proto.EvalRequest{
