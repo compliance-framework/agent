@@ -179,14 +179,15 @@ message Finding {
   string Title = 2;
   string Description = 3;
   optional string Remarks = 4;
-  map<string, string> Labels = 5;
-  repeated Origin Origins = 6;
-  repeated SubjectReference Subjects = 7;
-  repeated ComponentReference Components = 8;
-  repeated RelatedObservation RelatedObservations = 9;
-  repeated ControlReference Controls = 10;
-  repeated RiskReference Risks = 11;
-  FindingStatus Status = 12;
-  repeated Link Links = 13;
-  repeated Property Props = 14;
+  google.protobuf.Timestamp Collected = 5;
+  map<string, string> Labels = 6;
+  repeated Origin Origins = 7;
+  repeated SubjectReference Subjects = 8;
+  repeated ComponentReference Components = 9;
+  repeated RelatedObservation RelatedObservations = 10;
+  repeated ControlReference Controls = 11;
+  repeated RiskReference Risks = 12;
+  FindingStatus Status = 13;
+  repeated Link Links = 14;
+  repeated Property Props = 15;
 }

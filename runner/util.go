@@ -290,6 +290,7 @@ func FindingProtoToSdk(finding *proto.Finding) *types.Finding {
 		Title:               finding.GetTitle(),
 		Description:         finding.GetDescription(),
 		Remarks:             finding.GetRemarks(),
+		Collected:           finding.GetCollected().AsTime(),
 		Labels:              finding.GetLabels(),
 		Origins:             OriginsProtoToSdk(finding.GetOrigins()),
 		Subjects:            SubjectReferencesProtoToSdk(finding.GetSubjects()),
