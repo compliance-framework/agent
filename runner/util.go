@@ -3,6 +3,7 @@ package runner
 import (
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk/types"
+	"github.com/google/uuid"
 )
 
 // Constants used in plugins for statusses which map to OSCAL due to int requirements of GRPC
@@ -109,8 +110,9 @@ func OriginActorsProtoToSdk(actors []*proto.OriginActor) *[]types.OriginActor {
 }
 
 func OriginActorProtoToSdk(actor *proto.OriginActor) *types.OriginActor {
+	uuidValue := uuid.MustParse(actor.GetUUID())
 	return &types.OriginActor{
-		UUID:  actor.GetUUID(),
+		UUID:  &uuidValue,
 		Title: actor.GetTitle(),
 		Type:  actor.GetType(),
 		Links: LinksProtoToSdk(actor.GetLinks()),
@@ -161,11 +163,12 @@ func StepsProtoToSdk(steps []*proto.Step) *[]types.Step {
 }
 
 func StepProtoToSdk(step *proto.Step) *types.Step {
+	uuidValue := uuid.MustParse(step.GetUUID())
 	return &types.Step{
-		UUID:        step.GetUUID(),
+		UUID:        &uuidValue,
 		Title:       step.GetTitle(),
 		Description: step.GetDescription(),
-		Remarks:     step.GetRemarks(),
+		Remarks:     step.Remarks,
 		Links:       LinksProtoToSdk(step.GetLinks()),
 		Props:       PropertiesProtoToSdk(step.GetProps()),
 	}
@@ -180,11 +183,12 @@ func ActivitiesProtoToSdk(activities []*proto.Activity) *[]types.Activity {
 }
 
 func ActivityProtoToSdk(risk *proto.Activity) *types.Activity {
+	uuidValue := uuid.MustParse(risk.GetUUID())
 	return &types.Activity{
-		UUID:        risk.GetUUID(),
+		UUID:        &uuidValue,
 		Title:       risk.GetTitle(),
 		Description: risk.GetDescription(),
-		Remarks:     risk.GetRemarks(),
+		Remarks:     risk.Remarks,
 		Steps:       StepsProtoToSdk(risk.GetSteps()),
 		Links:       LinksProtoToSdk(risk.GetLinks()),
 		Props:       PropertiesProtoToSdk(risk.GetProps()),
@@ -233,7 +237,7 @@ func RelatedObservationsProtoToSdk(observations []*proto.RelatedObservation) *[]
 
 func RelatedObservationProtoToSdk(observation *proto.RelatedObservation) *types.RelatedObservation {
 	return &types.RelatedObservation{
-		ObservationUuid: observation.GetObservationUUID(),
+		ObservationUuid: uuid.MustParse(observation.GetObservationUUID()),
 	}
 }
 
@@ -259,7 +263,7 @@ func ObservationsProtoToSdk(observations []*proto.Observation) *[]types.Observat
 func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
 	methods := observation.GetMethods()
 	return &types.Observation{
-		UUID:             observation.GetUUID(),
+		UUID:             uuid.MustParse(observation.GetUUID()),
 		Title:            observation.GetTitle(),
 		Description:      observation.GetDescription(),
 		Remarks:          observation.GetRemarks(),
@@ -286,7 +290,7 @@ func FindingsProtoToSdk(findings []*proto.Finding) *[]types.Finding {
 
 func FindingProtoToSdk(finding *proto.Finding) *types.Finding {
 	return &types.Finding{
-		UUID:                finding.GetUUID(),
+		UUID:                uuid.MustParse(finding.GetUUID()),
 		Title:               finding.GetTitle(),
 		Description:         finding.GetDescription(),
 		Remarks:             finding.GetRemarks(),
