@@ -1,0 +1,13 @@
+name: Push
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
