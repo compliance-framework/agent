@@ -263,6 +263,7 @@ func ObservationsProtoToSdk(observations []*proto.Observation) *[]types.Observat
 func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
 	methods := observation.GetMethods()
 	return &types.Observation{
+		ID:               uuid.MustParse(observation.GetID()),
 		UUID:             uuid.MustParse(observation.GetUUID()),
 		Title:            observation.GetTitle(),
 		Description:      observation.GetDescription(),
@@ -290,6 +291,7 @@ func FindingsProtoToSdk(findings []*proto.Finding) *[]types.Finding {
 
 func FindingProtoToSdk(finding *proto.Finding) *types.Finding {
 	return &types.Finding{
+		ID:                  uuid.MustParse(finding.GetID()),
 		UUID:                uuid.MustParse(finding.GetUUID()),
 		Title:               finding.GetTitle(),
 		Description:         finding.GetDescription(),

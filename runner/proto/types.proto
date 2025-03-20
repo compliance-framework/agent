@@ -149,20 +149,21 @@ message Activity {
 }
 
 message Observation {
-  string UUID = 1;
-  optional string Title = 2;
-  string Description = 3;
-  optional string Remarks = 4;
-  google.protobuf.Timestamp Collected = 5;
-  optional google.protobuf.Timestamp Expires = 6;
-  repeated string Methods = 7;
-  repeated Link Links = 8;
-  repeated Property Props = 9;
-  repeated Origin Origins = 10;
-  repeated SubjectReference Subjects = 11;
-  repeated Activity Activities = 12;
-  repeated ComponentReference Components = 13;
-  repeated RelevantEvidence RelevantEvidence = 14;
+  string ID = 1;
+  string UUID = 2;
+  optional string Title = 3;
+  string Description = 4;
+  optional string Remarks = 5;
+  google.protobuf.Timestamp Collected = 6;
+  optional google.protobuf.Timestamp Expires = 7;
+  repeated string Methods = 8;
+  repeated Link Links = 9;
+  repeated Property Props = 10;
+  repeated Origin Origins = 11;
+  repeated SubjectReference Subjects = 12;
+  repeated Activity Activities = 13;
+  repeated ComponentReference Components = 14;
+  repeated RelevantEvidence RelevantEvidence = 15;
 }
 
 message FindingStatus {
@@ -175,19 +176,20 @@ message FindingStatus {
 }
 
 message Finding {
-  string UUID = 1;
-  string Title = 2;
-  string Description = 3;
-  optional string Remarks = 4;
-  google.protobuf.Timestamp Collected = 5;
-  map<string, string> Labels = 6;
-  repeated Origin Origins = 7;
-  repeated SubjectReference Subjects = 8;
-  repeated ComponentReference Components = 9;
-  repeated RelatedObservation RelatedObservations = 10;
-  repeated ControlReference Controls = 11;
-  repeated RiskReference Risks = 12;
-  FindingStatus Status = 13;
-  repeated Link Links = 14;
-  repeated Property Props = 15;
+  string ID = 1;
+  string UUID = 2;
+  string Title = 3;
+  string Description = 4;
+  optional string Remarks = 5;
+  google.protobuf.Timestamp Collected = 6;
+  map<string, string> Labels = 7;
+  repeated Origin Origins = 8;
+  repeated SubjectReference Subjects = 9;
+  repeated ComponentReference Components = 10;
+  repeated RelatedObservation RelatedObservations = 11;
+  repeated ControlReference Controls = 12;
+  repeated RiskReference Risks = 13;
+  FindingStatus Status = 14;
+  repeated Link Links = 15;
+  repeated Property Props = 16;
 }
