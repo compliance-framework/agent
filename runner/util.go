@@ -110,14 +110,17 @@ func OriginActorsProtoToSdk(actors []*proto.OriginActor) *[]types.OriginActor {
 }
 
 func OriginActorProtoToSdk(actor *proto.OriginActor) *types.OriginActor {
-	uuidValue := uuid.MustParse(actor.GetUUID())
-	return &types.OriginActor{
-		UUID:  &uuidValue,
+	result := &types.OriginActor{
 		Title: actor.GetTitle(),
 		Type:  actor.GetType(),
 		Links: LinksProtoToSdk(actor.GetLinks()),
 		Props: PropertiesProtoToSdk(actor.GetProps()),
 	}
+	if actor.UUID != nil {
+		uuidValue := uuid.MustParse(actor.GetUUID())
+		result.UUID = &uuidValue
+	}
+	return result
 }
 
 func ThreatIDsProtoToSdk(threatIds []*proto.ThreatId) *[]types.ThreatId {
@@ -163,15 +166,20 @@ func StepsProtoToSdk(steps []*proto.Step) *[]types.Step {
 }
 
 func StepProtoToSdk(step *proto.Step) *types.Step {
-	uuidValue := uuid.MustParse(step.GetUUID())
-	return &types.Step{
-		UUID:        &uuidValue,
+	result := &types.Step{
 		Title:       step.GetTitle(),
 		Description: step.GetDescription(),
-		Remarks:     step.Remarks,
 		Links:       LinksProtoToSdk(step.GetLinks()),
 		Props:       PropertiesProtoToSdk(step.GetProps()),
 	}
+	if step.Remarks != nil {
+		result.Remarks = step.Remarks
+	}
+	if step.UUID != nil {
+		uuidValue := uuid.MustParse(step.GetUUID())
+		result.UUID = &uuidValue
+	}
+	return result
 }
 
 func ActivitiesProtoToSdk(activities []*proto.Activity) *[]types.Activity {
@@ -182,17 +190,22 @@ func ActivitiesProtoToSdk(activities []*proto.Activity) *[]types.Activity {
 	return &results
 }
 
-func ActivityProtoToSdk(risk *proto.Activity) *types.Activity {
-	uuidValue := uuid.MustParse(risk.GetUUID())
-	return &types.Activity{
-		UUID:        &uuidValue,
-		Title:       risk.GetTitle(),
-		Description: risk.GetDescription(),
-		Remarks:     risk.Remarks,
-		Steps:       StepsProtoToSdk(risk.GetSteps()),
-		Links:       LinksProtoToSdk(risk.GetLinks()),
-		Props:       PropertiesProtoToSdk(risk.GetProps()),
+func ActivityProtoToSdk(activity *proto.Activity) *types.Activity {
+	result := &types.Activity{
+		Title:       activity.GetTitle(),
+		Description: activity.GetDescription(),
+		Steps:       StepsProtoToSdk(activity.GetSteps()),
+		Links:       LinksProtoToSdk(activity.GetLinks()),
+		Props:       PropertiesProtoToSdk(activity.GetProps()),
 	}
+	if activity.Remarks != nil {
+		result.Remarks = activity.Remarks
+	}
+	if activity.UUID != nil {
+		uuidValue := uuid.MustParse(activity.GetUUID())
+		result.UUID = &uuidValue
+	}
+	return result
 }
 
 func ComponentReferencesProtoToSdk(activities []*proto.ComponentReference) *[]types.ComponentReference {

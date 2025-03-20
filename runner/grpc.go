@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
