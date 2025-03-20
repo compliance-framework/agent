@@ -27,12 +27,12 @@ func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, obs []*pr
 	findings := *FindingsProtoToSdk(finds)
 
 	// Merge agent, config and finding labels all together.
-	for key, finding := range findings {
+	for _, finding := range findings {
 		labels := h.agentLabels
 		for k, v := range finding.Labels {
 			labels[k] = v
 		}
-		findings[key].Labels = labels
+		finding.Labels = labels
 	}
 
 	return h.client.ObservationsAndFindings.Create(ctx, observations, findings)
