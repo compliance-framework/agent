@@ -262,14 +262,13 @@ func ObservationsProtoToSdk(observations []*proto.Observation) *[]types.Observat
 
 func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
 	methods := observation.GetMethods()
-	return &types.Observation{
+	result := &types.Observation{
 		ID:               uuid.MustParse(observation.GetID()),
 		UUID:             uuid.MustParse(observation.GetUUID()),
 		Title:            observation.GetTitle(),
 		Description:      observation.GetDescription(),
 		Remarks:          observation.GetRemarks(),
 		Collected:        observation.GetCollected().AsTime(),
-		Expires:          observation.GetExpires().AsTime(),
 		Methods:          &methods,
 		Links:            LinksProtoToSdk(observation.GetLinks()),
 		Props:            PropertiesProtoToSdk(observation.GetProps()),
@@ -279,6 +278,11 @@ func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
 		Components:       ComponentReferencesProtoToSdk(observation.GetComponents()),
 		RelevantEvidence: RelevantEvidencesProtoToSdk(observation.GetRelevantEvidence()),
 	}
+	if observation.GetExpires() != nil && observation.GetExpires().IsValid() {
+		expires := observation.GetExpires().AsTime()
+		result.Expires = &expires
+	}
+	return result
 }
 
 func FindingsProtoToSdk(findings []*proto.Finding) *[]types.Finding {
