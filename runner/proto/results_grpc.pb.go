@@ -19,14 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ApiHelper_CreateObservationsAndFindings_FullMethodName = "/proto.ApiHelper/CreateObservationsAndFindings"
+	ApiHelper_CreateObservations_FullMethodName = "/proto.ApiHelper/CreateObservations"
+	ApiHelper_CreateFindings_FullMethodName     = "/proto.ApiHelper/CreateFindings"
 )
 
 // ApiHelperClient is the client API for ApiHelper service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ApiHelperClient interface {
-	CreateObservationsAndFindings(ctx context.Context, in *ComplianceInformationRequest, opts ...grpc.CallOption) (*CreateObservationsAndFindingsResponse, error)
+	CreateObservations(ctx context.Context, in *CreateObservationsRequest, opts ...grpc.CallOption) (*CreateObservationsResponse, error)
+	CreateFindings(ctx context.Context, in *CreateFindingsRequest, opts ...grpc.CallOption) (*CreateFindingsResponse, error)
 }
 
 type apiHelperClient struct {
@@ -37,9 +39,18 @@ func NewApiHelperClient(cc grpc.ClientConnInterface) ApiHelperClient {
 	return &apiHelperClient{cc}
 }
 
-func (c *apiHelperClient) CreateObservationsAndFindings(ctx context.Context, in *ComplianceInformationRequest, opts ...grpc.CallOption) (*CreateObservationsAndFindingsResponse, error) {
-	out := new(CreateObservationsAndFindingsResponse)
-	err := c.cc.Invoke(ctx, ApiHelper_CreateObservationsAndFindings_FullMethodName, in, out, opts...)
+func (c *apiHelperClient) CreateObservations(ctx context.Context, in *CreateObservationsRequest, opts ...grpc.CallOption) (*CreateObservationsResponse, error) {
+	out := new(CreateObservationsResponse)
+	err := c.cc.Invoke(ctx, ApiHelper_CreateObservations_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *apiHelperClient) CreateFindings(ctx context.Context, in *CreateFindingsRequest, opts ...grpc.CallOption) (*CreateFindingsResponse, error) {
+	out := new(CreateFindingsResponse)
+	err := c.cc.Invoke(ctx, ApiHelper_CreateFindings_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +61,19 @@ func (c *apiHelperClient) CreateObservationsAndFindings(ctx context.Context, in 
 // All implementations should embed UnimplementedApiHelperServer
 // for forward compatibility
 type ApiHelperServer interface {
-	CreateObservationsAndFindings(context.Context, *ComplianceInformationRequest) (*CreateObservationsAndFindingsResponse, error)
+	CreateObservations(context.Context, *CreateObservationsRequest) (*CreateObservationsResponse, error)
+	CreateFindings(context.Context, *CreateFindingsRequest) (*CreateFindingsResponse, error)
 }
 
 // UnimplementedApiHelperServer should be embedded to have forward compatible implementations.
 type UnimplementedApiHelperServer struct {
 }
 
-func (UnimplementedApiHelperServer) CreateObservationsAndFindings(context.Context, *ComplianceInformationRequest) (*CreateObservationsAndFindingsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateObservationsAndFindings not implemented")
+func (UnimplementedApiHelperServer) CreateObservations(context.Context, *CreateObservationsRequest) (*CreateObservationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateObservations not implemented")
+}
+func (UnimplementedApiHelperServer) CreateFindings(context.Context, *CreateFindingsRequest) (*CreateFindingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFindings not implemented")
 }
 
 // UnsafeApiHelperServer may be embedded to opt out of forward compatibility for this service.
@@ -72,20 +87,38 @@ func RegisterApiHelperServer(s grpc.ServiceRegistrar, srv ApiHelperServer) {
 	s.RegisterService(&ApiHelper_ServiceDesc, srv)
 }
 
-func _ApiHelper_CreateObservationsAndFindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ComplianceInformationRequest)
+func _ApiHelper_CreateObservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateObservationsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ApiHelperServer).CreateObservationsAndFindings(ctx, in)
+		return srv.(ApiHelperServer).CreateObservations(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ApiHelper_CreateObservationsAndFindings_FullMethodName,
+		FullMethod: ApiHelper_CreateObservations_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApiHelperServer).CreateObservationsAndFindings(ctx, req.(*ComplianceInformationRequest))
+		return srv.(ApiHelperServer).CreateObservations(ctx, req.(*CreateObservationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApiHelper_CreateFindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApiHelperServer).CreateFindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApiHelper_CreateFindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApiHelperServer).CreateFindings(ctx, req.(*CreateFindingsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -98,8 +131,12 @@ var ApiHelper_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ApiHelperServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateObservationsAndFindings",
-			Handler:    _ApiHelper_CreateObservationsAndFindings_Handler,
+			MethodName: "CreateObservations",
+			Handler:    _ApiHelper_CreateObservations_Handler,
+		},
+		{
+			MethodName: "CreateFindings",
+			Handler:    _ApiHelper_CreateFindings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

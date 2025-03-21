@@ -5,13 +5,18 @@ import "runner/proto/types.proto";
 
 option go_package = "./proto";
 
-message ComplianceInformationRequest {
+message CreateObservationsRequest {
   repeated Observation Observations = 1;
-  repeated Finding Findings = 2;
 }
 
-message CreateObservationsAndFindingsResponse {}
+message CreateFindingsRequest {
+  repeated Finding Findings = 1;
+}
+
+message CreateObservationsResponse {}
+message CreateFindingsResponse {}
 
 service ApiHelper {
-  rpc CreateObservationsAndFindings(ComplianceInformationRequest) returns (CreateObservationsAndFindingsResponse);
+  rpc CreateObservations(CreateObservationsRequest) returns (CreateObservationsResponse);
+  rpc CreateFindings(CreateFindingsRequest) returns (CreateFindingsResponse);
 }

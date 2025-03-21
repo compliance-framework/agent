@@ -9,15 +9,25 @@ import (
 )
 
 type ApiHelper interface {
-	CreateObservationsAndFindings(context.Context, []*proto.Observation, []*proto.Finding) error
+	CreateObservations(context.Context, []*proto.Observation) error
+	CreateFindings(context.Context, []*proto.Finding) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateObservationsAndFindings(ctx context.Context, observations []*proto.Observation, findings []*proto.Finding) error {
-	_, err := m.client.CreateObservationsAndFindings(ctx, &proto.ComplianceInformationRequest{
+func (m *GRPCApiHelperClient) CreateObservations(ctx context.Context, observations []*proto.Observation) error {
+	_, err := m.client.CreateObservations(ctx, &proto.CreateObservationsRequest{
 		Observations: observations,
-		Findings:     findings,
+	})
+	if err != nil {
+		hclog.Default().Error("Error adding result", "error", err)
+	}
+	return err
+}
+
+func (m *GRPCApiHelperClient) CreateFindings(ctx context.Context, findings []*proto.Finding) error {
+	_, err := m.client.CreateFindings(ctx, &proto.CreateFindingsRequest{
+		Findings: findings,
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", "error", err)
@@ -30,12 +40,20 @@ type GRPCApiHelperServer struct {
 	Impl ApiHelper
 }
 
-func (m *GRPCApiHelperServer) CreateObservationsAndFindings(ctx context.Context, req *proto.ComplianceInformationRequest) (resp *proto.CreateObservationsAndFindingsResponse, err error) {
-	err = m.Impl.CreateObservationsAndFindings(ctx, req.GetObservations(), req.GetFindings())
+func (m *GRPCApiHelperServer) CreateObservations(ctx context.Context, req *proto.CreateObservationsRequest) (resp *proto.CreateObservationsResponse, err error) {
+	err = m.Impl.CreateObservations(ctx, req.GetObservations())
 	if err != nil {
 		return nil, err
 	}
-	return &proto.CreateObservationsAndFindingsResponse{}, err
+	return &proto.CreateObservationsResponse{}, err
+}
+
+func (m *GRPCApiHelperServer) CreateFindings(ctx context.Context, req *proto.CreateFindingsRequest) (resp *proto.CreateFindingsResponse, err error) {
+	err = m.Impl.CreateFindings(ctx, req.GetFindings())
+	if err != nil {
+		return nil, err
+	}
+	return &proto.CreateFindingsResponse{}, err
 }
 
 // GRPCClient is an implementation of KV that talks over RPC.
