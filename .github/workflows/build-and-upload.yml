@@ -4,13 +4,7 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches:
-      - main
-      - seed
-    tags:
-      - v*
-  pull_request:
+  workflow_call:
 
 jobs:
   publish:
