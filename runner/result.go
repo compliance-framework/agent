@@ -22,8 +22,7 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 	}
 }
 
-func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, obs []*proto.Observation, finds []*proto.Finding) error {
-	observations := *ObservationsProtoToSdk(obs)
+func (h *apiHelper) CreateFindings(ctx context.Context, finds []*proto.Finding) error {
 	findings := *FindingsProtoToSdk(finds)
 
 	// Merge agent, config and finding labels all together.
@@ -35,5 +34,12 @@ func (h *apiHelper) CreateObservationsAndFindings(ctx context.Context, obs []*pr
 		finding.Labels = labels
 	}
 
-	return h.client.ObservationsAndFindings.Create(ctx, observations, findings)
+	err := h.client.Findings.Create(ctx, findings)
+	return err
+}
+
+func (h *apiHelper) CreateObservations(ctx context.Context, obs []*proto.Observation) error {
+	observations := *ObservationsProtoToSdk(obs)
+	err := h.client.Observations.Create(ctx, observations)
+	return err
 }
