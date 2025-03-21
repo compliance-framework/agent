@@ -1,28 +1,51 @@
-name: Build and Upload Artifacts
+name: Publish
+
+permissions:
+  contents: read
 
 on:
   workflow_call:
 
 jobs:
-  release:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          # 'latest', 'nightly', or a semver
-          version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install gooci cli
-        run: go install github.com/compliance-framework/gooci@latest
-      - name: Authenticate gooci cli
-        run: gooci login ghcr.io --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }}
-      - name: gooci Upload Version
-        run: gooci upload dist/ ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{github.ref_name}}
-      - name: gooci Upload Latest
-        if: "!github.event.release.prerelease"
-        run: gooci upload dist/ ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:latest
+          images: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=schedule
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
