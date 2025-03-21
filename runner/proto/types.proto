@@ -1,0 +1,195 @@
+syntax = "proto3";
+package proto;
+option go_package = "./proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Property
+// An attribute, characteristic, or quality of the containing object expressed
+// as a namespace qualified name/value pair.
+message Property {
+  // Property Name
+  // A textual label, within a namespace, that identifies a specific attribute,
+  // characteristic, or quality of the property's containing object.
+  string Name = 1;
+
+  // Property Value
+  // Indicates the value of the attribute, characteristic, or quality.
+  string Value = 2;
+
+  // Property Universally Unique Identifier
+  // A unique identifier for a property.
+  optional string Uuid = 3;
+
+  // Property Namespace
+  // A namespace qualifying the property's name. This allows different
+  // organizations to associate distinct semantics with the same name.
+  optional string Ns = 4;
+
+  // Property Class
+  // A textual label that provides a sub-type or characterization of the
+  // property's name.
+  optional string Class = 5;
+
+  // Property Group
+  // An identifier for relating distinct sets of properties.
+  optional string Group = 6;
+
+  // Remarks
+  // Additional explanatory notes for the property.
+  optional string Remarks = 7;
+}
+
+message Link {
+  // Hypertext Reference
+  // A resolvable URL reference to a resource.
+  string Href = 1;
+
+  // Link Relation Type
+  // Describes the type of relationship provided by the link's hypertext
+  // reference. This can be an indicator of the link's purpose.
+  optional string Rel = 2;
+
+  // Media Type
+  // A label that indicates the nature of a resource, as a data serialization or
+  // format.
+  optional string MediaType = 3;
+
+  // Resource Fragment
+  // In case where the href points to a back-matter/resource, this value will
+  // indicate the URI fragment to append to any rlink associated with the
+  // resource. This value MUST be URI encoded.
+  optional string ResourceFragment = 4;
+
+  // Link Text
+  // A textual label to associate with the link, which may be used for
+  // presentation in a tool.
+  optional string Text = 5;
+}
+
+message OriginActor {
+  optional string UUID = 1;
+  string Title = 2;
+  string Type = 3;
+  repeated Link Links = 4;
+  repeated Property Props = 5;
+}
+
+message Origin {
+  repeated OriginActor Actors = 1;
+}
+
+message ThreatId {
+  string ID = 1;
+  string System = 2;
+  optional string Href = 3;
+}
+
+message ComponentReference {
+  string Identifier = 1;
+  optional string Href = 2;
+}
+
+message ControlReference {
+  string Class = 1;
+  string ControlId = 2;
+  repeated string StatementIds = 3;
+}
+
+message SubjectReference {
+  optional string Title = 1;
+  optional string Remarks = 2;
+  string Type = 3;
+  map<string, string> Attributes = 4;
+  repeated Link Links = 5;
+  repeated Property Props = 6;
+}
+
+message RiskReference {
+  string Identifier = 1;
+  string Status = 2;
+  optional string Href = 3;
+  repeated Origin Origins = 4;
+  repeated ThreatId ThreatIds = 5;
+}
+
+message RelatedObservation {
+  string ObservationUUID = 1;
+}
+
+message AssociatedRisk {
+  string Identifier = 1;
+}
+
+message RelevantEvidence {
+  string Description = 1;
+  optional string Remarks = 2;
+  optional string Href = 3;
+  repeated Link Links = 4;
+  repeated Property Props = 5;
+}
+
+message Step {
+  optional string UUID = 1;
+  string Title = 2;
+  string Description = 3;
+  optional string Remarks = 4;
+  repeated Link Links = 5;
+  repeated Property Props = 6;
+}
+
+message Activity {
+  optional string UUID = 1;
+  string Title = 2;
+  string Description = 3;
+  optional string Remarks = 4;
+  repeated Step Steps = 5;
+  repeated Link Links = 6;
+  repeated Property Props = 7;
+}
+
+message Observation {
+  string ID = 1;
+  string UUID = 2;
+  optional string Title = 3;
+  string Description = 4;
+  optional string Remarks = 5;
+  google.protobuf.Timestamp Collected = 6;
+  optional google.protobuf.Timestamp Expires = 7;
+  repeated string Methods = 8;
+  repeated Link Links = 9;
+  repeated Property Props = 10;
+  repeated Origin Origins = 11;
+  repeated SubjectReference Subjects = 12;
+  repeated Activity Activities = 13;
+  repeated ComponentReference Components = 14;
+  repeated RelevantEvidence RelevantEvidence = 15;
+}
+
+message FindingStatus {
+  optional string Title = 1;
+  optional string Description = 2;
+  optional string Remarks = 3;
+  string State = 4;
+  repeated Link Links = 5;
+  repeated Property Props = 6;
+}
+
+message Finding {
+  string ID = 1;
+  string UUID = 2;
+  string Title = 3;
+  string Description = 4;
+  optional string Remarks = 5;
+  google.protobuf.Timestamp Collected = 6;
+  map<string, string> Labels = 7;
+  repeated Origin Origins = 8;
+  repeated SubjectReference Subjects = 9;
+  repeated ComponentReference Components = 10;
+  repeated RelatedObservation RelatedObservations = 11;
+  repeated ControlReference Controls = 12;
+  repeated RiskReference Risks = 13;
+  FindingStatus Status = 14;
+  repeated Link Links = 15;
+  repeated Property Props = 16;
+}

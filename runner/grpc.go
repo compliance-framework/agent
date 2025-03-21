@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
@@ -10,17 +9,15 @@ import (
 )
 
 type ApiHelper interface {
-	CreateResult(streamID string, labels map[string]string, policyPath string, result *proto.AssessmentResult) error
+	CreateObservationsAndFindings(context.Context, []*proto.Observation, []*proto.Finding) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateResult(streamId string, labels map[string]string, policyPath string, assesmentResult *proto.AssessmentResult) error {
-	_, err := m.client.CreateResult(context.Background(), &proto.ResultRequest{
-		Result:     assesmentResult,
-		StreamID:   streamId,
-		Labels:     labels,
-		PolicyPath: policyPath,
+func (m *GRPCApiHelperClient) CreateObservationsAndFindings(ctx context.Context, observations []*proto.Observation, findings []*proto.Finding) error {
+	_, err := m.client.CreateObservationsAndFindings(ctx, &proto.ComplianceInformationRequest{
+		Observations: observations,
+		Findings:     findings,
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", "error", err)
@@ -33,12 +30,12 @@ type GRPCApiHelperServer struct {
 	Impl ApiHelper
 }
 
-func (m *GRPCApiHelperServer) CreateResult(ctx context.Context, req *proto.ResultRequest) (resp *proto.ResultResponse, err error) {
-	err = m.Impl.CreateResult(req.GetStreamID(), req.GetLabels(), req.GetPolicyPath(), req.GetResult())
+func (m *GRPCApiHelperServer) CreateObservationsAndFindings(ctx context.Context, req *proto.ComplianceInformationRequest) (resp *proto.CreateObservationsAndFindingsResponse, err error) {
+	err = m.Impl.CreateObservationsAndFindings(ctx, req.GetObservations(), req.GetFindings())
 	if err != nil {
 		return nil, err
 	}
-	return &proto.ResultResponse{}, err
+	return &proto.CreateObservationsAndFindingsResponse{}, err
 }
 
 // GRPCClient is an implementation of KV that talks over RPC.

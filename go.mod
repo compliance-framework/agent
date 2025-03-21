@@ -3,10 +3,9 @@ module github.com/compliance-framework/agent
 go 1.23.2
 
 require (
-	github.com/compliance-framework/configuration-service v0.0.5
+	github.com/compliance-framework/configuration-service v0.0.7-0.20250321090043-a0c87cd91adc
 	github.com/compliance-framework/gooci v0.0.0-20250113172942-411c6f0468f0
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/defenseunicorns/go-oscal v0.6.2
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/go-containerregistry v0.20.2
@@ -31,6 +30,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/defenseunicorns/go-oscal v0.6.2 // indirect
 	github.com/docker/cli v27.1.1+incompatible // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
