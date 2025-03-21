@@ -15,4 +15,4 @@ FROM gcr.io/distroless/base-debian12 AS final
 WORKDIR /app
 COPY --from=builder /app/concom /app/concom
 
-ENTRYPOINT ["/app/concom"]
+CMD ["./concom", "agent", "-c", "/app/config.yml"]
