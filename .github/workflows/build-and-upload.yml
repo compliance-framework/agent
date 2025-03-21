@@ -1,42 +1,57 @@
-name: Build and Push Docker Image
+name: Publish
+
+permissions:
+  contents: read
 
 on:
-  workflow_call:
+  push:
+    branches:
+      - main
+      - seed
+    tags:
+      - v*
+  pull_request:
 
 jobs:
-  build-and-push:
+  publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       packages: write
-
+      contents: read
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Log in to GitHub Container Registry (GHCR)
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Set up Docker image tags
-        run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-          VERSION_TAG=${{ github.ref_name }}
-          LATEST_TAG="latest"
-
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_ENV
-          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
-
-      - name: Build Docker image
-        run: |
-          docker build -t $IMAGE_NAME:$VERSION_TAG .
-
-      - name: Push versioned Docker image
-        run: |
-          docker push $IMAGE_NAME:$VERSION_TAG
-
-      - name: Push latest Docker image (if not a prerelease)
-        if: "!github.event.release.prerelease"
-        run: |
-          docker tag $IMAGE_NAME:$VERSION_TAG $IMAGE_NAME:$LATEST_TAG
-          docker push $IMAGE_NAME:$LATEST_TAG
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=schedule
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
