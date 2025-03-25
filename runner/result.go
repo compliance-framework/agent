@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
+	"github.com/compliance-framework/configuration-service/sdk/types"
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -26,15 +27,17 @@ func (h *apiHelper) CreateFindings(ctx context.Context, finds []*proto.Finding) 
 	findings := *FindingsProtoToSdk(finds)
 
 	// Merge agent, config and finding labels all together.
+	resultFindings := make([]types.Finding, 0)
 	for _, finding := range findings {
 		labels := h.agentLabels
 		for k, v := range finding.Labels {
 			labels[k] = v
 		}
 		finding.Labels = labels
+		resultFindings = append(resultFindings, finding)
 	}
 
-	err := h.client.Findings.Create(ctx, findings)
+	err := h.client.Findings.Create(ctx, resultFindings)
 	return err
 }
 
