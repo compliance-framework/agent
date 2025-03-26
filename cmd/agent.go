@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/robfig/cron/v3"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,8 +15,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/compliance-framework/agent/runner/proto"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
@@ -40,6 +41,7 @@ type agentPolicy string
 type agentPluginConfig map[string]string
 
 type agentPlugin struct {
+	Schedule *string           `mapstructure:"schedule,omitempty"`
 	Source   string            `mapstructure:"source"`
 	Policies []agentPolicy     `mapstructure:"policies"`
 	Config   agentPluginConfig `mapstructure:"config"`
@@ -214,7 +216,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 
 		agentRunner.config = *config
 
-		err = agentRunner.DownloadPlugins()
+		err = agentRunner.DownloadPlugins(context.TODO())
 
 		if err != nil {
 			logger.Error("Error downloading plugins", "error", err)
@@ -224,7 +226,8 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	})
 	v.WatchConfig()
 
-	err = agentRunner.Run()
+	ctx := context.TODO()
+	err = agentRunner.Run(ctx)
 
 	// Don't return the error as that will cause it to spit help out, which is no
 	// longer useful at this stage. Log the error and then exit
@@ -246,31 +249,27 @@ type AgentRunner struct {
 	pluginLocations map[string]string
 	policyLocations map[string]string
 
-	setupPluginTask   *internal.Task
-	setupPoliciesTask *internal.Task
-
 	queryBundles []*rego.Rego
 }
 
-func (ar *AgentRunner) Run() error {
+func (ar *AgentRunner) Run(ctx context.Context) error {
 	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon)
 
-	err := ar.DownloadPlugins()
+	err := ar.DownloadPlugins(ctx)
 	if err != nil {
 		return err
 	}
 
 	if ar.config.Daemon == true {
-		ar.runDaemon()
+		ar.runDaemon(ctx)
 		return nil
 	}
 
-	return ar.runInstance()
+	return ar.runAllPlugins(ctx)
 }
 
 // Should never return, either handles any error or panics.
-// TODO: We should take a cancellable context here, so the caller can cancel the daemon at any time, and continue to whatever is appropriate
-func (ar *AgentRunner) runDaemon() {
+func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	sigs := make(chan os.Signal, 1)
 
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -285,17 +284,59 @@ func (ar *AgentRunner) runDaemon() {
 
 	go daemon.SdNotify(false, "READY=1")
 
-	for {
-		err := ar.runInstance()
+	c := cron.New(cron.WithParser(cron.NewParser(
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)))
+	_, err := c.AddFunc("*/10 * * * * *", func() {
+		fmt.Println("Running every 10 seconds")
+		for _, entry := range c.Entries() {
+			in := entry.Next.Sub(time.Now())
+			fmt.Println(fmt.Sprintf("Entry %d running in %f", entry.ID, in.Seconds()))
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
 
-		if err != nil {
-			ar.logger.Error("error running instance", "error", err)
-			// No return for now, we keep retrying.
-			// TODO: Should we have a retry limit maybe?
+	for pluginName, pluginConfig := range ar.config.Plugins {
+		var schedule string
+		if pluginConfig.Schedule == nil {
+			schedule = "* * * * *"
+		} else {
+			schedule = *pluginConfig.Schedule
 		}
 
-		time.Sleep(time.Second * 60)
+		_, err := c.AddFunc(schedule, func() {
+			ctx := context.TODO()
+			err := ar.runPlugin(ctx, pluginName, pluginConfig)
+			if err != nil {
+				// TODO how will we handle these errors ?
+				panic(err)
+			}
+		})
+
+		if err != nil {
+			ar.logger.Warn("Error adding schedule", "schedule", schedule, "error", err)
+			// TODO We should figure out how to handle this, especially in the context of automatically configured
+			// agents. We should probably send a health status to the API with errors.
+		}
 	}
+
+	c.Start()
+
+	time.Sleep(1 * time.Hour)
+
+	//for {
+	//	err := ar.runAllPlugins(ctx)
+	//
+	//	if err != nil {
+	//		ar.logger.Error("error running instance", "error", err)
+	//		// No return for now, we keep retrying.
+	//		// TODO: Should we have a retry limit maybe?
+	//	}
+	//
+	//	time.Sleep(time.Second * 60)
+	//}
 }
 
 // Run the agent as an instance, this is a single run of the agent that will check the
@@ -303,7 +344,7 @@ func (ar *AgentRunner) runDaemon() {
 //
 // Returns:
 // - error: any error that occurred during the run
-func (ar *AgentRunner) runInstance() error {
+func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
 		BaseURL: ar.config.ApiConfig.Url,
 	})
@@ -312,7 +353,7 @@ func (ar *AgentRunner) runInstance() error {
 	defer ar.mu.Unlock()
 	defer ar.closePluginClients()
 
-	err := ar.DownloadPolicies()
+	err := ar.DownloadPolicies(ctx)
 	if err != nil {
 		return err
 	}
@@ -397,6 +438,89 @@ func (ar *AgentRunner) runInstance() error {
 	return nil
 }
 
+// Run the agent as an instance, this is a single run of the agent that will check the
+// policies against the plugins.
+//
+// Returns:
+// - error: any error that occurred during the run
+func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agentPlugin) error {
+	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
+		BaseURL: ar.config.ApiConfig.Url,
+	})
+
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+	defer ar.closePluginClients()
+
+	policyPaths := make([]string, 0)
+	for _, inputBundle := range plugin.Policies {
+		policyLocation, err := internal.Download(ctx, string(inputBundle), AgentPolicyDir, "policies", ar.logger)
+		if err != nil {
+			return err
+		}
+		policyPaths = append(policyPaths, policyLocation)
+	}
+
+	pluginExecutable, err := internal.Download(ctx, plugin.Source, AgentPluginDir, "plugin", ar.logger, remote.WithPlatform(v1.Platform{
+		Architecture: runtime.GOARCH,
+		OS:           runtime.GOOS,
+	}))
+
+	fmt.Println("Running plugin", "source", plugin.Source)
+	fmt.Println("Running plugin", "source", pluginExecutable)
+
+	if err != nil {
+		return err
+	}
+
+	logger := hclog.New(&hclog.LoggerOptions{
+		Name:   fmt.Sprintf("runner.%s", name),
+		Output: os.Stdout,
+		Level:  hclog.Level(ar.config.logVerbosity()),
+	})
+
+	labels := map[string]string{
+		"_agent":  "concom",
+		"_plugin": name,
+	}
+	for k, v := range plugin.Labels {
+		labels[k] = v
+	}
+
+	logger.Debug("Running plugin", "source", pluginExecutable)
+
+	if _, err := os.ReadFile(pluginExecutable); err != nil {
+		return err
+	}
+
+	runnerInstance, err := ar.getRunnerInstance(logger, pluginExecutable)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
+		Config: plugin.Config,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Create a new results helper for the plugin to send results back to
+	resultsHelper := runner.NewApiHelper(logger, client, labels)
+
+	// TODO: Send failed results to the database?
+	_, err = runnerInstance.Eval(&proto.EvalRequest{
+		PolicyPaths: policyPaths,
+	}, resultsHelper)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runner.Runner, error) {
 	// We're a host! Start by launching the plugin process.
 	client := plugin.NewClient(&plugin.ClientConfig{
@@ -435,18 +559,7 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runn
 //
 // We return any errors that occurred during the download process. TODO: What is the right
 // error handling here?
-func (ar *AgentRunner) DownloadPlugins() error {
-	// Add a task to indicate we've downloaded the items
-	task := &internal.Task{
-		Title:       "Download plugins",
-		Description: "Downloading plugins required to run concom agent",
-		SubjectId:   "",
-		Activities:  []internal.Activity{},
-	}
-	defer func() {
-		ar.setupPluginTask = task
-	}()
-
+func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
@@ -455,32 +568,22 @@ func (ar *AgentRunner) DownloadPlugins() error {
 	}
 
 	for source := range pluginSources {
-		location, activity, err := ar.downloadItem("plugins", source, AgentPluginDir, true)
+		out, err := internal.Download(ctx, source, AgentPluginDir, "plugin", ar.logger, remote.WithPlatform(v1.Platform{
+			Architecture: runtime.GOARCH,
+			OS:           runtime.GOOS,
+		}))
 
 		if err != nil {
 			return err
 		}
 
-		task.AddActivity(activity)
-
-		ar.pluginLocations[source] = location
+		ar.pluginLocations[source] = out
 	}
 
 	return nil
 }
 
-func (ar *AgentRunner) DownloadPolicies() error {
-	// Add a task to indicate we've downloaded the items
-	task := &internal.Task{
-		Title:       "Download policies",
-		Description: "Downloading policies required to run concom agent",
-		SubjectId:   "",
-		Activities:  []internal.Activity{},
-	}
-	defer func() {
-		ar.setupPoliciesTask = task
-	}()
-
+func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	// Build a set of unique policy sources
 	policySources := map[string]struct{}{}
 
@@ -491,15 +594,13 @@ func (ar *AgentRunner) DownloadPolicies() error {
 	}
 
 	for source := range policySources {
-		location, activity, err := ar.downloadItem("policies", source, AgentPolicyDir, false)
+		out, err := internal.Download(ctx, source, AgentPolicyDir, "policies", ar.logger)
 
 		if err != nil {
 			return err
 		}
 
-		task.AddActivity(activity)
-
-		ar.policyLocations[source] = location
+		ar.policyLocations[source] = out
 	}
 
 	return nil
@@ -520,16 +621,8 @@ func (ar *AgentRunner) downloadItem(
 	source string,
 	outDirPrefix string,
 	isArchDependent bool,
-) (string, internal.Activity, error) {
+) (string, error) {
 	location := ""
-	activity := internal.Activity{
-		Title:       "Downloading " + type_,
-		SubjectId:   "",
-		Description: "Downloading " + type_ + " from " + source,
-		Type:        type_,
-		Steps:       []internal.Step{},
-		Tools:       []string{"agent"},
-	}
 
 	ar.logger.Trace("Checking for source", "type", type_, "source", source)
 
@@ -540,49 +633,31 @@ func (ar *AgentRunner) downloadItem(
 		// The file exists. Just return it.
 		ar.logger.Debug("Found source locally, using local file", "type", type_, "File", source)
 
-		activity.AddStep(internal.Step{
-			Title:       "Plugin found locally",
-			SubjectId:   "",
-			Description: fmt.Sprintf("Plugin found locally at %s", source),
-		})
-
 		// The file exists locally, so we use the local path.
-		return source, activity, nil
+		return source, nil
 	}
 
 	// The error we've received is something other than not exists.
 	// Exit early with the error
 	if !os.IsNotExist(err) {
-		activity.AddStep(internal.Step{
-			Title:       "Plugin error",
-			SubjectId:   "",
-			Description: fmt.Sprintf("Error finding plugin on filesystem: '%v'", err),
-		})
-
-		return location, activity, err
+		return location, err
 	}
 
 	if internal.IsOCI(source) {
 		ar.logger.Debug("Source looks like an OCI endpoint, attempting to download", "type", type_, "Source", source)
 		tag, err := name.NewTag(source)
 		if err != nil {
-			return location, activity, err
+			return location, err
 		}
 
 		outDir := path.Join(outDirPrefix, tag.RepositoryStr(), tag.Identifier())
-
-		activity.AddStep(internal.Step{
-			Title:       "Plugin OCI endpoint found",
-			SubjectId:   "",
-			Description: fmt.Sprintf("Plugin found OCI endpoint %s", source),
-		})
 
 		downloaderImpl, err := oci.NewDownloader(
 			tag,
 			outDir,
 		)
 		if err != nil {
-			return location, activity, err
+			return location, err
 		}
 		if isArchDependent {
 			err = downloaderImpl.Download(remote.WithPlatform(v1.Platform{
@@ -593,7 +668,7 @@ func (ar *AgentRunner) downloadItem(
 			err = downloaderImpl.Download()
 		}
 		if err != nil {
-			return location, activity, err
+			return location, err
 		}
 
 		location := outDir
@@ -603,28 +678,18 @@ func (ar *AgentRunner) downloadItem(
 			location = path.Join(outDir, "policies")
 		}
 
-		activity.AddStep(internal.Step{
-			Title:       "Downloaded Plugin",
-			SubjectId:   "",
-			Description: fmt.Sprintf("Downloaded plugin to destination %s", location),
-		})
-
 		ar.logger.Debug("Source downloaded successfully", "type", type_, "Destination", outDir)
 		// Update the source in the agent configuration to the new path
-		return location, activity, nil
+		return location, nil
 	} else {
 		ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
 
-		activity.AddStep(internal.Step{
-			Title:       "Plugin error",
-			SubjectId:   "",
-			Description: "Downloading artifacts is not yet implemented",
-		})
-
-		return location, activity, errors.New("Downloading artifacts is not yet implemented")
+		return location, errors.New("Downloading artifacts is not yet implemented")
 	}
 }
 
 func (ar *AgentRunner) closePluginClients() {
+	ar.logger.Debug("Cleaning up plugin instances")
 	plugin.CleanupClients()
+	ar.logger.Debug("Completed plugin cleanup")
 }

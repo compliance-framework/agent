@@ -2,7 +2,6 @@ package internal
 
 import (
 	"archive/tar"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/uuid"
 	"hash/crc64"
 	"io"
@@ -29,12 +28,6 @@ func SubtractSlice(left []string, right []string) []string {
 	}
 
 	return remains
-}
-
-func IsOCI(source string) bool {
-	// Check whether this can be parsed as an OCI endpoint
-	_, err := name.NewTag(source, name.StrictValidation)
-	return err == nil
 }
 
 func SeededUUID(seedData []string) (uuid.UUID, error) {
