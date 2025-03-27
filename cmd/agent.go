@@ -143,12 +143,29 @@ func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, err
 	return config, nil
 }
 
+func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
+	err := v.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := mergeConfig(cmd, v)
+	if err != nil {
+		return nil, err
+	}
+
+	err = config.validate()
+	if err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
 // Main the entrypoint for the `agent` command
 //
 // It will read the configuration file, and then run the agent. Various command line flags can
 // be used to override the config file.
 func agentRunner(cmd *cobra.Command, args []string) error {
-
 	configPath := cmd.Flag("config").Value.String()
 
 	if !path.IsAbs(configPath) {
@@ -163,96 +180,82 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	v.SetConfigFile(configPath)
 	v.AutomaticEnv()
 
-	loadConfig := func() (*agentConfig, error) {
-		err := v.ReadInConfig()
-		if err != nil {
-			return nil, err
-		}
-
-		config, err := mergeConfig(cmd, v)
-		if err != nil {
-			return nil, err
-		}
-
-		err = config.validate()
-		if err != nil {
-			return nil, err
-		}
-		return config, nil
-	}
-
-	config, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent",
 		Output: os.Stdout,
-		Level:  hclog.Level(config.logVerbosity()),
+		Level:  hclog.Debug,
 	})
 
-	agentRunner := AgentRunner{
-		logger:          logger,
-		config:          *config,
-		pluginLocations: map[string]string{},
-		policyLocations: map[string]string{},
-	}
+	agentRun := NewAgentRunner()
+
+	ctx, configCancel := context.WithCancel(context.Background())
+	defer configCancel()
 
 	v.OnConfigChange(func(in fsnotify.Event) {
 		// We want to wait for any running agent processes to finish first.
 		logger.Debug("config file changed", "path", in.Name)
-		logger.Debug("waiting for lock to update configurations")
-		agentRunner.mu.Lock()
-		logger.Debug("received lock to update configurations")
-		defer agentRunner.mu.Unlock()
+		configCancel()
+	})
+	v.WatchConfig()
 
+	// For the daemon, we run the agent continuously.
+	// It will exit as soon as the config changes, and then start again with new configs set.
+	for {
+		ctx, configCancel = context.WithCancel(context.Background())
 		// When the config changes, if this gives us an error, it's likely due to the config being invalid.
 		// This will exit the whole process of the agent. This might not be ideal.
 		// Maybe a better strategy here is to re-use the old config and log an error, so the process can continue
 		// until the config is fixed ?
-		config, err := loadConfig()
+		config, err := loadConfig(cmd, v)
 		if err != nil {
-			logger.Error("Error downloading plugins", "error", err)
+			logger.Error("Error loading new config", "error", err)
 			panic(err)
 		}
+		agentRun.UpdateConfig(config)
+		err = agentRun.Run(ctx)
 
-		agentRunner.config = *config
-
-		err = agentRunner.DownloadPlugins(context.TODO())
-
+		// Don't return the error as that will cause it to spit help out, which is no
+		// longer useful at this stage. Log the error and then exit
 		if err != nil {
-			logger.Error("Error downloading plugins", "error", err)
-			panic(err)
+			logger.Error("Error running agent", "error", err)
+			os.Exit(1)
 		}
-		logger.Debug("Successfully reloaded configuration")
-	})
-	v.WatchConfig()
 
-	ctx := context.TODO()
-	err = agentRunner.Run(ctx)
-
-	// Don't return the error as that will cause it to spit help out, which is no
-	// longer useful at this stage. Log the error and then exit
-	if err != nil {
-		logger.Error("Error running agent", "error", err)
-		os.Exit(1)
+		if !config.Daemon {
+			break
+		}
 	}
+
+	configCancel()
 
 	return nil
 }
 
 type AgentRunner struct {
 	logger hclog.Logger
-
-	mu sync.Mutex
-
-	config agentConfig
+	mu     sync.Mutex
+	config *agentConfig
 
 	pluginLocations map[string]string
 	policyLocations map[string]string
 
 	queryBundles []*rego.Rego
+}
+
+func NewAgentRunner() *AgentRunner {
+	return &AgentRunner{
+		pluginLocations: map[string]string{},
+		policyLocations: map[string]string{},
+	}
+}
+
+func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
+	ar.config = config
+	ar.logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "agent-runner",
+		Output: os.Stdout,
+		Level:  hclog.Level(config.logVerbosity()),
+	})
 }
 
 func (ar *AgentRunner) Run(ctx context.Context) error {
@@ -295,9 +298,13 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		c.Stop()
 		ar.logger.Debug("Exiting")
 		os.Exit(0)
-		//default:
-		//	println("Waiting for data")
-		//	time.Sleep(time.Duration(math.MaxInt64))
+	case <-ctx.Done():
+		ar.logger.Debug("received cancel signal to return from daemon")
+		ar.logger.Debug("Shutting down plugins")
+		ar.closePluginClients()
+		ar.logger.Debug("Stopping cron")
+		c.Stop()
+		return
 	}
 }
 
