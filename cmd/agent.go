@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"net/http"
 	"os"
@@ -271,31 +274,46 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 // Should never return, either handles any error or panics.
 func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	sigs := make(chan os.Signal, 1)
-
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		sig := <-sigs
-		fmt.Println()
-		ar.logger.Info("received signal to terminate plugins and exit", "signal", sig)
-		ar.closePluginClients()
-		os.Exit(0)
-	}()
+	c, err := ar.setupCron(ctx)
+	if err != nil {
+		ar.logger.Error("Error setting up cron", "error", err)
+		os.Exit(1)
+	}
 
+	// Start the cron and notify readiness
+	c.Start()
 	go daemon.SdNotify(false, "READY=1")
 
+	select {
+	case sig := <-sigs:
+		ar.logger.Info("received signal to terminate plugins and exit", "signal", sig)
+		ar.logger.Debug("Shutting down plugins")
+		ar.closePluginClients()
+		ar.logger.Debug("Stopping cron")
+		c.Stop()
+		ar.logger.Debug("Exiting")
+		os.Exit(0)
+		//default:
+		//	println("Waiting for data")
+		//	time.Sleep(time.Duration(math.MaxInt64))
+	}
+}
+
+func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
+	staticAgentUUID := uuid.New()
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	_, err := c.AddFunc("*/10 * * * * *", func() {
-		fmt.Println("Running every 10 seconds")
-		for _, entry := range c.Entries() {
-			in := entry.Next.Sub(time.Now())
-			fmt.Println(fmt.Sprintf("Entry %d running in %f", entry.ID, in.Seconds()))
+	_, err := c.AddFunc("* * * * *", func() {
+		err := ar.SendHeartbeat(ctx, staticAgentUUID)
+		if err != nil {
+			ar.logger.Error("Failed to send heartbeat", "error", err)
 		}
 	})
 	if err != nil {
-		panic(err)
+		ar.logger.Error("Error adding heartbeat schedule", "error", err, "uuid", staticAgentUUID.String())
 	}
 
 	for pluginName, pluginConfig := range ar.config.Plugins {
@@ -306,37 +324,21 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 			schedule = *pluginConfig.Schedule
 		}
 
-		_, err := c.AddFunc(schedule, func() {
-			ctx := context.TODO()
-			err := ar.runPlugin(ctx, pluginName, pluginConfig)
+		_, err = c.AddFunc(schedule, func() {
+			err = ar.runPlugin(ctx, pluginName, pluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
-				panic(err)
+				ar.logger.Error("Error running plugin", "error", err)
 			}
 		})
 
 		if err != nil {
-			ar.logger.Warn("Error adding schedule", "schedule", schedule, "error", err)
+			ar.logger.Error("Error adding plugin schedule", "schedule", schedule, "error", err)
 			// TODO We should figure out how to handle this, especially in the context of automatically configured
 			// agents. We should probably send a health status to the API with errors.
 		}
 	}
-
-	c.Start()
-
-	time.Sleep(1 * time.Hour)
-
-	//for {
-	//	err := ar.runAllPlugins(ctx)
-	//
-	//	if err != nil {
-	//		ar.logger.Error("error running instance", "error", err)
-	//		// No return for now, we keep retrying.
-	//		// TODO: Should we have a retry limit maybe?
-	//	}
-	//
-	//	time.Sleep(time.Second * 60)
-	//}
+	return c, nil
 }
 
 // Run the agent as an instance, this is a single run of the agent that will check the
@@ -518,6 +520,36 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		return err
 	}
 
+	return nil
+}
+
+func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.UUID) error {
+	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
+		BaseURL: ar.config.ApiConfig.Url,
+	})
+	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
+	heartbeatJson, err := json.Marshal(map[string]interface{}{
+		"uuid":    staticAgentUUID,
+		"created": time.Now(),
+	})
+	if err != nil {
+		// TODO What to do here ?
+		ar.logger.Error("Error marshaling heartbeat", "error", err, "uuid", staticAgentUUID.String())
+		return err
+	}
+	response, err := client.NewRequest(heartbeatCtx, "POST", "/api/heartbeat/", bytes.NewReader(heartbeatJson))
+	if err != nil {
+		// TODO What to do here ?
+		ar.logger.Error("Error sending heartbeat", "error", err, "uuid", staticAgentUUID.String())
+		return err
+	}
+	if response.StatusCode != http.StatusCreated {
+		// TODO What to do here ?
+		ar.logger.Error("Error heartbeat from server", "code", response.StatusCode, "uuid", staticAgentUUID.String())
+		return err
+	}
+	ar.logger.Info("Successfully heartbeat from server", "uuid", staticAgentUUID.String())
 	return nil
 }
 

@@ -3,7 +3,7 @@ module github.com/compliance-framework/agent
 go 1.23.2
 
 require (
-	github.com/compliance-framework/configuration-service v0.1.1
+	github.com/compliance-framework/configuration-service v0.1.2-0.20250327055906-ad844e3794f6
 	github.com/compliance-framework/gooci v0.0.0-20250113172942-411c6f0468f0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.8.0
@@ -15,6 +15,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.10.22
 	github.com/nats-io/nats.go v1.37.0
 	github.com/open-policy-agent/opa v1.0.0
+	github.com/robfig/cron/v3 v3.0.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
@@ -68,8 +69,6 @@ require (
 	github.com/prometheus/common v0.57.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
-	github.com/robfig/cron v1.2.0 // indirect
-	github.com/robfig/cron/v3 v3.0.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
