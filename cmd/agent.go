@@ -203,10 +203,6 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	// It will exit as soon as the config changes, and then start again with new configs set.
 	for {
 		ctx, configCancel = context.WithCancel(context.Background())
-		// When the config changes, if this gives us an error, it's likely due to the config being invalid.
-		// This will exit the whole process of the agent. This might not be ideal.
-		// Maybe a better strategy here is to re-use the old config and log an error, so the process can continue
-		// until the config is fixed ?
 		config, err := loadConfig(cmd, v)
 		if err != nil {
 			logger.Error("Error loading new config", "error", err)
@@ -215,8 +211,6 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		agentRun.UpdateConfig(config)
 		err = agentRun.Run(ctx)
 
-		// Don't return the error as that will cause it to spit help out, which is no
-		// longer useful at this stage. Log the error and then exit
 		if err != nil {
 			logger.Error("Error running agent", "error", err)
 			os.Exit(1)
