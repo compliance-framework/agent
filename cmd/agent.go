@@ -9,6 +9,7 @@ import (
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -261,10 +262,19 @@ func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 func (ar *AgentRunner) Run(ctx context.Context) error {
 	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon)
 
+	ar.logger.Debug("Pessimistically downloading plugins and policies to fail early in case daemon runs later.")
 	err := ar.DownloadPlugins(ctx)
 	if err != nil {
+		ar.logger.Error("Error downloading plugins", "error", err)
 		return err
 	}
+
+	err = ar.DownloadPolicies(ctx)
+	if err != nil {
+		ar.logger.Error("Error downloading policies", "error", err)
+		return err
+	}
+	ar.logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
 
 	if ar.config.Daemon == true {
 		ar.runDaemon(ctx)
@@ -279,14 +289,21 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	c, err := ar.setupCron(ctx)
+	agentCron, err := ar.setupCron(ctx)
 	if err != nil {
-		ar.logger.Error("Error setting up cron", "error", err)
+		ar.logger.Error("Error setting up agent cron", "error", err)
+		os.Exit(1)
+	}
+
+	heartbeatCron, err := ar.setupHeartbeatCron(ctx)
+	if err != nil {
+		ar.logger.Error("Error setting up heartbeat", "error", err)
 		os.Exit(1)
 	}
 
 	// Start the cron and notify readiness
-	c.Start()
+	agentCron.Start()
+	heartbeatCron.Start()
 	go daemon.SdNotify(false, "READY=1")
 
 	select {
@@ -294,35 +311,49 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		ar.logger.Info("received signal to terminate plugins and exit", "signal", sig)
 		ar.logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
-		ar.logger.Debug("Stopping cron")
-		c.Stop()
+		ar.logger.Debug("Stopping crons")
+		agentCron.Stop()
+		heartbeatCron.Stop()
 		ar.logger.Debug("Exiting")
 		os.Exit(0)
 	case <-ctx.Done():
 		ar.logger.Debug("received cancel signal to return from daemon")
 		ar.logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
-		ar.logger.Debug("Stopping cron")
-		c.Stop()
+		ar.logger.Debug("Stopping crons")
+		agentCron.Stop()
+		heartbeatCron.Stop()
 		return
 	}
 }
 
-func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
-	staticAgentUUID := uuid.New()
+func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, error) {
+
+	// staggeredSeconds is used to offset the heartbeat by x seconds to prevent a massive influx of heartbeats on
+	// the beginning of each minute to the API.
+	// The offset will stagger the heartbeats across each minute
+	staggeredSeconds := rand.Intn(59)
+
 	c := cron.New(cron.WithParser(cron.NewParser(
-		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	_, err := c.AddFunc("* * * * *", func() {
+	staticAgentUUID := uuid.New()
+	_, err := c.AddFunc(fmt.Sprintf("%d * * * * *", staggeredSeconds), func() {
 		err := ar.SendHeartbeat(ctx, staticAgentUUID)
 		if err != nil {
-			ar.logger.Error("Failed to send heartbeat", "error", err)
+			ar.logger.Error("Failed to send heartbeat", "error", err, "uuid", staticAgentUUID.String())
 		}
 	})
 	if err != nil {
 		ar.logger.Error("Error adding heartbeat schedule", "error", err, "uuid", staticAgentUUID.String())
 	}
+	return c, nil
+}
 
+func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
+	c := cron.New(cron.WithParser(cron.NewParser(
+		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)))
 	for pluginName, pluginConfig := range ar.config.Plugins {
 		var schedule string
 		if pluginConfig.Schedule == nil {
@@ -331,8 +362,8 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 			schedule = *pluginConfig.Schedule
 		}
 
-		_, err = c.AddFunc(schedule, func() {
-			err = ar.runPlugin(ctx, pluginName, pluginConfig)
+		_, err := c.AddFunc(schedule, func() {
+			err := ar.runPlugin(ctx, pluginName, pluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
 				ar.logger.Error("Error running plugin", "error", err)
@@ -358,14 +389,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		BaseURL: ar.config.ApiConfig.Url,
 	})
 
-	ar.mu.Lock()
-	defer ar.mu.Unlock()
 	defer ar.closePluginClients()
-
-	err := ar.DownloadPolicies(ctx)
-	if err != nil {
-		return err
-	}
 
 	for pluginName, pluginConfig := range ar.config.Plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
