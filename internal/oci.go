@@ -59,7 +59,7 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
-		return path.Join(outputDir, binaryPath), nil
+		return path.Join(outDir, binaryPath), nil
 	}
 
 	return "", errors.New("downloadable item source cannot be found locally and does not look like OCI")
