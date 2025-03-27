@@ -304,7 +304,7 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	staticAgentUUID := uuid.New()
 	c := cron.New(cron.WithParser(cron.NewParser(
-		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
 	_, err := c.AddFunc("* * * * *", func() {
 		err := ar.SendHeartbeat(ctx, staticAgentUUID)
