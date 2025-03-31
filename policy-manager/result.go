@@ -43,12 +43,10 @@ type Task struct {
 	Activities  []Activity `json:"activities" mapstructure:"activities"`
 }
 
-type StatementID string
-
 type Control struct {
-	Class        string        `json:"class" mapstructure:"class"`
-	ControlID    string        `json:"control-id" mapstructure:"control-id"`
-	StatementIDs []StatementID `json:"statement-ids,omitempty" mapstructure:"statement-ids,omitempty"`
+	Class        string   `json:"class" mapstructure:"class"`
+	ControlID    string   `json:"control-id" mapstructure:"control-id"`
+	StatementIDs []string `json:"statement-ids,omitempty" mapstructure:"statement-ids,omitempty"`
 }
 
 type Link struct {
