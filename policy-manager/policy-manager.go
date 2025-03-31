@@ -13,8 +13,9 @@ import (
 )
 
 type EvalOutput struct {
-	Risks               []Risk `mapstructure:"risks"`
-	Tasks               []Task `mapstructure:"tasks"`
+	Risks               []Risk    `mapstructure:"risks"`
+	Tasks               []Task    `mapstructure:"tasks"`
+	Controls            []Control `mapstructure:"controls"`
 	Violations          []Violation
 	AdditionalVariables map[string]interface{}
 }

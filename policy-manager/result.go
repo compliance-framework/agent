@@ -7,10 +7,9 @@ import (
 )
 
 type Violation struct {
-	Title       string   `json:"title,omitempty" mapstructure:"title,omitempty"`
-	Description string   `json:"description,omitempty" mapstructure:"description,omitempty"`
-	Remarks     string   `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
-	Controls    []string `json:"control-implementations,omitempty" mapstructure:"control-implementations,omitempty"`
+	Title       string `json:"title,omitempty" mapstructure:"title,omitempty"`
+	Description string `json:"description,omitempty" mapstructure:"description,omitempty"`
+	Remarks     string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
 }
 
 type Package string
@@ -42,6 +41,12 @@ type Task struct {
 	Title       string     `json:"title" mapstructure:"title"`
 	Description string     `json:"description" mapstructure:"description"`
 	Activities  []Activity `json:"activities" mapstructure:"activities"`
+}
+
+type Control struct {
+	Class        string   `json:"class" mapstructure:"class"`
+	ControlID    string   `json:"control-id" mapstructure:"control-id"`
+	StatementIDs []string `json:"statement-ids,omitempty" mapstructure:"statement-ids,omitempty"`
 }
 
 type Link struct {
