@@ -142,10 +142,6 @@ func TestPolicyManager(t *testing.T) {
 			Title:       "Violation 1",
 			Description: "You have been violated.",
 			Remarks:     "Migrate to not being violated",
-			Controls: []string{
-				"AC-1",
-				"AC-2",
-			},
 		}, result.Violations[0])
 	})
 
@@ -181,4 +177,31 @@ func TestPolicyManager(t *testing.T) {
 	//
 	//	assert.EqualError(t, err, "Activity entry contains unexpected key: nonsense")
 	//})
+}
+
+func TestPolicyManagerOutputsControls(t *testing.T) {
+	t.Run("Controls can be specified in the policy file, and returned in results", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents, err := os.ReadFile("testdata/test_policy.rego")
+		assert.NoError(t, err)
+
+		var data map[string]interface{} = make(map[string]interface{})
+		data["violated"] = []string{"yes"}
+
+		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
+		result := results[0]
+
+		// Results do have controls on them
+		assert.GreaterOrEqual(t, len(result.Controls), 1)
+
+		// Controls have been decoded properly, meaning "don't contain null strings"
+		assert.NotEmpty(t, result.Controls[0].Class)
+		assert.NotEmpty(t, result.Controls[0].ControlID)
+		assert.NotEmpty(t, result.Controls[0].StatementIDs)
+	})
 }
