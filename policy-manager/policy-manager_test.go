@@ -42,7 +42,7 @@ func TestPolicyManager(t *testing.T) {
 		policyManager := New(ctx, hclog.New(&hclog.LoggerOptions{
 			Level:      hclog.Debug,
 			JSONFormat: true,
-		}), "testdata/")
+		}), "testdata/001/")
 
 		results, err := policyManager.Execute(ctx, "local_ssh", data)
 
@@ -124,7 +124,7 @@ func TestPolicyManager(t *testing.T) {
 	t.Run("Policy Manager handles violations", func(t *testing.T) {
 		ctx := context.Background()
 
-		regoContents, err := os.ReadFile("testdata/test_policy.rego")
+		regoContents, err := os.ReadFile("testdata/001/test_policy.rego")
 		assert.NoError(t, err)
 
 		var data map[string]interface{} = make(map[string]interface{})
@@ -180,10 +180,30 @@ func TestPolicyManager(t *testing.T) {
 }
 
 func TestPolicyManagerOutputsControls(t *testing.T) {
+	t.Run("Omitting controls doesn't break evaluation", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents, err := os.ReadFile("testdata/002/test_policy.rego")
+		assert.NoError(t, err)
+
+		var data map[string]interface{} = make(map[string]interface{})
+		data["violated"] = []string{"yes"}
+
+		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
+		result := results[0]
+
+		// No Controls
+		assert.Equal(t, len(result.Controls), 0)
+	})
+
 	t.Run("Controls can be specified in the policy file, and returned in results", func(t *testing.T) {
 		ctx := context.Background()
 
-		regoContents, err := os.ReadFile("testdata/test_policy.rego")
+		regoContents, err := os.ReadFile("testdata/001/test_policy.rego")
 		assert.NoError(t, err)
 
 		var data map[string]interface{} = make(map[string]interface{})
