@@ -29,7 +29,10 @@ func (h *apiHelper) CreateFindings(ctx context.Context, finds []*proto.Finding) 
 	// Merge agent, config and finding labels all together.
 	resultFindings := make([]types.Finding, 0)
 	for _, finding := range findings {
-		labels := h.agentLabels
+		labels := make(map[string]string)
+		for k, v := range h.agentLabels {
+			labels[k] = v
+		}
 		for k, v := range finding.Labels {
 			labels[k] = v
 		}
