@@ -3,7 +3,6 @@ package policy_manager
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -13,6 +12,9 @@ import (
 )
 
 type EvalOutput struct {
+	Title               *string   `mapstructure:"title"`
+	Description         *string   `mapstructure:"description"`
+	Remarks             *string   `mapstructure:"remarks"`
 	Risks               []Risk    `mapstructure:"risks"`
 	Tasks               []Task    `mapstructure:"tasks"`
 	Controls            []Control `mapstructure:"controls"`
@@ -40,7 +42,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 	pm.logger.Debug("Executing policy", "input", input)
 	regoArgs := []func(r *rego.Rego){
 		rego.Query("data.compliance_framework"),
-		rego.Package(fmt.Sprintf("compliance_framework.%s", pluginNamespace)),
+		rego.Package("compliance_framework"),
 	}
 	regoArgs = append(regoArgs, pm.loaderOptions...)
 	r := rego.New(regoArgs...)
@@ -109,7 +111,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, pluginNamespace string, in
 
 				// TODO here we could run evalOutput.Validate()
 				for key, value := range moduleOutputs {
-					if !slices.Contains([]string{"violation", "activities", "risks"}, key) {
+					if !slices.Contains([]string{"violation", "activities", "risks", "title", "description", "remarks"}, key) {
 						evalOutput.AdditionalVariables[key] = value
 					}
 				}

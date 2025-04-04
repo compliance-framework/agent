@@ -137,11 +137,15 @@ func TestPolicyManager(t *testing.T) {
 
 		result := results[0]
 
+		pointed := func(input string) *string {
+			return &input
+		}
+
 		assert.Equal(t, 1, len(result.Violations))
 		assert.Equal(t, Violation{
-			Title:       "Violation 1",
-			Description: "You have been violated.",
-			Remarks:     "Migrate to not being violated",
+			Title:       pointed("Violation 1"),
+			Description: pointed("You have been violated."),
+			Remarks:     pointed("Migrate to not being violated"),
 		}, result.Violations[0])
 	})
 

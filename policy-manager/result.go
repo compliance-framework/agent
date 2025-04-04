@@ -7,9 +7,9 @@ import (
 )
 
 type Violation struct {
-	Title       string `json:"title,omitempty" mapstructure:"title,omitempty"`
-	Description string `json:"description,omitempty" mapstructure:"description,omitempty"`
-	Remarks     string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
+	Title       *string `json:"title,omitempty" mapstructure:"title,omitempty"`
+	Description *string `json:"description,omitempty" mapstructure:"description,omitempty"`
+	Remarks     *string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
 }
 
 type Package string
@@ -73,7 +73,7 @@ Policy:
 	package: %s
 	annotations: %s
 AdditionalVariables: %v
-Violations: %s
+Violations: %v
 Tasks: %v
 Risks: %v
 `, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Tasks, res.Risks)
