@@ -11,9 +11,6 @@ $ concom-agent -c /path/to/config.yaml
 The configuration file must have the following fields:
 
 ```yaml
-nats:
-  domain: <nats_domain>
-  port: <nats_port>
 
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
@@ -30,8 +27,6 @@ plugins:
       <config2>: <value2>
       ...
 ```
-
-The `nats_domain` and `nats_port` items are the domain and port of the NATS server that the agent will connect to.
 
 The `plugin_identifier` is a unique identifier for the plugin, and is used to identify the plugin in the logs, you can
 name this whatever you like but it must be unique.
@@ -51,9 +46,6 @@ multiple times with different configurations.
 
 As an example, a configuration file might look like this:
 ```yaml
-nats:
-  domain: localhost
-  port: 4222
 
 plugins:
   local-ssh-security:
