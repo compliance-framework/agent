@@ -26,13 +26,6 @@ the data it has collected, conforms with organisational policies.
 For each violation of the policies, the plugin will report findings and observations to the agent, which in turn will
 report these to the central configuration api.
 
-## NATS
-
-Upon the plugin(s) running, they'll send the results of the Observations and/or Findings to an event queue (-flag
-configured).
-
-To run an instance of NATS, checkout the [local-dev](https://github.com/compliance-framework/local-dev) repository:
-
 ## Configuration
 
 The agent must be configured using a configuration file that can be in any of YAML, JSON or TOML. We'll assume YAML
@@ -43,9 +36,6 @@ because it's fairly human-readable and widespread.
 ```
 daemon: true|false
 verbosity: 0|1|2
-
-nats:
-  url: nats://127.0.0.1:4222
 
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
