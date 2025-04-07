@@ -139,6 +139,7 @@ type PolicyProcessor struct {
 	subjects   []*proto.SubjectReference
 	components []*proto.ComponentReference
 	actors     []*proto.OriginActor
+	activities []*proto.Activity
 }
 
 func NewPolicyProcessor(
@@ -147,6 +148,7 @@ func NewPolicyProcessor(
 	subjects []*proto.SubjectReference,
 	components []*proto.ComponentReference,
 	actors []*proto.OriginActor,
+	activities []*proto.Activity,
 ) *PolicyProcessor {
 	return &PolicyProcessor{
 		logger:     logger,
@@ -154,10 +156,108 @@ func NewPolicyProcessor(
 		subjects:   subjects,
 		components: components,
 		actors:     actors,
+		activities: activities,
 	}
 }
 
-func (p *PolicyProcessor) newObservation(result Result) (*proto.Observation, error) {
+func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string, data interface{}) ([]*proto.Observation, []*proto.Finding, error) {
+	var resultErr error
+	activities := p.activities
+	findings := make([]*proto.Finding, 0)
+	observations := make([]*proto.Observation, 0)
+
+	// Explicitly reset steps to make things readable
+	activities = append(activities, &proto.Activity{
+		Title:       "Execute policy",
+		Description: "Prepare and compile policy bundles, and execute them using the prepared SSH configuration data",
+		Steps: []*proto.Step{
+			{
+				Title:       "Compile policy bundle",
+				Description: "Using a locally addressable policy path, compile the policy files to an in memory executable.",
+			},
+			{
+				Title:       "Execute policy bundle",
+				Description: "Using previously collected JSON-formatted configuration, execute the compiled policies",
+			},
+		},
+	})
+	results, err := New(ctx, p.logger, policyPath).Execute(ctx, data)
+	if err != nil {
+		p.logger.Error("Failed to evaluate against policy bundle", "error", err)
+		resultErr = errors.Join(resultErr, err)
+		return observations, findings, resultErr
+	}
+
+	activities = append(activities, &proto.Activity{
+		Title:       "Compile Results",
+		Description: "Using the output from policy execution, compile the resulting output to Observations and Findings, marking any violations, risks, and other OSCAL-familiar data",
+		Steps: []*proto.Step{
+			{
+				Title:       "Create lists of observations and findings",
+				Description: "Using the policy execution output, create Observation and Findings objects from the resulting output.",
+			},
+		},
+	})
+	for _, result := range results {
+		// Observation UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
+		// This acts as an identifier to show the history of an observation.
+		observation, err := p.newObservation(result, activities)
+		if err != nil {
+			resultErr = errors.Join(resultErr, err)
+			continue
+		}
+
+		if len(result.Violations) == 0 {
+			finding, err := p.newFinding(result, []*proto.Observation{observation})
+			if err != nil {
+				resultErr = errors.Join(resultErr, err)
+				continue
+			}
+
+			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
+			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+			observation.Remarks = result.Remarks
+
+			finding.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
+			finding.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+			finding.Remarks = result.Remarks
+
+			finding.Status = &proto.FindingStatus{
+				State: runner.FindingTargetStatusSatisfied,
+			}
+
+			observations = append(observations, observation)
+			findings = append(findings, finding)
+		}
+
+		if len(result.Violations) > 0 {
+			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
+			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
+			observation.Remarks = result.Remarks
+			observations = append(observations, observation)
+
+			for _, violation := range result.Violations {
+				finding, err := p.newFinding(result, []*proto.Observation{observation})
+				if err != nil {
+					resultErr = errors.Join(resultErr, err)
+					continue
+				}
+
+				finding.Title = *FirstOf(violation.Title, result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
+				finding.Description = *FirstOf(violation.Description, result.Description, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+				finding.Remarks = FirstOf(violation.Remarks, result.Remarks)
+				finding.Status = &proto.FindingStatus{
+					State: runner.FindingTargetStatusNotSatisfied,
+				}
+				findings = append(findings, finding)
+			}
+		}
+	}
+
+	return observations, findings, resultErr
+}
+
+func (p *PolicyProcessor) newObservation(result Result, activities []*proto.Activity) (*proto.Observation, error) {
 	observationUUIDMap := MergeMaps(p.labels, map[string]string{
 		"type":        "observation",
 		"policy":      result.Policy.Package.PurePackage(),
@@ -175,6 +275,7 @@ func (p *PolicyProcessor) newObservation(result Result) (*proto.Observation, err
 		Origins:    []*proto.Origin{{Actors: p.actors}},
 		Subjects:   p.subjects,
 		Components: p.components,
+		Activities: activities,
 		RelevantEvidence: []*proto.RelevantEvidence{
 			{
 				Description: fmt.Sprintf("Policy %v was executed against the Local SSH configuration, using the Local SSH Compliance Plugin", result.Policy.Package.PurePackage()),
@@ -232,97 +333,4 @@ func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observ
 	}
 
 	return finding, nil
-}
-
-func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string, data interface{}) ([]*proto.Observation, []*proto.Finding, error) {
-	var resultErr error
-	activities := make([]*proto.Activity, 0)
-	findings := make([]*proto.Finding, 0)
-	observations := make([]*proto.Observation, 0)
-
-	// Explicitly reset steps to make things readable
-	steps := make([]*proto.Step, 0)
-	steps = append(steps, &proto.Step{
-		Title:       "Compile policy bundle",
-		Description: "Using a locally addressable policy path, compile the policy files to an in memory executable.",
-	})
-	steps = append(steps, &proto.Step{
-		Title:       "Execute policy bundle",
-		Description: "Using previously collected JSON-formatted SSH configuration, execute the compiled policies",
-	})
-	results, err := New(ctx, p.logger, policyPath).Execute(ctx, data)
-	if err != nil {
-		p.logger.Error("Failed to evaluate against policy bundle", "error", err)
-		resultErr = errors.Join(resultErr, err)
-		return observations, findings, resultErr
-	}
-
-	activities = append(activities, &proto.Activity{
-		Title:       "Execute policy",
-		Description: "Prepare and compile policy bundles, and execute them using the prepared SSH configuration data",
-		Steps:       steps,
-	})
-
-	activities = append(activities, &proto.Activity{
-		Title:       "Compile Results",
-		Description: "Using the output from policy execution, compile the resulting output to Observations and Findings, marking any violations, risks, and other OSCAL-familiar data",
-		Steps:       steps,
-	})
-	for _, result := range results {
-		// Observation UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
-		// This acts as an identifier to show the history of an observation.
-		observation, err := p.newObservation(result)
-		if err != nil {
-			resultErr = errors.Join(resultErr, err)
-			continue
-		}
-
-		if len(result.Violations) == 0 {
-			finding, err := p.newFinding(result, []*proto.Observation{observation})
-			if err != nil {
-				resultErr = errors.Join(resultErr, err)
-				continue
-			}
-
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
-
-			finding.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-			finding.Description = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			finding.Remarks = result.Remarks
-
-			finding.Status = &proto.FindingStatus{
-				State: runner.FindingTargetStatusSatisfied,
-			}
-
-			observations = append(observations, observation)
-			findings = append(findings, finding)
-		}
-
-		if len(result.Violations) > 0 {
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
-			observations = append(observations, observation)
-
-			for _, violation := range result.Violations {
-				finding, err := p.newFinding(result, []*proto.Observation{observation})
-				if err != nil {
-					resultErr = errors.Join(resultErr, err)
-					continue
-				}
-
-				finding.Title = *FirstOf(violation.Title, result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-				finding.Description = *FirstOf(violation.Description, result.Title, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-				finding.Remarks = FirstOf(violation.Remarks, result.Remarks)
-				finding.Status = &proto.FindingStatus{
-					State: runner.FindingTargetStatusNotSatisfied,
-				}
-				findings = append(findings, finding)
-			}
-		}
-	}
-
-	return observations, findings, resultErr
 }
