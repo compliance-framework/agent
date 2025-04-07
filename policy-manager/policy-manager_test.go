@@ -2,14 +2,13 @@ package policy_manager
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
-
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/bundle"
 	"github.com/open-policy-agent/opa/v1/rego"
+	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func buildPolicyManager(regoContents []byte) *PolicyManager {
@@ -44,7 +43,7 @@ func TestPolicyManager(t *testing.T) {
 			JSONFormat: true,
 		}), "testdata/001/")
 
-		results, err := policyManager.Execute(ctx, "local_ssh", data)
+		results, err := policyManager.Execute(ctx, data)
 
 		assert.NoError(t, err)
 		assert.Equal(t, len(results), 1)
@@ -130,7 +129,7 @@ func TestPolicyManager(t *testing.T) {
 		var data map[string]interface{} = make(map[string]interface{})
 		data["violated"] = []string{"yes"}
 
-		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(results))
@@ -139,9 +138,9 @@ func TestPolicyManager(t *testing.T) {
 
 		assert.Equal(t, 1, len(result.Violations))
 		assert.Equal(t, Violation{
-			Title:       "Violation 1",
-			Description: "You have been violated.",
-			Remarks:     "Migrate to not being violated",
+			Title:       Pointer("Violation 1"),
+			Description: Pointer("You have been violated."),
+			Remarks:     Pointer("Migrate to not being violated"),
 		}, result.Violations[0])
 	})
 
@@ -189,7 +188,7 @@ func TestPolicyManagerOutputsControls(t *testing.T) {
 		var data map[string]interface{} = make(map[string]interface{})
 		data["violated"] = []string{"yes"}
 
-		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(results))
@@ -209,7 +208,7 @@ func TestPolicyManagerOutputsControls(t *testing.T) {
 		var data map[string]interface{} = make(map[string]interface{})
 		data["violated"] = []string{"yes"}
 
-		results, err := buildPolicyManager(regoContents).Execute(ctx, "test", data)
+		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
 
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(results))
