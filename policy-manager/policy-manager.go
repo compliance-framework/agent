@@ -184,7 +184,7 @@ func (p *PolicyProcessor) newObservation(result Result) (*proto.Observation, err
 	return &observation, nil
 }
 
-func (p *PolicyProcessor) newFinding(result Result, observation *proto.Observation) (*proto.Finding, error) {
+func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observation) (*proto.Finding, error) {
 	// Finding UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
 	// This acts as an identifier to show the history of a finding.
 	findingUUIDMap := MergeMaps(p.labels, map[string]string{
@@ -195,6 +195,13 @@ func (p *PolicyProcessor) newFinding(result Result, observation *proto.Observati
 	findingUUID, err := sdk.SeededUUID(findingUUIDMap)
 	if err != nil {
 		return nil, err
+	}
+
+	relatedObservations := make([]*proto.RelatedObservation, 0)
+	for _, observation := range observations {
+		relatedObservations = append(relatedObservations, &proto.RelatedObservation{
+			ObservationUUID: observation.ID,
+		})
 	}
 
 	controls := make([]*proto.ControlReference, 0)
@@ -220,7 +227,7 @@ func (p *PolicyProcessor) newFinding(result Result, observation *proto.Observati
 		Origins:             []*proto.Origin{{Actors: p.actors}},
 		Subjects:            p.subjects,
 		Components:          p.components,
-		RelatedObservations: []*proto.RelatedObservation{{ObservationUUID: observation.ID}},
+		RelatedObservations: relatedObservations,
 		Controls:            controls,
 	}
 
@@ -271,7 +278,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) == 0 {
-			finding, err := p.newFinding(result, observation)
+			finding, err := p.newFinding(result, []*proto.Observation{observation})
 			if err != nil {
 				resultErr = errors.Join(resultErr, err)
 				continue
@@ -300,7 +307,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			observations = append(observations, observation)
 
 			for _, violation := range result.Violations {
-				finding, err := p.newFinding(result, observation)
+				finding, err := p.newFinding(result, []*proto.Observation{observation})
 				if err != nil {
 					resultErr = errors.Join(resultErr, err)
 					continue
