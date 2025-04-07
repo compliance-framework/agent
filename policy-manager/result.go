@@ -7,9 +7,9 @@ import (
 )
 
 type Violation struct {
-	Title       string `json:"title,omitempty" mapstructure:"title,omitempty"`
-	Description string `json:"description,omitempty" mapstructure:"description,omitempty"`
-	Remarks     string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
+	Title       *string `json:"title,omitempty" mapstructure:"title,omitempty"`
+	Description *string `json:"description,omitempty" mapstructure:"description,omitempty"`
+	Remarks     *string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
 }
 
 type Package string
