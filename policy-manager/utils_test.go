@@ -80,13 +80,3 @@ func TestPointer(t *testing.T) {
 		assert.DeepEqual(t, []string{"foo", "bar"}, *output)
 	})
 }
-
-func TestFirstOf(t *testing.T) {
-	t.Run("String", func(t *testing.T) {
-		firstFilled := FirstOf(Pointer("first"), Pointer("second"))
-		assert.Equal(t, "first", *firstFilled)
-
-		secondFilled := FirstOf(nil, Pointer("second"))
-		assert.Equal(t, "second", *secondFilled)
-	})
-}

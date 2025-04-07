@@ -181,10 +181,19 @@ func (p *PolicyProcessor) newObservation(result Result) (*proto.Observation, err
 			},
 		},
 	}
+	if result.Title != nil {
+		observation.Title = result.Title
+	}
+	if result.Description != nil {
+		observation.Description = *result.Description
+	}
+	if result.Remarks != nil {
+		observation.Remarks = result.Remarks
+	}
 	return &observation, nil
 }
 
-func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observation) (*proto.Finding, error) {
+func (p *PolicyProcessor) newFinding(result Result, observation *proto.Observation) (*proto.Finding, error) {
 	// Finding UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
 	// This acts as an identifier to show the history of a finding.
 	findingUUIDMap := MergeMaps(p.labels, map[string]string{
@@ -197,14 +206,8 @@ func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observ
 		return nil, err
 	}
 
-	relatedObservations := make([]*proto.RelatedObservation, 0)
-	for _, observation := range observations {
-		relatedObservations = append(relatedObservations, &proto.RelatedObservation{
-			ObservationUUID: observation.ID,
-		})
-	}
-
 	controls := make([]*proto.ControlReference, 0)
+
 	for _, control := range result.Controls {
 		controls = append(controls, &proto.ControlReference{
 			Class:        control.Class,
@@ -227,8 +230,18 @@ func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observ
 		Origins:             []*proto.Origin{{Actors: p.actors}},
 		Subjects:            p.subjects,
 		Components:          p.components,
-		RelatedObservations: relatedObservations,
+		RelatedObservations: []*proto.RelatedObservation{{ObservationUUID: observation.ID}},
 		Controls:            controls,
+	}
+
+	if result.Title != nil {
+		finding.Title = *result.Title
+	}
+	if result.Description != nil {
+		finding.Description = *result.Description
+	}
+	if result.Remarks != nil {
+		finding.Remarks = result.Remarks
 	}
 
 	return finding, nil
@@ -278,44 +291,56 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) == 0 {
-			finding, err := p.newFinding(result, []*proto.Observation{observation})
+			if result.Title == nil {
+				observation.Title = Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))
+			}
+			if result.Description == nil {
+				observation.Description = fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())
+			}
+			observations = append(observations, observation)
+
+			finding, err := p.newFinding(result, observation)
 			if err != nil {
 				resultErr = errors.Join(resultErr, err)
 				continue
 			}
-
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
-
-			finding.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-			finding.Description = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			finding.Remarks = result.Remarks
-
+			if result.Title == nil {
+				finding.Title = fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())
+			}
+			if result.Description == nil {
+				finding.Description = fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())
+			}
 			finding.Status = &proto.FindingStatus{
 				State: runner.FindingTargetStatusSatisfied,
 			}
 
-			observations = append(observations, observation)
 			findings = append(findings, finding)
 		}
 
 		if len(result.Violations) > 0 {
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
+			if result.Title == nil {
+				observation.Title = Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage()))
+			}
+			if result.Description == nil {
+				observation.Description = fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())
+			}
 			observations = append(observations, observation)
 
 			for _, violation := range result.Violations {
-				finding, err := p.newFinding(result, []*proto.Observation{observation})
+				finding, err := p.newFinding(result, observation)
 				if err != nil {
 					resultErr = errors.Join(resultErr, err)
 					continue
 				}
-
-				finding.Title = *FirstOf(violation.Title, result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-				finding.Description = *FirstOf(violation.Description, result.Title, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-				finding.Remarks = FirstOf(violation.Remarks, result.Remarks)
+				if violation.Title != nil {
+					finding.Title = *violation.Title
+				}
+				if violation.Description != nil {
+					finding.Description = *violation.Description
+				}
+				if violation.Remarks != nil {
+					finding.Remarks = violation.Remarks
+				}
 				finding.Status = &proto.FindingStatus{
 					State: runner.FindingTargetStatusNotSatisfied,
 				}
