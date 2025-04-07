@@ -19,9 +19,9 @@ import (
 )
 
 type EvalOutput struct {
-	Title               *string   `mapstructure:"title"`
-	Description         *string   `mapstructure:"description"`
-	Remarks             *string   `mapstructure:"remarks"`
+	Title               *string   `mapstructure:"title,omitempty"`
+	Description         *string   `mapstructure:"description,omitempty"`
+	Remarks             *string   `mapstructure:"remarks,omitempty"`
 	Risks               []Risk    `mapstructure:"risks"`
 	Tasks               []Task    `mapstructure:"tasks"`
 	Controls            []Control `mapstructure:"controls"`
