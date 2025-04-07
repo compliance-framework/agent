@@ -73,7 +73,7 @@ Policy:
 	package: %s
 	annotations: %s
 AdditionalVariables: %v
-Violations: %s
+Violations: %v
 Tasks: %v
 Risks: %v
 `, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Tasks, res.Risks)
