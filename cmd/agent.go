@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -179,6 +180,8 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 
 	v := viper.New()
 	v.SetConfigFile(configPath)
+	v.SetEnvPrefix("CCF")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	logger := hclog.New(&hclog.LoggerOptions{
