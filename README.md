@@ -53,6 +53,19 @@ plugins:
 
 See [configuration](./docs/configuration.md) for more information.
 
+### Environment variables
+
+The agent can load specific configruation values from environment variables, which are prefixed with `CCF_` and the path 
+in the config is specified using underscore-separated key.
+
+For example, to specify the `token` value in the GitHub config, you may set an environment variable `CCF_PLUGINS_GITHUB_CONFIG_TOKEN`
+```yaml
+plugins:
+  github:
+    config: 
+      token: ""
+```
+
 ## Usage
 
 To run the agent, you must first build the agent, and then run it with the `agent` command. It is recommended,
