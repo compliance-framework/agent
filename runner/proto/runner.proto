@@ -8,8 +8,26 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
+message ConfigList {
+  repeated string Items = 1;
+}
+
+message ConfigItem {
+  string Key = 1;
+  oneof Value {
+    ConfigItemSet ValueConfig = 2;
+    ConfigList ValueList = 3;
+    string ValueString = 4;
+    int32 ValueInt = 5;
+  }
+}
+
+message ConfigItemSet {
+  repeated ConfigItem items = 1;
+}
+
 message ConfigureRequest {
-  map<string, string> config = 1;
+  ConfigItemSet config = 1;
 }
 
 message ConfigureResponse {
