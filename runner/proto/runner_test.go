@@ -409,4 +409,56 @@ func TestConfigureRequest_Decode(t *testing.T) {
 		assert.Equal(t, true, pluginConf.Active)
 		assert.Equal(t, []byte("foo"), pluginConf.ByteSlice)
 	})
+	t.Run("Nested", func(t *testing.T) {
+		yamlOutput := map[string]interface{}{
+			"experience": map[string]interface{}{
+				"cicd": []string{
+					"gitlab",
+					"github",
+				},
+				"containers": map[string]interface{}{
+					"docker": true,
+					"crictl": false,
+				},
+			},
+			"years": []int32{
+				2019,
+				2020,
+			},
+		}
+
+		processedConfig, err := processMap(yamlOutput)
+		assert.NoError(t, err)
+
+		if processedConfig == nil {
+			t.Error("processed config is nil")
+		}
+
+		req := ConfigureRequest{Config: processedConfig}
+
+		type PluginConfig struct {
+			Experience struct {
+				Cicd       []string
+				Containers struct {
+					Docker bool
+					Crictl bool
+				}
+			}
+			Years []int32
+		}
+
+		pluginConf := &PluginConfig{}
+		err = req.Decode(pluginConf)
+		assert.NoError(t, err)
+		assert.EqualValues(t, []string{
+			"gitlab",
+			"github",
+		}, pluginConf.Experience.Cicd)
+
+		assert.ObjectsAreEqual(map[string]interface{}{
+			"docker": true,
+			"crictl": false,
+		}, pluginConf.Experience.Containers)
+
+	})
 }

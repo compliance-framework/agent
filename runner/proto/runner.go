@@ -50,6 +50,25 @@ func processScalar(key string, item interface{}) (interface{}, error) {
 	}
 }
 
+func processConfigItemScalarList[T string | int | int32 | int64 | bool | float32 | float64](key string, list []T) (*ConfigItem, error) {
+	items := []*Scalar{}
+	for _, j := range list {
+		processed, err := processConfigItem(key, j)
+		if err != nil {
+			return nil, err
+		}
+		if processed != nil {
+			items = append(items, processed.GetScalar())
+		}
+	}
+	return &ConfigItem{
+		Key: key,
+		Value: &ConfigItem_ScalarList{
+			ScalarList: &ScalarList{Items: items},
+		},
+	}, nil
+}
+
 func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 	switch t := item.(type) {
 	case string:
@@ -93,22 +112,19 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueBytes{ValueBytes: t}}},
 		}, nil
 	case []string:
-		items := []*Scalar{}
-		for _, j := range t {
-			processed, err := processConfigItem(key, j)
-			if err != nil {
-				return nil, err
-			}
-			if processed != nil {
-				items = append(items, processed.GetScalar())
-			}
-		}
-		return &ConfigItem{
-			Key: key,
-			Value: &ConfigItem_ScalarList{
-				ScalarList: &ScalarList{Items: items},
-			},
-		}, nil
+		return processConfigItemScalarList(key, t)
+	case []int:
+		return processConfigItemScalarList(key, t)
+	case []int32:
+		return processConfigItemScalarList(key, t)
+	case []int64:
+		return processConfigItemScalarList(key, t)
+	case []float32:
+		return processConfigItemScalarList(key, t)
+	case []float64:
+		return processConfigItemScalarList(key, t)
+	case []bool:
+		return processConfigItemScalarList(key, t)
 	case map[string]interface{}:
 		config, err := processMap(t)
 		if err != nil {
@@ -158,7 +174,7 @@ func processValues(output map[string]interface{}, item *Config) error {
 	for _, i := range item.Items {
 		switch v := i.GetValue().(type) {
 		default:
-			fmt.Printf("unexpected type %T", v)
+			return fmt.Errorf("unexpected type %T", v)
 		case *ConfigItem_Config:
 			recursedOutput := map[string]interface{}{}
 			err := processValues(recursedOutput, i.GetConfig())
