@@ -104,7 +104,11 @@ func TestConfigureRequest_ToMap(t *testing.T) {
 			Token string
 		}
 		config := &Config{}
-		assert.NoError(t, mapstructure.Decode(req.ToMap(), config))
+		_map, err := req.ToMap()
+		if err != nil {
+			t.Error(err)
+		}
+		assert.NoError(t, mapstructure.Decode(_map, config))
 		assert.Equal(t, "some-token", config.Token)
 	})
 	t.Run("List item", func(t *testing.T) {
@@ -139,7 +143,11 @@ func TestConfigureRequest_ToMap(t *testing.T) {
 			Tags []string `mapstructure:"tags"`
 		}
 		config := &Config{}
-		assert.NoError(t, mapstructure.Decode(req.ToMap(), config))
+		_map, err := req.ToMap()
+		if err != nil {
+			t.Error(err)
+		}
+		assert.NoError(t, mapstructure.Decode(_map, config))
 		assert.EqualValues(t, []string{
 			"production",
 			"staging",
@@ -190,7 +198,11 @@ func TestConfigureRequest_ToMap(t *testing.T) {
 			} `mapstructure:"connection"`
 		}
 		config := &Config{}
-		assert.NoError(t, mapstructure.Decode(req.ToMap(), config))
+		_map, err := req.ToMap()
+		if err != nil {
+			t.Error(err)
+		}
+		assert.NoError(t, mapstructure.Decode(_map, config))
 		assert.EqualValues(t, "http", config.Connection.Url.Protocol)
 	})
 	t.Run("Object list", func(t *testing.T) {
@@ -265,7 +277,11 @@ func TestConfigureRequest_ToMap(t *testing.T) {
 			}
 		}
 		config := &Config{}
-		assert.NoError(t, mapstructure.Decode(req.ToMap(), config))
+		_map, err := req.ToMap()
+		if err != nil {
+			t.Error(err)
+		}
+		assert.NoError(t, mapstructure.Decode(_map, config))
 		// Either of these should be true. We cannot be sure of the order
 		assert.Len(t, config.Hosts, 2)
 
@@ -356,5 +372,41 @@ func TestConfigureRequest_FromMap(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "hosts", req.GetConfig().GetItems()[0].GetKey())
 		assert.Len(t, req.GetConfig().GetItems()[0].GetConfigList().GetItems(), 2)
+	})
+}
+
+func TestConfigureRequest_Decode(t *testing.T) {
+	// Here we do a round trip conversion to ensure it works as it would in a plugin.
+	t.Run("Simple", func(t *testing.T) {
+		yamlOutput := map[string]interface{}{
+			"name":      "foobar",      // simple
+			"count":     6,             // int
+			"money":     6.12,          // float
+			"active":    true,          // bool
+			"byteslice": []byte("foo"), // bytes
+		}
+
+		processedConfig, err := processMap(yamlOutput)
+		assert.NoError(t, err)
+
+		req := ConfigureRequest{Config: processedConfig}
+
+		type PluginConfig struct {
+			Name      string
+			Count     int64
+			Money     float64
+			Active    bool
+			ByteSlice []byte
+		}
+
+		pluginConf := &PluginConfig{}
+		err = req.Decode(pluginConf)
+		assert.NoError(t, err)
+
+		assert.Equal(t, "foobar", pluginConf.Name)
+		assert.Equal(t, int64(6), pluginConf.Count)
+		assert.Equal(t, 6.12, pluginConf.Money)
+		assert.Equal(t, true, pluginConf.Active)
+		assert.Equal(t, []byte("foo"), pluginConf.ByteSlice)
 	})
 }

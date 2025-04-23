@@ -6,10 +6,10 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 )
 
-func (c *ConfigureRequest) ToMap() map[string]interface{} {
+func (c *ConfigureRequest) ToMap() (map[string]interface{}, error) {
 	config := map[string]interface{}{}
-	processValues(config, c.GetConfig())
-	return config
+	err := processValues(config, c.GetConfig())
+	return config, err
 }
 
 func (c *ConfigureRequest) FromMap(config map[string]interface{}) error {
@@ -24,7 +24,11 @@ func (c *ConfigureRequest) FromMap(config map[string]interface{}) error {
 }
 
 func (c *ConfigureRequest) Decode(config any) error {
-	return mapstructure.Decode(c.ToMap(), config)
+	_map, err := c.ToMap()
+	if err != nil {
+		return err
+	}
+	return mapstructure.Decode(_map, config)
 }
 
 func processScalar(key string, item interface{}) (interface{}, error) {
@@ -77,6 +81,16 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 		return &ConfigItem{
 			Key:   key,
 			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueFloat{ValueFloat: t}}},
+		}, nil
+	case bool:
+		return &ConfigItem{
+			Key:   key,
+			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueBool{ValueBool: t}}},
+		}, nil
+	case []byte:
+		return &ConfigItem{
+			Key:   key,
+			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueBytes{ValueBytes: t}}},
 		}, nil
 	case []string:
 		items := []*Scalar{}
