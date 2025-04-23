@@ -67,27 +67,36 @@ func (ExecutionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_runner_proto_runner_proto_rawDescGZIP(), []int{0}
 }
 
-type ConfigList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []string               `protobuf:"bytes,1,rep,name=Items,proto3" json:"Items,omitempty"`
+// ConfigScalar represents a simple scalar value
+type Scalar struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*Scalar_ValueString
+	//	*Scalar_ValueInt
+	//	*Scalar_ValueFloat
+	//	*Scalar_ValueBool
+	//	*Scalar_ValueDouble
+	//	*Scalar_ValueBytes
+	Value         isScalar_Value `protobuf_oneof:"Value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ConfigList) Reset() {
-	*x = ConfigList{}
+func (x *Scalar) Reset() {
+	*x = Scalar{}
 	mi := &file_runner_proto_runner_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ConfigList) String() string {
+func (x *Scalar) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ConfigList) ProtoMessage() {}
+func (*Scalar) ProtoMessage() {}
 
-func (x *ConfigList) ProtoReflect() protoreflect.Message {
+func (x *Scalar) ProtoReflect() protoreflect.Message {
 	mi := &file_runner_proto_runner_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -99,27 +108,167 @@ func (x *ConfigList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ConfigList.ProtoReflect.Descriptor instead.
-func (*ConfigList) Descriptor() ([]byte, []int) {
+// Deprecated: Use Scalar.ProtoReflect.Descriptor instead.
+func (*Scalar) Descriptor() ([]byte, []int) {
 	return file_runner_proto_runner_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ConfigList) GetItems() []string {
+func (x *Scalar) GetValue() isScalar_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *Scalar) GetValueString() string {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueString); ok {
+			return x.ValueString
+		}
+	}
+	return ""
+}
+
+func (x *Scalar) GetValueInt() int64 {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueInt); ok {
+			return x.ValueInt
+		}
+	}
+	return 0
+}
+
+func (x *Scalar) GetValueFloat() float32 {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueFloat); ok {
+			return x.ValueFloat
+		}
+	}
+	return 0
+}
+
+func (x *Scalar) GetValueBool() bool {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueBool); ok {
+			return x.ValueBool
+		}
+	}
+	return false
+}
+
+func (x *Scalar) GetValueDouble() float64 {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueDouble); ok {
+			return x.ValueDouble
+		}
+	}
+	return 0
+}
+
+func (x *Scalar) GetValueBytes() []byte {
+	if x != nil {
+		if x, ok := x.Value.(*Scalar_ValueBytes); ok {
+			return x.ValueBytes
+		}
+	}
+	return nil
+}
+
+type isScalar_Value interface {
+	isScalar_Value()
+}
+
+type Scalar_ValueString struct {
+	ValueString string `protobuf:"bytes,1,opt,name=ValueString,proto3,oneof"`
+}
+
+type Scalar_ValueInt struct {
+	ValueInt int64 `protobuf:"varint,2,opt,name=ValueInt,proto3,oneof"`
+}
+
+type Scalar_ValueFloat struct {
+	ValueFloat float32 `protobuf:"fixed32,3,opt,name=ValueFloat,proto3,oneof"`
+}
+
+type Scalar_ValueBool struct {
+	ValueBool bool `protobuf:"varint,4,opt,name=ValueBool,proto3,oneof"`
+}
+
+type Scalar_ValueDouble struct {
+	ValueDouble float64 `protobuf:"fixed64,5,opt,name=ValueDouble,proto3,oneof"`
+}
+
+type Scalar_ValueBytes struct {
+	ValueBytes []byte `protobuf:"bytes,6,opt,name=ValueBytes,proto3,oneof"`
+}
+
+func (*Scalar_ValueString) isScalar_Value() {}
+
+func (*Scalar_ValueInt) isScalar_Value() {}
+
+func (*Scalar_ValueFloat) isScalar_Value() {}
+
+func (*Scalar_ValueBool) isScalar_Value() {}
+
+func (*Scalar_ValueDouble) isScalar_Value() {}
+
+func (*Scalar_ValueBytes) isScalar_Value() {}
+
+// ConfigScalarList represents a list of simple scalar values
+type ScalarList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*Scalar              `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScalarList) Reset() {
+	*x = ScalarList{}
+	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScalarList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScalarList) ProtoMessage() {}
+
+func (x *ScalarList) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScalarList.ProtoReflect.Descriptor instead.
+func (*ScalarList) Descriptor() ([]byte, []int) {
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ScalarList) GetItems() []*Scalar {
 	if x != nil {
 		return x.Items
 	}
 	return nil
 }
 
+// Config item is a single key in a configuration map
 type ConfigItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Key   string                 `protobuf:"bytes,1,opt,name=Key,proto3" json:"Key,omitempty"`
 	// Types that are valid to be assigned to Value:
 	//
-	//	*ConfigItem_ValueConfig
-	//	*ConfigItem_ValueList
-	//	*ConfigItem_ValueString
-	//	*ConfigItem_ValueInt
+	//	*ConfigItem_Config
+	//	*ConfigItem_ConfigList
+	//	*ConfigItem_Scalar
+	//	*ConfigItem_ScalarList
 	Value         isConfigItem_Value `protobuf_oneof:"Value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -127,7 +276,7 @@ type ConfigItem struct {
 
 func (x *ConfigItem) Reset() {
 	*x = ConfigItem{}
-	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	mi := &file_runner_proto_runner_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -139,7 +288,7 @@ func (x *ConfigItem) String() string {
 func (*ConfigItem) ProtoMessage() {}
 
 func (x *ConfigItem) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	mi := &file_runner_proto_runner_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -152,7 +301,7 @@ func (x *ConfigItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigItem.ProtoReflect.Descriptor instead.
 func (*ConfigItem) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{1}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ConfigItem) GetKey() string {
@@ -169,92 +318,94 @@ func (x *ConfigItem) GetValue() isConfigItem_Value {
 	return nil
 }
 
-func (x *ConfigItem) GetValueConfig() *ConfigItemSet {
+func (x *ConfigItem) GetConfig() *Config {
 	if x != nil {
-		if x, ok := x.Value.(*ConfigItem_ValueConfig); ok {
-			return x.ValueConfig
+		if x, ok := x.Value.(*ConfigItem_Config); ok {
+			return x.Config
 		}
 	}
 	return nil
 }
 
-func (x *ConfigItem) GetValueList() *ConfigList {
+func (x *ConfigItem) GetConfigList() *ConfigList {
 	if x != nil {
-		if x, ok := x.Value.(*ConfigItem_ValueList); ok {
-			return x.ValueList
+		if x, ok := x.Value.(*ConfigItem_ConfigList); ok {
+			return x.ConfigList
 		}
 	}
 	return nil
 }
 
-func (x *ConfigItem) GetValueString() string {
+func (x *ConfigItem) GetScalar() *Scalar {
 	if x != nil {
-		if x, ok := x.Value.(*ConfigItem_ValueString); ok {
-			return x.ValueString
+		if x, ok := x.Value.(*ConfigItem_Scalar); ok {
+			return x.Scalar
 		}
 	}
-	return ""
+	return nil
 }
 
-func (x *ConfigItem) GetValueInt() int32 {
+func (x *ConfigItem) GetScalarList() *ScalarList {
 	if x != nil {
-		if x, ok := x.Value.(*ConfigItem_ValueInt); ok {
-			return x.ValueInt
+		if x, ok := x.Value.(*ConfigItem_ScalarList); ok {
+			return x.ScalarList
 		}
 	}
-	return 0
+	return nil
 }
 
 type isConfigItem_Value interface {
 	isConfigItem_Value()
 }
 
-type ConfigItem_ValueConfig struct {
-	ValueConfig *ConfigItemSet `protobuf:"bytes,2,opt,name=ValueConfig,proto3,oneof"`
+type ConfigItem_Config struct {
+	// The value in a config item could be [config (nesting), []config, scalar, []scalar]
+	Config *Config `protobuf:"bytes,2,opt,name=Config,proto3,oneof"`
 }
 
-type ConfigItem_ValueList struct {
-	ValueList *ConfigList `protobuf:"bytes,3,opt,name=ValueList,proto3,oneof"`
+type ConfigItem_ConfigList struct {
+	ConfigList *ConfigList `protobuf:"bytes,3,opt,name=ConfigList,proto3,oneof"`
 }
 
-type ConfigItem_ValueString struct {
-	ValueString string `protobuf:"bytes,4,opt,name=ValueString,proto3,oneof"`
+type ConfigItem_Scalar struct {
+	Scalar *Scalar `protobuf:"bytes,4,opt,name=Scalar,proto3,oneof"`
 }
 
-type ConfigItem_ValueInt struct {
-	ValueInt int32 `protobuf:"varint,5,opt,name=ValueInt,proto3,oneof"`
+type ConfigItem_ScalarList struct {
+	ScalarList *ScalarList `protobuf:"bytes,5,opt,name=ScalarList,proto3,oneof"`
 }
 
-func (*ConfigItem_ValueConfig) isConfigItem_Value() {}
+func (*ConfigItem_Config) isConfigItem_Value() {}
 
-func (*ConfigItem_ValueList) isConfigItem_Value() {}
+func (*ConfigItem_ConfigList) isConfigItem_Value() {}
 
-func (*ConfigItem_ValueString) isConfigItem_Value() {}
+func (*ConfigItem_Scalar) isConfigItem_Value() {}
 
-func (*ConfigItem_ValueInt) isConfigItem_Value() {}
+func (*ConfigItem_ScalarList) isConfigItem_Value() {}
 
-type ConfigItemSet struct {
+// Config represents a map[string]interface{} of configuration settings
+type Config struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*ConfigItem          `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ConfigItemSet) Reset() {
-	*x = ConfigItemSet{}
-	mi := &file_runner_proto_runner_proto_msgTypes[2]
+func (x *Config) Reset() {
+	*x = Config{}
+	mi := &file_runner_proto_runner_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ConfigItemSet) String() string {
+func (x *Config) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ConfigItemSet) ProtoMessage() {}
+func (*Config) ProtoMessage() {}
 
-func (x *ConfigItemSet) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[2]
+func (x *Config) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_runner_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -265,28 +416,74 @@ func (x *ConfigItemSet) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ConfigItemSet.ProtoReflect.Descriptor instead.
-func (*ConfigItemSet) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use Config.ProtoReflect.Descriptor instead.
+func (*Config) Descriptor() ([]byte, []int) {
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ConfigItemSet) GetItems() []*ConfigItem {
+func (x *Config) GetItems() []*ConfigItem {
 	if x != nil {
 		return x.Items
 	}
 	return nil
 }
 
+// Config represents a []map[string]interface{} of configuration settings
+type ConfigList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*Config              `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigList) Reset() {
+	*x = ConfigList{}
+	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigList) ProtoMessage() {}
+
+func (x *ConfigList) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigList.ProtoReflect.Descriptor instead.
+func (*ConfigList) Descriptor() ([]byte, []int) {
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConfigList) GetItems() []*Config {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+// ConfigureRequest contains a single config map[string]interface{} at the root
 type ConfigureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Config        *ConfigItemSet         `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+	Config        *Config                `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ConfigureRequest) Reset() {
 	*x = ConfigureRequest{}
-	mi := &file_runner_proto_runner_proto_msgTypes[3]
+	mi := &file_runner_proto_runner_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +495,7 @@ func (x *ConfigureRequest) String() string {
 func (*ConfigureRequest) ProtoMessage() {}
 
 func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[3]
+	mi := &file_runner_proto_runner_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,10 +508,10 @@ func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureRequest) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{3}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ConfigureRequest) GetConfig() *ConfigItemSet {
+func (x *ConfigureRequest) GetConfig() *Config {
 	if x != nil {
 		return x.Config
 	}
@@ -330,7 +527,7 @@ type ConfigureResponse struct {
 
 func (x *ConfigureResponse) Reset() {
 	*x = ConfigureResponse{}
-	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	mi := &file_runner_proto_runner_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -342,7 +539,7 @@ func (x *ConfigureResponse) String() string {
 func (*ConfigureResponse) ProtoMessage() {}
 
 func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	mi := &file_runner_proto_runner_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -355,7 +552,7 @@ func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{4}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ConfigureResponse) GetValue() []byte {
@@ -375,7 +572,7 @@ type EvalRequest struct {
 
 func (x *EvalRequest) Reset() {
 	*x = EvalRequest{}
-	mi := &file_runner_proto_runner_proto_msgTypes[5]
+	mi := &file_runner_proto_runner_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -387,7 +584,7 @@ func (x *EvalRequest) String() string {
 func (*EvalRequest) ProtoMessage() {}
 
 func (x *EvalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[5]
+	mi := &file_runner_proto_runner_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -400,7 +597,7 @@ func (x *EvalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvalRequest.ProtoReflect.Descriptor instead.
 func (*EvalRequest) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{5}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EvalRequest) GetPolicyPaths() []string {
@@ -430,7 +627,7 @@ type EvalResponse struct {
 
 func (x *EvalResponse) Reset() {
 	*x = EvalResponse{}
-	mi := &file_runner_proto_runner_proto_msgTypes[6]
+	mi := &file_runner_proto_runner_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -442,7 +639,7 @@ func (x *EvalResponse) String() string {
 func (*EvalResponse) ProtoMessage() {}
 
 func (x *EvalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[6]
+	mi := &file_runner_proto_runner_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,7 +652,7 @@ func (x *EvalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvalResponse.ProtoReflect.Descriptor instead.
 func (*EvalResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{6}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EvalResponse) GetStatus() ExecutionStatus {
@@ -469,22 +666,41 @@ var File_runner_proto_runner_proto protoreflect.FileDescriptor
 
 const file_runner_proto_runner_proto_rawDesc = "" +
 	"\n" +
-	"\x19runner/proto/runner.proto\x12\x05proto\"\"\n" +
+	"\x19runner/proto/runner.proto\x12\x05proto\"\xdb\x01\n" +
+	"\x06Scalar\x12\"\n" +
+	"\vValueString\x18\x01 \x01(\tH\x00R\vValueString\x12\x1c\n" +
+	"\bValueInt\x18\x02 \x01(\x03H\x00R\bValueInt\x12 \n" +
 	"\n" +
-	"ConfigList\x12\x14\n" +
-	"\x05Items\x18\x01 \x03(\tR\x05Items\"\xd6\x01\n" +
+	"ValueFloat\x18\x03 \x01(\x02H\x00R\n" +
+	"ValueFloat\x12\x1e\n" +
+	"\tValueBool\x18\x04 \x01(\bH\x00R\tValueBool\x12\"\n" +
+	"\vValueDouble\x18\x05 \x01(\x01H\x00R\vValueDouble\x12 \n" +
+	"\n" +
+	"ValueBytes\x18\x06 \x01(\fH\x00R\n" +
+	"ValueBytesB\a\n" +
+	"\x05Value\"1\n" +
+	"\n" +
+	"ScalarList\x12#\n" +
+	"\x05items\x18\x01 \x03(\v2\r.proto.ScalarR\x05items\"\xe3\x01\n" +
 	"\n" +
 	"ConfigItem\x12\x10\n" +
-	"\x03Key\x18\x01 \x01(\tR\x03Key\x128\n" +
-	"\vValueConfig\x18\x02 \x01(\v2\x14.proto.ConfigItemSetH\x00R\vValueConfig\x121\n" +
-	"\tValueList\x18\x03 \x01(\v2\x11.proto.ConfigListH\x00R\tValueList\x12\"\n" +
-	"\vValueString\x18\x04 \x01(\tH\x00R\vValueString\x12\x1c\n" +
-	"\bValueInt\x18\x05 \x01(\x05H\x00R\bValueIntB\a\n" +
-	"\x05Value\"8\n" +
-	"\rConfigItemSet\x12'\n" +
-	"\x05items\x18\x01 \x03(\v2\x11.proto.ConfigItemR\x05items\"@\n" +
-	"\x10ConfigureRequest\x12,\n" +
-	"\x06config\x18\x01 \x01(\v2\x14.proto.ConfigItemSetR\x06config\")\n" +
+	"\x03Key\x18\x01 \x01(\tR\x03Key\x12'\n" +
+	"\x06Config\x18\x02 \x01(\v2\r.proto.ConfigH\x00R\x06Config\x123\n" +
+	"\n" +
+	"ConfigList\x18\x03 \x01(\v2\x11.proto.ConfigListH\x00R\n" +
+	"ConfigList\x12'\n" +
+	"\x06Scalar\x18\x04 \x01(\v2\r.proto.ScalarH\x00R\x06Scalar\x123\n" +
+	"\n" +
+	"ScalarList\x18\x05 \x01(\v2\x11.proto.ScalarListH\x00R\n" +
+	"ScalarListB\a\n" +
+	"\x05Value\"1\n" +
+	"\x06Config\x12'\n" +
+	"\x05items\x18\x01 \x03(\v2\x11.proto.ConfigItemR\x05items\"1\n" +
+	"\n" +
+	"ConfigList\x12#\n" +
+	"\x05items\x18\x01 \x03(\v2\r.proto.ConfigR\x05items\"9\n" +
+	"\x10ConfigureRequest\x12%\n" +
+	"\x06config\x18\x01 \x01(\v2\r.proto.ConfigR\x06config\")\n" +
 	"\x11ConfigureResponse\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\fR\x05value\"M\n" +
 	"\vEvalRequest\x12 \n" +
@@ -512,32 +728,38 @@ func file_runner_proto_runner_proto_rawDescGZIP() []byte {
 }
 
 var file_runner_proto_runner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_runner_proto_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_runner_proto_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_runner_proto_runner_proto_goTypes = []any{
 	(ExecutionStatus)(0),      // 0: proto.ExecutionStatus
-	(*ConfigList)(nil),        // 1: proto.ConfigList
-	(*ConfigItem)(nil),        // 2: proto.ConfigItem
-	(*ConfigItemSet)(nil),     // 3: proto.ConfigItemSet
-	(*ConfigureRequest)(nil),  // 4: proto.ConfigureRequest
-	(*ConfigureResponse)(nil), // 5: proto.ConfigureResponse
-	(*EvalRequest)(nil),       // 6: proto.EvalRequest
-	(*EvalResponse)(nil),      // 7: proto.EvalResponse
+	(*Scalar)(nil),            // 1: proto.Scalar
+	(*ScalarList)(nil),        // 2: proto.ScalarList
+	(*ConfigItem)(nil),        // 3: proto.ConfigItem
+	(*Config)(nil),            // 4: proto.Config
+	(*ConfigList)(nil),        // 5: proto.ConfigList
+	(*ConfigureRequest)(nil),  // 6: proto.ConfigureRequest
+	(*ConfigureResponse)(nil), // 7: proto.ConfigureResponse
+	(*EvalRequest)(nil),       // 8: proto.EvalRequest
+	(*EvalResponse)(nil),      // 9: proto.EvalResponse
 }
 var file_runner_proto_runner_proto_depIdxs = []int32{
-	3, // 0: proto.ConfigItem.ValueConfig:type_name -> proto.ConfigItemSet
-	1, // 1: proto.ConfigItem.ValueList:type_name -> proto.ConfigList
-	2, // 2: proto.ConfigItemSet.items:type_name -> proto.ConfigItem
-	3, // 3: proto.ConfigureRequest.config:type_name -> proto.ConfigItemSet
-	0, // 4: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
-	4, // 5: proto.Runner.Configure:input_type -> proto.ConfigureRequest
-	6, // 6: proto.Runner.Eval:input_type -> proto.EvalRequest
-	5, // 7: proto.Runner.Configure:output_type -> proto.ConfigureResponse
-	7, // 8: proto.Runner.Eval:output_type -> proto.EvalResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	1,  // 0: proto.ScalarList.items:type_name -> proto.Scalar
+	4,  // 1: proto.ConfigItem.Config:type_name -> proto.Config
+	5,  // 2: proto.ConfigItem.ConfigList:type_name -> proto.ConfigList
+	1,  // 3: proto.ConfigItem.Scalar:type_name -> proto.Scalar
+	2,  // 4: proto.ConfigItem.ScalarList:type_name -> proto.ScalarList
+	3,  // 5: proto.Config.items:type_name -> proto.ConfigItem
+	4,  // 6: proto.ConfigList.items:type_name -> proto.Config
+	4,  // 7: proto.ConfigureRequest.config:type_name -> proto.Config
+	0,  // 8: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
+	6,  // 9: proto.Runner.Configure:input_type -> proto.ConfigureRequest
+	8,  // 10: proto.Runner.Eval:input_type -> proto.EvalRequest
+	7,  // 11: proto.Runner.Configure:output_type -> proto.ConfigureResponse
+	9,  // 12: proto.Runner.Eval:output_type -> proto.EvalResponse
+	11, // [11:13] is the sub-list for method output_type
+	9,  // [9:11] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_runner_proto_init() }
@@ -545,11 +767,19 @@ func file_runner_proto_runner_proto_init() {
 	if File_runner_proto_runner_proto != nil {
 		return
 	}
-	file_runner_proto_runner_proto_msgTypes[1].OneofWrappers = []any{
-		(*ConfigItem_ValueConfig)(nil),
-		(*ConfigItem_ValueList)(nil),
-		(*ConfigItem_ValueString)(nil),
-		(*ConfigItem_ValueInt)(nil),
+	file_runner_proto_runner_proto_msgTypes[0].OneofWrappers = []any{
+		(*Scalar_ValueString)(nil),
+		(*Scalar_ValueInt)(nil),
+		(*Scalar_ValueFloat)(nil),
+		(*Scalar_ValueBool)(nil),
+		(*Scalar_ValueDouble)(nil),
+		(*Scalar_ValueBytes)(nil),
+	}
+	file_runner_proto_runner_proto_msgTypes[2].OneofWrappers = []any{
+		(*ConfigItem_Config)(nil),
+		(*ConfigItem_ConfigList)(nil),
+		(*ConfigItem_Scalar)(nil),
+		(*ConfigItem_ScalarList)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -557,7 +787,7 @@ func file_runner_proto_runner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_runner_proto_rawDesc), len(file_runner_proto_runner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
