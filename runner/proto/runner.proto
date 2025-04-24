@@ -1,5 +1,6 @@
 syntax = "proto3";
 package proto;
+import "google/protobuf/any.proto";
 
 option go_package = "./proto";
 
@@ -8,8 +9,17 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
+// This Config item is intended to be used to send configuration as a JSON object,
+// and unmarshall it in the agent.
+// We had limited time to implement this so went for the fastest and most stable option,
+// removing some of the type system safety in favour of speed.
+// We have added many tests to ensure whatever solution is created in future will work as expected.
+message Config {
+  bytes Value = 1;
+}
+
 message ConfigureRequest {
-  map<string, string> config = 1;
+  Config config = 1;
 }
 
 message ConfigureResponse {
