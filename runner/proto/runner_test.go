@@ -461,4 +461,81 @@ func TestConfigureRequest_Decode(t *testing.T) {
 		}, pluginConf.Experience.Containers)
 
 	})
+
+	t.Run("Complex", func(t *testing.T) {
+		yamlOutput := map[string]interface{}{
+			"host": "http://localhost",
+			"port": 2022,
+			"connection": map[string]interface{}{
+				"url": "http://ssh",
+			},
+			"hosts": []interface{}{
+				"http://one",
+				"http://two",
+			},
+			"people": []map[string]interface{}{
+				{
+					"name":   "Chris",
+					"age":    12,
+					"active": true,
+				},
+				{
+					"name":   "George",
+					"age":    18,
+					"active": false,
+				},
+			},
+		}
+
+		processedConfig, err := processMap(yamlOutput)
+		assert.NoError(t, err)
+
+		if processedConfig == nil {
+			t.Error("processed config is nil")
+			t.FailNow()
+		}
+
+		req := ConfigureRequest{Config: processedConfig}
+
+		type PluginConfig struct {
+			Host       string
+			Port       int32
+			Connection struct {
+				Url string
+			}
+			Hosts  []string
+			People []struct {
+				Name   string
+				Age    int32
+				Active bool
+			}
+		}
+
+		pluginConf := &PluginConfig{}
+		err = req.Decode(pluginConf)
+		assert.NoError(t, err)
+
+		assert.EqualValues(t, []string{
+			"http://one",
+			"http://two",
+		}, pluginConf.Hosts)
+
+		assert.ObjectsAreEqual([]struct {
+			Name   string
+			Age    int32
+			Active bool
+		}{
+			{
+				Name:   "Chris",
+				Age:    12,
+				Active: true,
+			},
+			{
+				Name:   "George",
+				Age:    18,
+				Active: false,
+			},
+		}, pluginConf.People)
+
+	})
 }

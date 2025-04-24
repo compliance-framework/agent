@@ -50,7 +50,7 @@ func processScalar(key string, item interface{}) (interface{}, error) {
 	}
 }
 
-func processConfigItemScalarList[T string | int | int32 | int64 | bool | float32 | float64](key string, list []T) (*ConfigItem, error) {
+func processConfigItemScalarList[T string | int | int32 | int64 | bool | float32 | float64 | interface{}](key string, list []T) (*ConfigItem, error) {
 	items := []*Scalar{}
 	for _, j := range list {
 		processed, err := processConfigItem(key, j)
@@ -111,6 +111,8 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 			Key:   key,
 			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueBytes{ValueBytes: t}}},
 		}, nil
+	case []interface{}:
+		return processConfigItemScalarList(key, t)
 	case []string:
 		return processConfigItemScalarList(key, t)
 	case []int:
