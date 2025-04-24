@@ -4,11 +4,13 @@ import "C"
 import (
 	"fmt"
 	"github.com/go-viper/mapstructure/v2"
+	"reflect"
 )
 
 func (c *ConfigureRequest) ToMap() (map[string]interface{}, error) {
 	config := map[string]interface{}{}
 	err := processValues(config, c.GetConfig())
+	fmt.Println(config)
 	return config, err
 }
 
@@ -111,8 +113,6 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 			Key:   key,
 			Value: &ConfigItem_Scalar{Scalar: &Scalar{Value: &Scalar_ValueBytes{ValueBytes: t}}},
 		}, nil
-	case []interface{}:
-		return processConfigItemScalarList(key, t)
 	case []string:
 		return processConfigItemScalarList(key, t)
 	case []int:
@@ -127,6 +127,23 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 		return processConfigItemScalarList(key, t)
 	case []bool:
 		return processConfigItemScalarList(key, t)
+	case map[interface{}]interface{}:
+		converted := map[string]interface{}{}
+		for k, v := range t {
+			strKey := fmt.Sprintf("%v", k)
+			converted[strKey] = v
+		}
+
+		config, err := processMap(converted)
+		if err != nil {
+			return nil, err
+		}
+		return &ConfigItem{
+			Key: key,
+			Value: &ConfigItem_Config{
+				Config: config,
+			},
+		}, nil
 	case map[string]interface{}:
 		config, err := processMap(t)
 		if err != nil {
@@ -139,6 +156,7 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 			},
 		}, nil
 	case []map[string]interface{}:
+		fmt.Println("### map of string interface", key)
 		items := []*Config{}
 		for _, j := range t {
 			config, err := processMap(j)
@@ -153,6 +171,34 @@ func processConfigItem(key string, item interface{}) (*ConfigItem, error) {
 				ConfigList: &ConfigList{Items: items},
 			},
 		}, nil
+	case []interface{}:
+		if len(t) >= 1 {
+			switch t[0].(type) {
+			case string, int, int32, int64, float32, float64, bool:
+				return processConfigItemScalarList(key, t)
+			case map[string]interface{}:
+				list := []*Config{}
+				for _, v := range t {
+					config, err := processMap(v.(map[string]interface{}))
+					if err != nil {
+						return nil, err
+					}
+					list = append(list, config)
+				}
+				return &ConfigItem{
+					Key: key,
+					Value: &ConfigItem_ConfigList{
+						ConfigList: &ConfigList{
+							Items: list,
+						},
+					},
+				}, nil
+			}
+		}
+		fmt.Println("### list of interface", key)
+		fmt.Println(reflect.TypeOf(t))
+		fmt.Println(reflect.TypeOf(t[0]))
+		return processConfigItemScalarList(key, t)
 	default:
 		return nil, fmt.Errorf("unsupported value type %T for key %q", item, key)
 	}

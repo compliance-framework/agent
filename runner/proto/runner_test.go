@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v2"
 	"reflect"
 	"testing"
 )
@@ -538,4 +539,79 @@ func TestConfigureRequest_Decode(t *testing.T) {
 		}, pluginConf.People)
 
 	})
+}
+
+func TestConfigureRequest_KitchenSink(t *testing.T) {
+
+	// This is a kitchen sink example, going from a yaml string through GRPC and decode
+	yamlString := `
+host: "http://localhost"
+port: 2022
+connection:
+    url: "http://ssh"
+hosts:
+  - http://one
+  - http://two
+people:
+  - name: Chris
+    age: 12
+    active: true
+  - name: George
+    age: 18
+    active: false`
+
+	yamlOutput := map[string]interface{}{}
+	err := yaml.Unmarshal([]byte(yamlString), yamlOutput)
+	assert.NoError(t, err)
+
+	processedConfig, err := processMap(yamlOutput)
+	assert.NoError(t, err)
+
+	if processedConfig == nil {
+		t.Error("processed config is nil")
+		t.FailNow()
+	}
+
+	req := ConfigureRequest{Config: processedConfig}
+
+	type PluginConfig struct {
+		Host       string
+		Port       int32
+		Connection struct {
+			Url string
+		}
+		Hosts  []string
+		People []struct {
+			Name   string
+			Age    int32
+			Active bool
+		}
+	}
+
+	pluginConf := &PluginConfig{}
+
+	err = req.Decode(pluginConf)
+	assert.NoError(t, err)
+
+	assert.EqualValues(t, []string{
+		"http://one",
+		"http://two",
+	}, pluginConf.Hosts)
+
+	assert.ObjectsAreEqual([]struct {
+		Name   string
+		Age    int32
+		Active bool
+	}{
+		{
+			Name:   "Chris",
+			Age:    12,
+			Active: true,
+		},
+		{
+			Name:   "George",
+			Age:    18,
+			Active: false,
+		},
+	}, pluginConf.People)
 }
