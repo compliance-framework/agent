@@ -43,14 +43,12 @@ type apiConfig struct {
 
 type agentPolicy string
 
-type agentPluginConfig map[string]string
-
 type agentPlugin struct {
-	Schedule *string           `mapstructure:"schedule,omitempty"`
-	Source   string            `mapstructure:"source"`
-	Policies []agentPolicy     `mapstructure:"policies"`
-	Config   agentPluginConfig `mapstructure:"config"`
-	Labels   map[string]string `mapstructure:"labels"`
+	Schedule *string                `mapstructure:"schedule,omitempty"`
+	Source   string                 `mapstructure:"source"`
+	Policies []agentPolicy          `mapstructure:"policies"`
+	Config   map[string]interface{} `mapstructure:"config"`
+	Labels   map[string]string      `mapstructure:"labels"`
 }
 
 type agentConfig struct {
@@ -417,9 +415,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			return err
 		}
 
-		_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-			Config: pluginConfig.Config,
-		})
+		configRequest := &proto.ConfigureRequest{}
+		err = configRequest.FromMap(pluginConfig.Config)
+		if err != nil {
+			return err
+		}
+		_, err = runnerInstance.Configure(configRequest)
 		if err != nil {
 			// What do we do here ?
 			//endTimer := time.Now()
@@ -529,9 +530,12 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		return err
 	}
 
-	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-		Config: plugin.Config,
-	})
+	configRequest := &proto.ConfigureRequest{}
+	err = configRequest.FromMap(plugin.Config)
+	if err != nil {
+		return err
+	}
+	_, err = runnerInstance.Configure(configRequest)
 	if err != nil {
 		return err
 	}
