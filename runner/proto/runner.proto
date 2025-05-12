@@ -8,8 +8,48 @@ enum ExecutionStatus {
   FAILURE = 1;
 }
 
+// ConfigScalar represents a simple scalar value
+message Scalar {
+  oneof Value {
+    string ValueString = 1;
+    int64 ValueInt = 2;
+    float ValueFloat = 3;
+    bool ValueBool = 4;
+    double ValueDouble = 5;
+    bytes ValueBytes = 6;
+  }
+}
+
+// ConfigScalarList represents a list of simple scalar values
+message ScalarList {
+  repeated Scalar items = 1;
+}
+
+// Config item is a single key in a configuration map
+message ConfigItem {
+  string Key = 1;
+  oneof Value {
+    // The value in a config item could be [config (nesting), []config, scalar, []scalar]
+    Config Config = 2;
+    ConfigList ConfigList = 3;
+    Scalar Scalar = 4;
+    ScalarList ScalarList = 5;
+  }
+}
+
+// Config represents a map[string]interface{} of configuration settings
+message Config {
+  repeated ConfigItem items = 1;
+}
+
+// Config represents a []map[string]interface{} of configuration settings
+message ConfigList {
+  repeated Config items = 1;
+}
+
+// ConfigureRequest contains a single config map[string]interface{} at the root
 message ConfigureRequest {
-  map<string, string> config = 1;
+  Config config = 1;
 }
 
 message ConfigureResponse {
