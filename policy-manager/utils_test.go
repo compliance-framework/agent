@@ -64,6 +64,18 @@ func TestMergeMaps(t *testing.T) {
 		output := MergeMaps(maps...)
 		assert.DeepEqual(t, output, expected)
 	})
+
+	t.Run("Many maps", func(t *testing.T) {
+		assert.DeepEqual(t, MergeMaps(
+			map[string]string{"foo": "bar"},
+			map[string]string{"bar": "baz"},
+			map[string]string{"baz": "yaz"},
+		), map[string]string{
+			"foo": "bar",
+			"bar": "baz",
+			"baz": "yaz",
+		})
+	})
 }
 
 func TestPointer(t *testing.T) {

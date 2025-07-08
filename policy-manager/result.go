@@ -37,17 +37,7 @@ type Activity struct {
 	Tools       []string `json:"tools" mapstructure:"tools"`
 }
 
-type Task struct {
-	Title       string     `json:"title" mapstructure:"title"`
-	Description string     `json:"description" mapstructure:"description"`
-	Activities  []Activity `json:"activities" mapstructure:"activities"`
-}
-
-type Control struct {
-	Class        string   `json:"class" mapstructure:"class"`
-	ControlID    string   `json:"control-id" mapstructure:"control-id"`
-	StatementIDs []string `json:"statement-ids,omitempty" mapstructure:"statement-ids,omitempty"`
-}
+type Labels map[string]string
 
 type Link struct {
 	Text string `json:"text" mapstructure:"text"`
@@ -73,8 +63,7 @@ Policy:
 	package: %s
 	annotations: %s
 AdditionalVariables: %v
+Labels: %v
 Violations: %v
-Tasks: %v
-Risks: %v
-`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Violations, res.Tasks, res.Risks)
+`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Labels, res.Violations)
 }

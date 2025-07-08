@@ -17,12 +17,10 @@ import (
 )
 
 type EvalOutput struct {
-	Title               *string   `mapstructure:"title,omitempty"`
-	Description         *string   `mapstructure:"description,omitempty"`
-	Remarks             *string   `mapstructure:"remarks,omitempty"`
-	Risks               []Risk    `mapstructure:"risks"`
-	Tasks               []Task    `mapstructure:"tasks"`
-	Controls            []Control `mapstructure:"controls"`
+	Title               *string            `mapstructure:"title,omitempty"`
+	Description         *string            `mapstructure:"description,omitempty"`
+	Remarks             *string            `mapstructure:"remarks,omitempty"`
+	Labels              *map[string]string `mapstructure:"labels,omitempty"`
 	Violations          []Violation
 	AdditionalVariables map[string]interface{}
 }
@@ -109,6 +107,8 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 					Violations:          violations,
 				}
 
+				fmt.Println(expression.Value.(map[string]interface{}))
+
 				err := mapstructure.Decode(expression.Value.(map[string]interface{}), evalOutput)
 				if err != nil {
 					panic(err)
@@ -116,7 +116,7 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 
 				// TODO here we could run evalOutput.Validate()
 				for key, value := range moduleOutputs {
-					if !slices.Contains([]string{"violation", "activities", "risks"}, key) {
+					if !slices.Contains([]string{"violation", "labels"}, key) {
 						evalOutput.AdditionalVariables[key] = value
 					}
 				}
@@ -237,31 +237,33 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 }
 
 func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activity) (*proto.Evidence, error) {
-	evidenceUUID, err := sdk.SeededUUID(MergeMaps(p.labels, map[string]string{
+	evidenceUUID, err := sdk.SeededUUID(MergeMaps(map[string]string{
 		"type":        "evidence",
 		"policy":      result.Policy.Package.PurePackage(),
 		"policy_file": result.Policy.File,
-	}))
+	}, p.labels))
 	if err != nil {
 		return nil, err
 	}
 
-	observation := proto.Evidence{
-		UUID:           evidenceUUID.String(),
-		Start:          timestamppb.New(time.Now()),
-		End:            timestamppb.New(time.Now()),
-		Origins:        []*proto.Origin{{Actors: p.actors}},
-		Activities:     activities,
-		Subjects:       p.subjects,
-		Components:     p.components,
-		InventoryItems: p.inventoryItems,
+	evidence := proto.Evidence{
+		UUID: evidenceUUID.String(),
 		Labels: MergeMaps(
-			p.labels,
 			map[string]string{
 				"_policy":      result.Policy.Package.PurePackage(),
 				"_policy_path": result.Policy.File,
 			},
+			p.labels,
+			*result.Labels,
 		),
+		Start:          timestamppb.New(time.Now()),
+		End:            timestamppb.New(time.Now()),
+		Origins:        []*proto.Origin{{Actors: p.actors}},
+		Activities:     activities,
+		InventoryItems: p.inventoryItems,
+		Components:     p.components,
+		Subjects:       p.subjects,
+		Status:         nil,
 	}
-	return &observation, nil
+	return &evidence, nil
 }
