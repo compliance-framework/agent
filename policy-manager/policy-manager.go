@@ -246,6 +246,10 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 		return nil, err
 	}
 
+	resultLabels := map[string]string{}
+	if result.Labels != nil {
+		resultLabels = *result.Labels
+	}
 	evidence := proto.Evidence{
 		UUID: evidenceUUID.String(),
 		Labels: MergeMaps(
@@ -254,7 +258,7 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 				"_policy_path": result.Policy.File,
 			},
 			p.labels,
-			*result.Labels,
+			resultLabels,
 		),
 		Start:          timestamppb.New(time.Now()),
 		End:            timestamppb.New(time.Now()),
