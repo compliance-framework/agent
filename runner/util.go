@@ -2,26 +2,65 @@ package runner
 
 import (
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/compliance-framework/configuration-service/sdk/types"
 	"github.com/google/uuid"
 )
 
-// Constants used in plugins for statusses which map to OSCAL due to int requirements of GRPC
-const (
-	FindingTargetStatusSatisfied    = "satisfied"
-	FindingTargetStatusNotSatisfied = "not satisfied"
-)
+func SubjectTypeFromEnum(in proto.SubjectType) string {
+	subjectTypes := map[proto.SubjectType]string{
+		proto.SubjectType_SUBJECT_TYPE_INVENTORY_ITEM: "InventoryItem",
+		proto.SubjectType_SUBJECT_TYPE_COMPONENT:      "Component",
+	}
 
-func LinksProtoToSdk(links []*proto.Link) *[]types.Link {
-	results := make([]types.Link, 0)
-	for _, link := range links {
-		results = append(results, *LinkProtoToSdk(link))
+	if val, ok := subjectTypes[in]; ok {
+		return val
+	}
+	return ""
+}
+
+func EvidenceStatusStateFromEnum(in proto.EvidenceStatusState) string {
+	subjectTypes := map[proto.EvidenceStatusState]string{
+		proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED:     "satisfied",
+		proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED: "not-satisfied",
+	}
+
+	if val, ok := subjectTypes[in]; ok {
+		return val
+	}
+	return ""
+}
+
+func ProtoToSdk[I any, O any](ins []I, transformer func(I) O) *[]O {
+	results := make([]O, 0)
+	for _, in := range ins {
+		results = append(results, transformer(in))
 	}
 	return &results
 }
 
-func LinkProtoToSdk(link *proto.Link) *types.Link {
-	return &types.Link{
+func optimisticUUID(idString string, seedMap map[string]string) uuid.UUID {
+	if idString != "" {
+		id, err := uuid.Parse(idString)
+		if err == nil {
+			return id
+		}
+	}
+
+	if len(seedMap) == 0 {
+		return uuid.New()
+	}
+
+	uid, err := sdk.SeededUUID(seedMap)
+	if err != nil {
+		return uuid.New()
+	}
+
+	return uid
+}
+
+func LinkProtoToSdk(link *proto.Link) types.Link {
+	return types.Link{
 		Href:             link.GetHref(),
 		MediaType:        link.GetMediaType(),
 		Rel:              link.GetRel(),
@@ -30,16 +69,8 @@ func LinkProtoToSdk(link *proto.Link) *types.Link {
 	}
 }
 
-func PropertiesProtoToSdk(properties []*proto.Property) *[]types.Property {
-	results := make([]types.Property, 0)
-	for _, property := range properties {
-		results = append(results, *PropertyProtoToSdk(property))
-	}
-	return &results
-}
-
-func PropertyProtoToSdk(property *proto.Property) *types.Property {
-	return &types.Property{
+func PropertyProtoToSdk(property *proto.Property) types.Property {
+	return types.Property{
 		Class:   property.GetClass(),
 		Group:   property.GetGroup(),
 		Name:    property.GetName(),
@@ -50,279 +81,139 @@ func PropertyProtoToSdk(property *proto.Property) *types.Property {
 	}
 }
 
-func RelevantEvidencesProtoToSdk(evidences []*proto.RelevantEvidence) *[]types.RelevantEvidence {
-	results := make([]types.RelevantEvidence, 0)
-	for _, evidence := range evidences {
-		results = append(results, *RelevantEvidenceProtoToSdk(evidence))
-	}
-	return &results
-}
-
-func RelevantEvidenceProtoToSdk(evidence *proto.RelevantEvidence) *types.RelevantEvidence {
-	return &types.RelevantEvidence{
-		Description: evidence.GetDescription(),
-		Href:        evidence.GetHref(),
-		Links:       LinksProtoToSdk(evidence.Links),
-		Props:       PropertiesProtoToSdk(evidence.Props),
-		Remarks:     evidence.GetRemarks(),
+func SubjectProtoToSdk(subject *proto.Subject) types.Subject {
+	return types.Subject{
+		Identifier:  subject.GetIdentifier(),
+		Type:        SubjectTypeFromEnum(subject.GetType()),
+		Description: subject.GetDescription(),
+		Remarks:     subject.GetRemarks(),
+		Props:       *ProtoToSdk(subject.GetProps(), PropertyProtoToSdk),
+		Links:       *ProtoToSdk(subject.GetLinks(), LinkProtoToSdk),
 	}
 }
 
-func SubjectReferencesProtoToSdk(subjects []*proto.SubjectReference) *[]types.SubjectReference {
-	results := make([]types.SubjectReference, 0)
-	for _, subject := range subjects {
-		results = append(results, *SubjectReferenceProtoToSdk(subject))
-	}
-	return &results
-}
-
-func SubjectReferenceProtoToSdk(subject *proto.SubjectReference) *types.SubjectReference {
-	return &types.SubjectReference{
-		Title:      subject.GetTitle(),
-		Remarks:    subject.GetRemarks(),
-		Type:       subject.GetType(),
-		Attributes: subject.GetAttributes(),
-		Links:      LinksProtoToSdk(subject.GetLinks()),
-		Props:      PropertiesProtoToSdk(subject.GetProps()),
+func InventoryItemProtoToSdk(in *proto.InventoryItem) types.InventoryItem {
+	return types.InventoryItem{
+		Identifier:  in.GetIdentifier(),
+		Type:        in.GetType(),
+		Title:       in.GetTitle(),
+		Description: in.GetDescription(),
+		Remarks:     in.GetRemarks(),
+		Props:       *ProtoToSdk(in.GetProps(), PropertyProtoToSdk),
+		Links:       *ProtoToSdk(in.GetLinks(), LinkProtoToSdk),
+		ImplementedComponents: *ProtoToSdk(in.GetImplementedComponents(), func(in *proto.InventoryItemImplementedComponent) types.ComponentIdentifier {
+			return types.ComponentIdentifier{Identifier: in.GetIdentifier()}
+		}),
 	}
 }
 
-func OriginsProtoToSdk(origins []*proto.Origin) *[]types.Origin {
-	results := make([]types.Origin, 0)
-	for _, origin := range origins {
-		results = append(results, *OriginProtoToSdk(origin))
-	}
-	return &results
-}
-
-func OriginProtoToSdk(origin *proto.Origin) *types.Origin {
-	return &types.Origin{
-		Actors: *OriginActorsProtoToSdk(origin.GetActors()),
+func OriginProtoToSdk(origin *proto.Origin) types.Origin {
+	return types.Origin{
+		Actors: *ProtoToSdk(origin.GetActors(), OriginActorProtoToSdk),
 	}
 }
 
-func OriginActorsProtoToSdk(actors []*proto.OriginActor) *[]types.OriginActor {
-	results := make([]types.OriginActor, 0)
-	for _, actor := range actors {
-		results = append(results, *OriginActorProtoToSdk(actor))
-	}
-	return &results
-}
-
-func OriginActorProtoToSdk(actor *proto.OriginActor) *types.OriginActor {
-	result := &types.OriginActor{
-		Title: actor.GetTitle(),
-		Type:  actor.GetType(),
-		Links: LinksProtoToSdk(actor.GetLinks()),
-		Props: PropertiesProtoToSdk(actor.GetProps()),
-	}
-	if actor.UUID != nil {
-		uuidValue := uuid.MustParse(actor.GetUUID())
-		result.UUID = &uuidValue
+func OriginActorProtoToSdk(actor *proto.OriginActor) types.OriginActor {
+	result := types.OriginActor{
+		UUID: optimisticUUID(actor.GetUUID(), map[string]string{
+			"type":       "actor",
+			"actor-type": actor.GetType(),
+			"title":      actor.GetTitle(),
+		}),
+		RoleId: actor.GetRoleId(),
+		Type:   actor.GetType(),
+		Title:  actor.GetTitle(),
+		Links:  ProtoToSdk(actor.GetLinks(), LinkProtoToSdk),
+		Props:  ProtoToSdk(actor.GetProps(), PropertyProtoToSdk),
 	}
 	return result
 }
 
-func ThreatIDsProtoToSdk(threatIds []*proto.ThreatId) *[]types.ThreatId {
-	results := make([]types.ThreatId, 0)
-	for _, threatId := range threatIds {
-		results = append(results, *ThreatIDProtoToSdk(threatId))
-	}
-	return &results
-}
-
-func ThreatIDProtoToSdk(threatId *proto.ThreatId) *types.ThreatId {
-	return &types.ThreatId{
-		Href:   threatId.GetHref(),
-		ID:     threatId.GetID(),
-		System: threatId.GetSystem(),
-	}
-}
-
-func RisksProtoToSdk(risks []*proto.RiskReference) *[]types.RiskReference {
-	results := make([]types.RiskReference, 0)
-	for _, risk := range risks {
-		results = append(results, *RiskProtoToSdk(risk))
-	}
-	return &results
-}
-
-func RiskProtoToSdk(risk *proto.RiskReference) *types.RiskReference {
-	return &types.RiskReference{
-		Identifier: risk.GetIdentifier(),
-		Href:       risk.GetHref(),
-		Status:     risk.GetStatus(),
-		Origins:    OriginsProtoToSdk(risk.GetOrigins()),
-		ThreatIds:  ThreatIDsProtoToSdk(risk.GetThreatIds()),
-	}
-}
-
-func StepsProtoToSdk(steps []*proto.Step) *[]types.Step {
-	results := make([]types.Step, 0)
-	for _, step := range steps {
-		results = append(results, *StepProtoToSdk(step))
-	}
-	return &results
-}
-
-func StepProtoToSdk(step *proto.Step) *types.Step {
-	result := &types.Step{
+func StepProtoToSdk(step *proto.Step) types.Step {
+	result := types.Step{
+		UUID: optimisticUUID(step.GetUUID(), map[string]string{
+			"type":  "step",
+			"title": step.GetTitle(),
+		}),
 		Title:       step.GetTitle(),
 		Description: step.GetDescription(),
-		Links:       LinksProtoToSdk(step.GetLinks()),
-		Props:       PropertiesProtoToSdk(step.GetProps()),
-	}
-	if step.Remarks != nil {
-		result.Remarks = step.Remarks
-	}
-	if step.UUID != nil {
-		uuidValue := uuid.MustParse(step.GetUUID())
-		result.UUID = &uuidValue
+		Remarks:     step.GetRemarks(),
+		Props:       *ProtoToSdk(step.GetProps(), PropertyProtoToSdk),
+		Links:       *ProtoToSdk(step.GetLinks(), LinkProtoToSdk),
 	}
 	return result
 }
 
-func ActivitiesProtoToSdk(activities []*proto.Activity) *[]types.Activity {
-	results := make([]types.Activity, 0)
-	for _, activity := range activities {
-		results = append(results, *ActivityProtoToSdk(activity))
-	}
-	return &results
-}
-
-func ActivityProtoToSdk(activity *proto.Activity) *types.Activity {
-	result := &types.Activity{
+func ActivityProtoToSdk(activity *proto.Activity) types.Activity {
+	return types.Activity{
+		UUID: optimisticUUID(activity.GetUUID(), map[string]string{
+			"type":        "activity",
+			"title":       activity.GetTitle(),
+			"description": activity.GetDescription(),
+		}),
 		Title:       activity.GetTitle(),
 		Description: activity.GetDescription(),
-		Steps:       StepsProtoToSdk(activity.GetSteps()),
-		Links:       LinksProtoToSdk(activity.GetLinks()),
-		Props:       PropertiesProtoToSdk(activity.GetProps()),
+		Remarks:     activity.GetRemarks(),
+		Steps:       *ProtoToSdk(activity.GetSteps(), StepProtoToSdk),
+		Props:       *ProtoToSdk(activity.GetProps(), PropertyProtoToSdk),
+		Links:       *ProtoToSdk(activity.GetLinks(), LinkProtoToSdk),
 	}
-	if activity.Remarks != nil {
-		result.Remarks = activity.Remarks
+}
+
+func ProtocolProtoToSdk(protocol *proto.Protocol) types.Protocol {
+	result := types.Protocol{
+		UUID: optimisticUUID(protocol.GetUUID(), map[string]string{
+			"type":  "protocol",
+			"name":  protocol.GetName(),
+			"title": protocol.GetTitle(),
+		}),
+		Name:  protocol.GetName(),
+		Title: protocol.GetTitle(),
 	}
-	if activity.UUID != nil {
-		uuidValue := uuid.MustParse(activity.GetUUID())
-		result.UUID = &uuidValue
+	for _, r := range protocol.PortRanges {
+		protocol.PortRanges = append(protocol.PortRanges, r)
 	}
 	return result
 }
 
-func ComponentReferencesProtoToSdk(activities []*proto.ComponentReference) *[]types.ComponentReference {
-	results := make([]types.ComponentReference, 0)
-	for _, activity := range activities {
-		results = append(results, *ComponentReferenceProtoToSdk(activity))
-	}
-	return &results
-}
-
-func ComponentReferenceProtoToSdk(reference *proto.ComponentReference) *types.ComponentReference {
-	return &types.ComponentReference{
-		Identifier: reference.GetIdentifier(),
-		Href:       reference.GetHref(),
-	}
-}
-
-func ControlReferencesProtoToSdk(controls []*proto.ControlReference) *[]types.ControlReference {
-	results := make([]types.ControlReference, 0)
-	for _, control := range controls {
-		results = append(results, *ControlReferenceProtoToSdk(control))
-	}
-	return &results
-}
-
-func ControlReferenceProtoToSdk(control *proto.ControlReference) *types.ControlReference {
-	statementIds := control.GetStatementIds()
-	return &types.ControlReference{
-		Class:        control.GetClass(),
-		ControlId:    control.GetControlId(),
-		StatementIds: &statementIds,
+func ComponentProtoToSdk(comp *proto.Component) types.Component {
+	return types.Component{
+		Identifier:  comp.GetIdentifier(),
+		Type:        comp.GetType(),
+		Title:       comp.GetTitle(),
+		Description: comp.GetDescription(),
+		Remarks:     comp.GetRemarks(),
+		Purpose:     comp.GetPurpose(),
+		Protocols:   *ProtoToSdk(comp.GetProtocols(), ProtocolProtoToSdk),
+		Props:       *ProtoToSdk(comp.GetProps(), PropertyProtoToSdk),
+		Links:       *ProtoToSdk(comp.GetLinks(), LinkProtoToSdk),
 	}
 }
 
-func RelatedObservationsProtoToSdk(observations []*proto.RelatedObservation) *[]types.RelatedObservation {
-	results := make([]types.RelatedObservation, 0)
-	for _, observation := range observations {
-		results = append(results, *RelatedObservationProtoToSdk(observation))
-	}
-	return &results
-}
+func EvidenceProtoToSdk(evidence *proto.Evidence) *types.Evidence {
+	remarks := evidence.GetRemarks()
+	expires := evidence.GetExpires().AsTime()
 
-func RelatedObservationProtoToSdk(observation *proto.RelatedObservation) *types.RelatedObservation {
-	return &types.RelatedObservation{
-		ObservationUuid: uuid.MustParse(observation.GetObservationUUID()),
-	}
-}
-
-func FindingStatusProtoToSdk(status *proto.FindingStatus) *types.FindingStatus {
-	return &types.FindingStatus{
-		Title:       status.GetTitle(),
-		Description: status.GetDescription(),
-		Remarks:     status.GetRemarks(),
-		State:       status.GetState(),
-		Links:       LinksProtoToSdk(status.GetLinks()),
-		Props:       PropertiesProtoToSdk(status.GetProps()),
-	}
-}
-
-func ObservationsProtoToSdk(observations []*proto.Observation) *[]types.Observation {
-	results := make([]types.Observation, 0)
-	for _, observation := range observations {
-		results = append(results, *ObservationProtoToSdk(observation))
-	}
-	return &results
-}
-
-func ObservationProtoToSdk(observation *proto.Observation) *types.Observation {
-	methods := observation.GetMethods()
-	result := &types.Observation{
-		ID:               uuid.MustParse(observation.GetID()),
-		UUID:             uuid.MustParse(observation.GetUUID()),
-		Title:            observation.GetTitle(),
-		Description:      observation.GetDescription(),
-		Remarks:          observation.GetRemarks(),
-		Collected:        observation.GetCollected().AsTime(),
-		Methods:          &methods,
-		Links:            LinksProtoToSdk(observation.GetLinks()),
-		Props:            PropertiesProtoToSdk(observation.GetProps()),
-		Origins:          OriginsProtoToSdk(observation.GetOrigins()),
-		Subjects:         SubjectReferencesProtoToSdk(observation.GetSubjects()),
-		Activities:       ActivitiesProtoToSdk(observation.GetActivities()),
-		Components:       ComponentReferencesProtoToSdk(observation.GetComponents()),
-		RelevantEvidence: RelevantEvidencesProtoToSdk(observation.GetRelevantEvidence()),
-	}
-	if observation.GetExpires() != nil && observation.GetExpires().IsValid() {
-		expires := observation.GetExpires().AsTime()
-		result.Expires = &expires
-	}
-	return result
-}
-
-func FindingsProtoToSdk(findings []*proto.Finding) *[]types.Finding {
-	results := make([]types.Finding, 0)
-	for _, finding := range findings {
-		results = append(results, *FindingProtoToSdk(finding))
-	}
-	return &results
-}
-
-func FindingProtoToSdk(finding *proto.Finding) *types.Finding {
-	return &types.Finding{
-		ID:                  uuid.MustParse(finding.GetID()),
-		UUID:                uuid.MustParse(finding.GetUUID()),
-		Title:               finding.GetTitle(),
-		Description:         finding.GetDescription(),
-		Remarks:             finding.GetRemarks(),
-		Collected:           finding.GetCollected().AsTime(),
-		Labels:              finding.GetLabels(),
-		Origins:             OriginsProtoToSdk(finding.GetOrigins()),
-		Subjects:            SubjectReferencesProtoToSdk(finding.GetSubjects()),
-		Components:          ComponentReferencesProtoToSdk(finding.GetComponents()),
-		RelatedObservations: RelatedObservationsProtoToSdk(finding.GetRelatedObservations()),
-		Controls:            ControlReferencesProtoToSdk(finding.GetControls()),
-		Risks:               RisksProtoToSdk(finding.GetRisks()),
-		Status:              *FindingStatusProtoToSdk(finding.GetStatus()),
-		Links:               LinksProtoToSdk(finding.GetLinks()),
-		Props:               PropertiesProtoToSdk(finding.GetProps()),
+	return &types.Evidence{
+		UUID:           uuid.MustParse(evidence.GetUUID()),
+		Title:          evidence.GetTitle(),
+		Description:    evidence.GetDescription(),
+		Remarks:        &remarks,
+		Labels:         evidence.GetLabels(),
+		Start:          evidence.GetStart().AsTime(),
+		End:            evidence.GetEnd().AsTime(),
+		Expires:        &expires,
+		Props:          *ProtoToSdk(evidence.GetProps(), PropertyProtoToSdk),
+		Links:          *ProtoToSdk(evidence.GetLinks(), LinkProtoToSdk),
+		Origins:        *ProtoToSdk(evidence.GetOrigins(), OriginProtoToSdk),
+		Activities:     *ProtoToSdk(evidence.GetActivities(), ActivityProtoToSdk),
+		InventoryItems: *ProtoToSdk(evidence.GetInventoryItems(), InventoryItemProtoToSdk),
+		Components:     *ProtoToSdk(evidence.GetComponents(), ComponentProtoToSdk),
+		Subjects:       *ProtoToSdk(evidence.GetSubjects(), SubjectProtoToSdk),
+		Status: types.ObjectiveStatus{
+			Reason:  evidence.GetStatus().GetReason(),
+			Remarks: evidence.GetStatus().GetRemarks(),
+			State:   EvidenceStatusStateFromEnum(evidence.GetStatus().GetState()),
+		},
 	}
 }

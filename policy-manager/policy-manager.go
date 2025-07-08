@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/configuration-service/sdk"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/rego"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -46,6 +44,8 @@ func New(ctx context.Context, logger hclog.Logger, policyPath string) *PolicyMan
 func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Result, error) {
 	var output []Result
 
+	pm.logger.Info("Here 1")
+
 	pm.logger.Trace("Executing policy", "input", input)
 	regoArgs := []func(r *rego.Rego){
 		rego.Query("data.compliance_framework"),
@@ -54,16 +54,21 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 	regoArgs = append(regoArgs, pm.loaderOptions...)
 	r := rego.New(regoArgs...)
 
+	pm.logger.Info("Here 2")
+
 	query, err := r.PrepareForEval(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	pm.logger.Info("Here 3")
 	for _, module := range query.Modules() {
 		// Exclude any test files for this compilation
 		if strings.HasSuffix(module.Package.Location.File, "_test.rego") {
 			continue
 		}
+
+		pm.logger.Info("Here 4")
 
 		result := Result{
 			Policy: Policy{
@@ -82,13 +87,17 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 
 		subQuery := rego.New(regoArgs...)
 
+		pm.logger.Info("Here 5")
+
 		evaluation, err := subQuery.Eval(ctx)
 		if err != nil {
 			return nil, err
 		}
 
+		pm.logger.Info("Here 6")
 		for _, eval := range evaluation {
 			for _, expression := range eval.Expressions {
+				fmt.Println(expression.Value)
 				moduleOutputs := expression.Value.(map[string]interface{})
 				violations := make([]Violation, 0)
 
@@ -134,37 +143,41 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 }
 
 type PolicyProcessor struct {
-	logger     hclog.Logger
-	labels     map[string]string
-	subjects   []*proto.SubjectReference
-	components []*proto.ComponentReference
-	actors     []*proto.OriginActor
-	activities []*proto.Activity
+	logger         hclog.Logger
+	labels         map[string]string
+	subjects       []*proto.Subject
+	components     []*proto.Component
+	inventoryItems []*proto.InventoryItem
+	actors         []*proto.OriginActor
+	activities     []*proto.Activity
 }
 
 func NewPolicyProcessor(
 	logger hclog.Logger,
 	labels map[string]string,
-	subjects []*proto.SubjectReference,
-	components []*proto.ComponentReference,
+	subjects []*proto.Subject,
+	components []*proto.Component,
+	inventoryItems []*proto.InventoryItem,
 	actors []*proto.OriginActor,
 	activities []*proto.Activity,
 ) *PolicyProcessor {
 	return &PolicyProcessor{
-		logger:     logger,
-		labels:     labels,
-		subjects:   subjects,
-		components: components,
-		actors:     actors,
-		activities: activities,
+		logger:         logger,
+		labels:         labels,
+		subjects:       subjects,
+		components:     components,
+		inventoryItems: inventoryItems,
+		actors:         actors,
+		activities:     activities,
 	}
 }
 
-func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string, data interface{}) ([]*proto.Observation, []*proto.Finding, error) {
+func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string, data interface{}) ([]*proto.Evidence, error) {
 	var resultErr error
 	activities := p.activities
-	findings := make([]*proto.Finding, 0)
-	observations := make([]*proto.Observation, 0)
+	evidences := make([]*proto.Evidence, 0)
+
+	p.logger.Info("Evidence list")
 
 	// Explicitly reset steps to make things readable
 	activities = append(activities, &proto.Activity{
@@ -181,12 +194,15 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			},
 		},
 	})
+	p.logger.Info("resulteer")
 	results, err := New(ctx, p.logger, policyPath).Execute(ctx, data)
 	if err != nil {
 		p.logger.Error("Failed to evaluate against policy bundle", "error", err)
 		resultErr = errors.Join(resultErr, err)
-		return observations, findings, resultErr
+		return evidences, resultErr
 	}
+
+	p.logger.Info("Results")
 
 	activities = append(activities, &proto.Activity{
 		Title:       "Compile Results",
@@ -201,123 +217,62 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 	for _, result := range results {
 		// Observation UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
 		// This acts as an identifier to show the history of an observation.
-		observation, err := p.newObservation(result, activities)
+		evidence, err := p.newEvidence(result, activities)
 		if err != nil {
 			resultErr = errors.Join(resultErr, err)
 			continue
 		}
 
 		if len(result.Violations) == 0 {
-			finding, err := p.newFinding(result, []*proto.Observation{observation})
-			if err != nil {
-				resultErr = errors.Join(resultErr, err)
-				continue
+			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
+			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+			evidence.Remarks = result.Remarks
+			evidence.Status = &proto.EvidenceStatus{
+				Reason:  "pass",
+				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
 			}
 
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
-
-			finding.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-			finding.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-			finding.Remarks = result.Remarks
-
-			finding.Status = &proto.FindingStatus{
-				State: runner.FindingTargetStatusSatisfied,
-			}
-
-			observations = append(observations, observation)
-			findings = append(findings, finding)
+			evidences = append(evidences, evidence)
 		}
 
 		if len(result.Violations) > 0 {
-			observation.Title = FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
-			observation.Description = *FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
-			observation.Remarks = result.Remarks
-			observations = append(observations, observation)
-
-			for _, violation := range result.Violations {
-				finding, err := p.newFinding(result, []*proto.Observation{observation})
-				if err != nil {
-					resultErr = errors.Join(resultErr, err)
-					continue
-				}
-
-				finding.Title = *FirstOf(violation.Title, result.Title, Pointer(fmt.Sprintf("No violations found on %s", result.Policy.Package.PurePackage())))
-				finding.Description = *FirstOf(violation.Description, result.Description, Pointer(fmt.Sprintf("No violations found on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
-				finding.Remarks = FirstOf(violation.Remarks, result.Remarks)
-				finding.Status = &proto.FindingStatus{
-					State: runner.FindingTargetStatusNotSatisfied,
-				}
-				findings = append(findings, finding)
+			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
+			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
+			evidence.Remarks = result.Remarks
+			evidences = append(evidences, evidence)
+			evidence.Status = &proto.EvidenceStatus{
+				Reason:  "fail",
+				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED,
 			}
 		}
 	}
 
-	return observations, findings, resultErr
+	p.logger.Info("Return")
+
+	return evidences, resultErr
 }
 
-func (p *PolicyProcessor) newObservation(result Result, activities []*proto.Activity) (*proto.Observation, error) {
-	observationUUIDMap := MergeMaps(p.labels, map[string]string{
-		"type":        "observation",
+func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activity) (*proto.Evidence, error) {
+	evidenceUUID, err := sdk.SeededUUID(MergeMaps(p.labels, map[string]string{
+		"type":        "evidence",
 		"policy":      result.Policy.Package.PurePackage(),
 		"policy_file": result.Policy.File,
-	})
-	observationUUID, err := sdk.SeededUUID(observationUUIDMap)
+	}))
 	if err != nil {
 		return nil, err
 	}
 
-	observation := proto.Observation{
-		ID:         uuid.New().String(),
-		UUID:       observationUUID.String(),
-		Collected:  timestamppb.New(time.Now()),
-		Origins:    []*proto.Origin{{Actors: p.actors}},
-		Subjects:   p.subjects,
-		Components: p.components,
-		Activities: activities,
-		RelevantEvidence: []*proto.RelevantEvidence{
-			{
-				Description: fmt.Sprintf("Policy %v was executed against the Local SSH configuration, using the Local SSH Compliance Plugin", result.Policy.Package.PurePackage()),
-			},
-		},
-	}
-	return &observation, nil
-}
-
-func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observation) (*proto.Finding, error) {
-	// Finding UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
-	// This acts as an identifier to show the history of a finding.
-	findingUUIDMap := MergeMaps(p.labels, map[string]string{
-		"type":        "finding",
-		"policy":      result.Policy.Package.PurePackage(),
-		"policy_file": result.Policy.File,
-	})
-	findingUUID, err := sdk.SeededUUID(findingUUIDMap)
-	if err != nil {
-		return nil, err
-	}
-
-	relatedObservations := make([]*proto.RelatedObservation, 0)
-	for _, observation := range observations {
-		relatedObservations = append(relatedObservations, &proto.RelatedObservation{
-			ObservationUUID: observation.ID,
-		})
-	}
-
-	controls := make([]*proto.ControlReference, 0)
-	for _, control := range result.Controls {
-		controls = append(controls, &proto.ControlReference{
-			Class:        control.Class,
-			ControlId:    control.ControlID,
-			StatementIds: control.StatementIDs,
-		})
-	}
-
-	finding := &proto.Finding{
-		ID:        uuid.New().String(),
-		UUID:      findingUUID.String(),
-		Collected: timestamppb.New(time.Now()),
+	observation := proto.Evidence{
+		UUID:           evidenceUUID.String(),
+		Start:          timestamppb.New(time.Now()),
+		End:            timestamppb.New(time.Now()),
+		Origins:        []*proto.Origin{{Actors: p.actors}},
+		Activities:     activities,
+		Subjects:       p.subjects,
+		Components:     p.components,
+		InventoryItems: p.inventoryItems,
 		Labels: MergeMaps(
 			p.labels,
 			map[string]string{
@@ -325,12 +280,6 @@ func (p *PolicyProcessor) newFinding(result Result, observations []*proto.Observ
 				"_policy_path": result.Policy.File,
 			},
 		),
-		Origins:             []*proto.Origin{{Actors: p.actors}},
-		Subjects:            p.subjects,
-		Components:          p.components,
-		RelatedObservations: relatedObservations,
-		Controls:            controls,
 	}
-
-	return finding, nil
+	return &observation, nil
 }

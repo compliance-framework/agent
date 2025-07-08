@@ -19,16 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ApiHelper_CreateObservations_FullMethodName = "/proto.ApiHelper/CreateObservations"
-	ApiHelper_CreateFindings_FullMethodName     = "/proto.ApiHelper/CreateFindings"
+	ApiHelper_CreateEvidence_FullMethodName = "/proto.ApiHelper/CreateEvidence"
 )
 
 // ApiHelperClient is the client API for ApiHelper service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ApiHelperClient interface {
-	CreateObservations(ctx context.Context, in *CreateObservationsRequest, opts ...grpc.CallOption) (*CreateObservationsResponse, error)
-	CreateFindings(ctx context.Context, in *CreateFindingsRequest, opts ...grpc.CallOption) (*CreateFindingsResponse, error)
+	CreateEvidence(ctx context.Context, in *CreateEvidenceRequest, opts ...grpc.CallOption) (*CreateEvidenceResponse, error)
 }
 
 type apiHelperClient struct {
@@ -39,18 +37,9 @@ func NewApiHelperClient(cc grpc.ClientConnInterface) ApiHelperClient {
 	return &apiHelperClient{cc}
 }
 
-func (c *apiHelperClient) CreateObservations(ctx context.Context, in *CreateObservationsRequest, opts ...grpc.CallOption) (*CreateObservationsResponse, error) {
-	out := new(CreateObservationsResponse)
-	err := c.cc.Invoke(ctx, ApiHelper_CreateObservations_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *apiHelperClient) CreateFindings(ctx context.Context, in *CreateFindingsRequest, opts ...grpc.CallOption) (*CreateFindingsResponse, error) {
-	out := new(CreateFindingsResponse)
-	err := c.cc.Invoke(ctx, ApiHelper_CreateFindings_FullMethodName, in, out, opts...)
+func (c *apiHelperClient) CreateEvidence(ctx context.Context, in *CreateEvidenceRequest, opts ...grpc.CallOption) (*CreateEvidenceResponse, error) {
+	out := new(CreateEvidenceResponse)
+	err := c.cc.Invoke(ctx, ApiHelper_CreateEvidence_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -61,19 +50,15 @@ func (c *apiHelperClient) CreateFindings(ctx context.Context, in *CreateFindings
 // All implementations should embed UnimplementedApiHelperServer
 // for forward compatibility
 type ApiHelperServer interface {
-	CreateObservations(context.Context, *CreateObservationsRequest) (*CreateObservationsResponse, error)
-	CreateFindings(context.Context, *CreateFindingsRequest) (*CreateFindingsResponse, error)
+	CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error)
 }
 
 // UnimplementedApiHelperServer should be embedded to have forward compatible implementations.
 type UnimplementedApiHelperServer struct {
 }
 
-func (UnimplementedApiHelperServer) CreateObservations(context.Context, *CreateObservationsRequest) (*CreateObservationsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateObservations not implemented")
-}
-func (UnimplementedApiHelperServer) CreateFindings(context.Context, *CreateFindingsRequest) (*CreateFindingsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateFindings not implemented")
+func (UnimplementedApiHelperServer) CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateEvidence not implemented")
 }
 
 // UnsafeApiHelperServer may be embedded to opt out of forward compatibility for this service.
@@ -87,38 +72,20 @@ func RegisterApiHelperServer(s grpc.ServiceRegistrar, srv ApiHelperServer) {
 	s.RegisterService(&ApiHelper_ServiceDesc, srv)
 }
 
-func _ApiHelper_CreateObservations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateObservationsRequest)
+func _ApiHelper_CreateEvidence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateEvidenceRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ApiHelperServer).CreateObservations(ctx, in)
+		return srv.(ApiHelperServer).CreateEvidence(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ApiHelper_CreateObservations_FullMethodName,
+		FullMethod: ApiHelper_CreateEvidence_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApiHelperServer).CreateObservations(ctx, req.(*CreateObservationsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ApiHelper_CreateFindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateFindingsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ApiHelperServer).CreateFindings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ApiHelper_CreateFindings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ApiHelperServer).CreateFindings(ctx, req.(*CreateFindingsRequest))
+		return srv.(ApiHelperServer).CreateEvidence(ctx, req.(*CreateEvidenceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -131,12 +98,8 @@ var ApiHelper_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ApiHelperServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateObservations",
-			Handler:    _ApiHelper_CreateObservations_Handler,
-		},
-		{
-			MethodName: "CreateFindings",
-			Handler:    _ApiHelper_CreateFindings_Handler,
+			MethodName: "CreateEvidence",
+			Handler:    _ApiHelper_CreateEvidence_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
