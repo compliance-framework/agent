@@ -44,8 +44,6 @@ func New(ctx context.Context, logger hclog.Logger, policyPath string) *PolicyMan
 func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Result, error) {
 	var output []Result
 
-	pm.logger.Info("Here 1")
-
 	pm.logger.Trace("Executing policy", "input", input)
 	regoArgs := []func(r *rego.Rego){
 		rego.Query("data.compliance_framework"),
@@ -54,21 +52,16 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 	regoArgs = append(regoArgs, pm.loaderOptions...)
 	r := rego.New(regoArgs...)
 
-	pm.logger.Info("Here 2")
-
 	query, err := r.PrepareForEval(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	pm.logger.Info("Here 3")
 	for _, module := range query.Modules() {
 		// Exclude any test files for this compilation
 		if strings.HasSuffix(module.Package.Location.File, "_test.rego") {
 			continue
 		}
-
-		pm.logger.Info("Here 4")
 
 		result := Result{
 			Policy: Policy{
@@ -87,17 +80,13 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 
 		subQuery := rego.New(regoArgs...)
 
-		pm.logger.Info("Here 5")
-
 		evaluation, err := subQuery.Eval(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		pm.logger.Info("Here 6")
 		for _, eval := range evaluation {
 			for _, expression := range eval.Expressions {
-				fmt.Println(expression.Value)
 				moduleOutputs := expression.Value.(map[string]interface{})
 				violations := make([]Violation, 0)
 
@@ -177,8 +166,6 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 	activities := p.activities
 	evidences := make([]*proto.Evidence, 0)
 
-	p.logger.Info("Evidence list")
-
 	// Explicitly reset steps to make things readable
 	activities = append(activities, &proto.Activity{
 		Title:       "Execute policy",
@@ -194,15 +181,12 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			},
 		},
 	})
-	p.logger.Info("resulteer")
 	results, err := New(ctx, p.logger, policyPath).Execute(ctx, data)
 	if err != nil {
 		p.logger.Error("Failed to evaluate against policy bundle", "error", err)
 		resultErr = errors.Join(resultErr, err)
 		return evidences, resultErr
 	}
-
-	p.logger.Info("Results")
 
 	activities = append(activities, &proto.Activity{
 		Title:       "Compile Results",
@@ -248,8 +232,6 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			}
 		}
 	}
-
-	p.logger.Info("Return")
 
 	return evidences, resultErr
 }
