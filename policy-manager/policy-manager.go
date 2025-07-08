@@ -254,8 +254,7 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 		UUID: evidenceUUID.String(),
 		Labels: MergeMaps(
 			map[string]string{
-				"_policy":      result.Policy.Package.PurePackage(),
-				"_policy_path": result.Policy.File,
+				"_policy": result.Policy.Package.PurePackage(),
 			},
 			p.labels,
 			resultLabels,
