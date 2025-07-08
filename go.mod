@@ -2,14 +2,12 @@ module github.com/compliance-framework/agent
 
 go 1.23.2
 
-replace github.com/compliance-framework/configuration-service => ../configuration-service
-
 require (
-	github.com/compliance-framework/configuration-service v0.1.2-0.20250327060646-625c895cd99c
+	github.com/compliance-framework/configuration-service v0.2.12-0.20250708103936-23c66564a854
 	github.com/compliance-framework/gooci v0.0.0-20250113172942-411c6f0468f0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.8.0
-	github.com/go-viper/mapstructure/v2 v2.2.1
+	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/go-containerregistry v0.20.2
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.5.0
