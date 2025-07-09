@@ -558,15 +558,15 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
 	heartbeatJson, err := json.Marshal(map[string]interface{}{
-		"uuid":    staticAgentUUID,
-		"created": time.Now(),
+		"uuid":       staticAgentUUID,
+		"created_at": time.Now(),
 	})
 	if err != nil {
 		// TODO What to do here ?
 		ar.logger.Error("Error marshaling heartbeat", "error", err, "uuid", staticAgentUUID.String())
 		return err
 	}
-	response, err := client.NewRequest(heartbeatCtx, "POST", "/api/heartbeat/", bytes.NewReader(heartbeatJson))
+	response, err := client.NewRequest(heartbeatCtx, "POST", "/api/agent/heartbeat/", bytes.NewReader(heartbeatJson))
 	if err != nil {
 		// TODO What to do here ?
 		ar.logger.Error("Error sending heartbeat", "error", err, "uuid", staticAgentUUID.String())
