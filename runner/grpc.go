@@ -9,25 +9,14 @@ import (
 )
 
 type ApiHelper interface {
-	CreateObservations(context.Context, []*proto.Observation) error
-	CreateFindings(context.Context, []*proto.Finding) error
+	CreateEvidence(context.Context, []*proto.Evidence) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
-func (m *GRPCApiHelperClient) CreateObservations(ctx context.Context, observations []*proto.Observation) error {
-	_, err := m.client.CreateObservations(ctx, &proto.CreateObservationsRequest{
-		Observations: observations,
-	})
-	if err != nil {
-		hclog.Default().Error("Error adding result", "error", err)
-	}
-	return err
-}
-
-func (m *GRPCApiHelperClient) CreateFindings(ctx context.Context, findings []*proto.Finding) error {
-	_, err := m.client.CreateFindings(ctx, &proto.CreateFindingsRequest{
-		Findings: findings,
+func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
+	_, err := m.client.CreateEvidence(ctx, &proto.CreateEvidenceRequest{
+		Evidence: evidence,
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", "error", err)
@@ -40,20 +29,12 @@ type GRPCApiHelperServer struct {
 	Impl ApiHelper
 }
 
-func (m *GRPCApiHelperServer) CreateObservations(ctx context.Context, req *proto.CreateObservationsRequest) (resp *proto.CreateObservationsResponse, err error) {
-	err = m.Impl.CreateObservations(ctx, req.GetObservations())
+func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.CreateEvidenceRequest) (resp *proto.CreateEvidenceResponse, err error) {
+	err = m.Impl.CreateEvidence(ctx, req.GetEvidence())
 	if err != nil {
 		return nil, err
 	}
-	return &proto.CreateObservationsResponse{}, err
-}
-
-func (m *GRPCApiHelperServer) CreateFindings(ctx context.Context, req *proto.CreateFindingsRequest) (resp *proto.CreateFindingsResponse, err error) {
-	err = m.Impl.CreateFindings(ctx, req.GetFindings())
-	if err != nil {
-		return nil, err
-	}
-	return &proto.CreateFindingsResponse{}, err
+	return &proto.CreateEvidenceResponse{}, err
 }
 
 // GRPCClient is an implementation of KV that talks over RPC.

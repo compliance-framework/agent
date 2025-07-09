@@ -4,9 +4,6 @@ option go_package = "./proto";
 
 import "google/protobuf/timestamp.proto";
 
-// Property
-// An attribute, characteristic, or quality of the containing object expressed
-// as a namespace qualified name/value pair.
 message Property {
   // Property Name
   // A textual label, within a namespace, that identifies a specific attribute,
@@ -68,65 +65,16 @@ message Link {
 }
 
 message OriginActor {
-  optional string UUID = 1;
+  string UUID = 1;
   string Title = 2;
-  string Type = 3;
-  repeated Link Links = 4;
-  repeated Property Props = 5;
-}
-
-message Origin {
-  repeated OriginActor Actors = 1;
-}
-
-message ThreatId {
-  string ID = 1;
-  string System = 2;
-  optional string Href = 3;
-}
-
-message ComponentReference {
-  string Identifier = 1;
-  optional string Href = 2;
-}
-
-message ControlReference {
-  string Class = 1;
-  string ControlId = 2;
-  repeated string StatementIds = 3;
-}
-
-message SubjectReference {
-  optional string Title = 1;
-  optional string Remarks = 2;
-  string Type = 3;
-  map<string, string> Attributes = 4;
+  string RoleId = 3;
+  string Type = 4;
   repeated Link Links = 5;
   repeated Property Props = 6;
 }
 
-message RiskReference {
-  string Identifier = 1;
-  string Status = 2;
-  optional string Href = 3;
-  repeated Origin Origins = 4;
-  repeated ThreatId ThreatIds = 5;
-}
-
-message RelatedObservation {
-  string ObservationUUID = 1;
-}
-
-message AssociatedRisk {
-  string Identifier = 1;
-}
-
-message RelevantEvidence {
-  string Description = 1;
-  optional string Remarks = 2;
-  optional string Href = 3;
-  repeated Link Links = 4;
-  repeated Property Props = 5;
+message Origin {
+  repeated OriginActor Actors = 1;
 }
 
 message Step {
@@ -148,48 +96,98 @@ message Activity {
   repeated Property Props = 7;
 }
 
-message Observation {
-  string ID = 1;
-  string UUID = 2;
-  optional string Title = 3;
-  string Description = 4;
-  optional string Remarks = 5;
-  google.protobuf.Timestamp Collected = 6;
-  optional google.protobuf.Timestamp Expires = 7;
-  repeated string Methods = 8;
-  repeated Link Links = 9;
-  repeated Property Props = 10;
-  repeated Origin Origins = 11;
-  repeated SubjectReference Subjects = 12;
-  repeated Activity Activities = 13;
-  repeated ComponentReference Components = 14;
-  repeated RelevantEvidence RelevantEvidence = 15;
+enum EvidenceStatusState {
+  EVIDENCE_STATUS_STATE_SATISFIED = 0;
+  EVIDENCE_STATUS_STATE_NOT_SATISFIED = 1;
 }
 
-message FindingStatus {
-  optional string Title = 1;
-  optional string Description = 2;
-  optional string Remarks = 3;
-  string State = 4;
+message EvidenceStatus {
+  string Reason = 1;
+  string Remarks = 2;
+  EvidenceStatusState State = 3;
+}
+
+message PortRange {
+  int32 End = 1;
+  int32 Start = 2;
+  string Transport = 3;
+}
+
+message Protocol {
+  string UUID = 1;
+  string Name = 2;
+  string Title = 3;
+  repeated PortRange PortRanges = 4;
+}
+
+message Component {
+  string Identifier = 1;
+  string Type = 2;
+  string Title = 3;
+  string Description = 4;
+  string Remarks = 5;
+  string Purpose = 6;
+  repeated Protocol Protocols = 7;
+  repeated Link Links = 8;
+  repeated Property Props = 9;
+}
+
+message InventoryItemImplementedComponent {
+  string Identifier = 1;
+}
+
+message InventoryItem {
+  string Identifier = 1;
+  string Type = 2;
+  string Title = 3;
+  string Description = 4;
+  string Remarks = 5;
+  repeated Link Links = 6;
+  repeated Property Props = 7;
+  repeated InventoryItemImplementedComponent ImplementedComponents = 8;
+}
+
+enum SubjectType {
+  SUBJECT_TYPE_INVENTORY_ITEM = 0;
+  SUBJECT_TYPE_COMPONENT = 1;
+}
+
+message Subject {
+  string Identifier = 1;
+  SubjectType Type = 2;
+  string Description = 3;
+  string Remarks = 4;
   repeated Link Links = 5;
   repeated Property Props = 6;
 }
 
-message Finding {
-  string ID = 1;
-  string UUID = 2;
-  string Title = 3;
-  string Description = 4;
-  optional string Remarks = 5;
-  google.protobuf.Timestamp Collected = 6;
-  map<string, string> Labels = 7;
-  repeated Origin Origins = 8;
-  repeated SubjectReference Subjects = 9;
-  repeated ComponentReference Components = 10;
-  repeated RelatedObservation RelatedObservations = 11;
-  repeated ControlReference Controls = 12;
-  repeated RiskReference Risks = 13;
-  FindingStatus Status = 14;
-  repeated Link Links = 15;
-  repeated Property Props = 16;
+message Evidence {
+  string UUID = 1;
+  string Title = 2;
+  optional string Description = 3;
+  optional string Remarks = 4;
+
+  // Assigning labels to Evidence makes it searchable and easily usable in the UI
+  map<string, string> Labels = 5;
+
+  // When did we start collecting the evidence, and when did the process end, and how long is it valid for ?
+  google.protobuf.Timestamp Start = 6;
+  google.protobuf.Timestamp End = 7;
+  optional google.protobuf.Timestamp  Expires = 8;
+
+  repeated Link Links = 9;
+  repeated Property Props = 10;
+
+  // Who or What is generating this evidence
+  repeated Origin Origins = 11;
+  // What steps did we take to create this evidence
+  repeated Activity Activities = 12;
+  // Which inventory items were discovered in the evaluation process ?
+  repeated InventoryItem InventoryItems = 13;
+  // Which components of the subject are being observed. A tool, user, policy etc.
+  repeated Component Components = 14;
+  // Who or What are we providing evidence for. What's under test.
+  repeated Subject Subjects = 15;
+  // Did we satisfy what was being tested for, or did we fail ?
+  EvidenceStatus Status = 16;
 }

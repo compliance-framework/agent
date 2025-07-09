@@ -23,29 +23,24 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 	}
 }
 
-func (h *apiHelper) CreateFindings(ctx context.Context, finds []*proto.Finding) error {
-	findings := *FindingsProtoToSdk(finds)
+func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
+	evidences := ProtoToSdk(evidence, EvidenceProtoToSdk)
 
 	// Merge agent, config and finding labels all together.
-	resultFindings := make([]types.Finding, 0)
-	for _, finding := range findings {
+	labelled := make([]types.Evidence, 0)
+	for _, evid := range *evidences {
 		labels := make(map[string]string)
 		for k, v := range h.agentLabels {
 			labels[k] = v
 		}
-		for k, v := range finding.Labels {
+		for k, v := range evid.Labels {
 			labels[k] = v
 		}
-		finding.Labels = labels
-		resultFindings = append(resultFindings, finding)
+		evid.Labels = labels
+
+		labelled = append(labelled, *evid)
 	}
 
-	err := h.client.Findings.Create(ctx, resultFindings)
-	return err
-}
-
-func (h *apiHelper) CreateObservations(ctx context.Context, obs []*proto.Observation) error {
-	observations := *ObservationsProtoToSdk(obs)
-	err := h.client.Observations.Create(ctx, observations)
+	err := h.client.Evidence.Create(ctx, labelled...)
 	return err
 }
