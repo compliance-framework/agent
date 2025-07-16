@@ -23,7 +23,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
-	"github.com/compliance-framework/configuration-service/sdk"
+	"github.com/compliance-framework/api/sdk"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/fsnotify/fsnotify"

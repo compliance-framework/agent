@@ -3,8 +3,8 @@ package runner
 import (
 	"context"
 	"github.com/compliance-framework/agent/runner/proto"
-	"github.com/compliance-framework/configuration-service/sdk"
-	"github.com/compliance-framework/configuration-service/sdk/types"
+	"github.com/compliance-framework/api/sdk"
+	"github.com/compliance-framework/api/sdk/types"
 	"github.com/hashicorp/go-hclog"
 )
 
