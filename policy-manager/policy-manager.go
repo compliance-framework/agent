@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/compliance-framework/agent/runner/proto"
-	"github.com/compliance-framework/configuration-service/sdk"
+	"github.com/compliance-framework/api/sdk"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/rego"
