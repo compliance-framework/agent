@@ -4,3 +4,6 @@ dist/
 .compliance-framework/
 agent
 main
+
+cover.out
+config.yml
