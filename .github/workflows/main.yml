@@ -8,7 +8,7 @@ on:
   pull_request: {}
 
 jobs:
-  setup-go:
+  setup-go-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -26,7 +26,7 @@ jobs:
         run: go build ./...
 
   unit-test:
-    needs: setup-go
+    needs: setup-go-and-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -41,7 +41,7 @@ jobs:
         run: make test
 
   go-fmt-check:
-    needs: setup-go
+    needs: setup-go-and-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
