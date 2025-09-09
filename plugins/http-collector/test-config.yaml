@@ -1,0 +1,53 @@
+# Test configuration for HTTP collector plugin
+# This matches the config sample from the requirements
+
+api:
+  url: "http://localhost:8080"  # Required by agent (can be mock API)
+
+plugins:
+  health-checker:
+    source: "./plugins/http-collector/http-collector"  # Path to our compiled plugin
+    policies: []  # No policies needed for basic test
+    labels:
+      type: "http-health-check"
+      environment: "test"
+    config:
+      url: "https://httpbin.org/json"           # Test endpoint that returns JSON
+      method: "GET"
+      timeout: 5000
+      basic_auth: false
+      additional_headers: "Content-Type: application/json;User-Agent: ccf-http-collector"
+      check_certificate: true
+      body_regex_pattern: "slideshow"           # Simple pattern - should match the JSON response
+
+  metrics-checker:
+    source: "./plugins/http-collector/http-collector"  # Same plugin, different config
+    policies: []
+    labels:
+      type: "metrics-check"
+      environment: "test"
+    config:
+      url: "https://httpbin.org/status/200"     # Always returns 200 OK
+      method: "GET"
+      timeout: 3000
+      basic_auth: false
+      check_certificate: true
+      # No regex pattern - should pass with just 200 status
+
+  auth-test:
+    source: "./plugins/http-collector/http-collector"  # Test basic auth
+    policies: []
+    labels:
+      type: "auth-test"
+      environment: "test"
+    config:
+      url: "https://httpbin.org/basic-auth/testuser/testpass"
+      method: "GET"
+      timeout: 5000
+      basic_auth: true
+      basic_auth_username: "testuser"
+      basic_auth_password: "testpass"
+      check_certificate: true
+      body_regex_pattern: "authenticated"  # Should match the auth response
+
+verbose: 1  # Enable debug logging to see what's happening

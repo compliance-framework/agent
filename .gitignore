@@ -5,5 +5,8 @@ dist/
 agent
 main
 
+# Plugin binaries
+plugins/http-collector/http-collector
+
 cover.out
 config.yml
