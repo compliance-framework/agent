@@ -23,29 +23,29 @@ import (
 // HttpCollectorConfig holds the configuration for the HTTP collector plugin
 // This matches the config sample structure from the requirements
 type HttpCollectorConfig struct {
-	URL                  string `json:"url"`
-	Method               string `json:"method"`
-	Timeout              int    `json:"timeout"`
-	BasicAuth            bool   `json:"basic_auth"`
-	BasicAuthUsername    string `json:"basic_auth_username"`
-	BasicAuthPassword    string `json:"basic_auth_password"`
-	AdditionalHeaders    string `json:"additional_headers"`
-	CheckCertificate     bool   `json:"check_certificate"`
-	BodyRegexPattern     string `json:"body_regex_pattern"`
+	URL               string `json:"url"`
+	Method            string `json:"method"`
+	Timeout           int    `json:"timeout"`
+	BasicAuth         bool   `json:"basic_auth"`
+	BasicAuthUsername string `json:"basic_auth_username"`
+	BasicAuthPassword string `json:"basic_auth_password"`
+	AdditionalHeaders string `json:"additional_headers"`
+	CheckCertificate  bool   `json:"check_certificate"`
+	BodyRegexPattern  string `json:"body_regex_pattern"`
 }
 
 // HttpResponseData represents the structured response data
 // This will be converted to JSON and included in evidence
 type HttpResponseData struct {
-	StatusCode       int                    `json:"status_code"`
-	Status           string                 `json:"status"`
-	Headers          map[string][]string    `json:"headers"`
-	Body             string                 `json:"body"`
-	ResponseTime     int64                  `json:"response_time_ms"`
-	Success          bool                   `json:"success"`          // true if 200 <= status < 300
-	Error            string                 `json:"error,omitempty"`  // only if request failed
-	MatchedRegex     bool                   `json:"matched_regex,omitempty"`     // only if regex pattern provided
-	BodyRegexPattern string                 `json:"body_regex_pattern,omitempty"` // echo back the pattern used
+	StatusCode       int                 `json:"status_code"`
+	Status           string              `json:"status"`
+	Headers          map[string][]string `json:"headers"`
+	Body             string              `json:"body"`
+	ResponseTime     int64               `json:"response_time_ms"`
+	Success          bool                `json:"success"`                      // true if 200 <= status < 300
+	Error            string              `json:"error,omitempty"`              // only if request failed
+	MatchedRegex     bool                `json:"matched_regex,omitempty"`      // only if regex pattern provided
+	BodyRegexPattern string              `json:"body_regex_pattern,omitempty"` // echo back the pattern used
 }
 
 // HttpCollectorPlugin implements the Runner interface
@@ -58,14 +58,14 @@ type HttpCollectorPlugin struct {
 // This is called by the agent to provide configuration to the plugin
 func (p *HttpCollectorPlugin) Configure(req *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
 	p.logger.Debug("Configuring HTTP collector plugin")
-	
+
 	// Initialize with defaults
 	config := &HttpCollectorConfig{
 		Method:           "GET",
 		Timeout:          5000,
 		CheckCertificate: true, // default to secure
 	}
-	
+
 	// Parse configuration from the agent
 	for key, value := range req.Config {
 		switch key {
@@ -78,7 +78,7 @@ func (p *HttpCollectorPlugin) Configure(req *proto.ConfigureRequest) (*proto.Con
 				config.Timeout = timeout
 			}
 		case "basic_auth":
-			// Handle various boolean representations  
+			// Handle various boolean representations
 			lowerValue := strings.ToLower(value)
 			config.BasicAuth = lowerValue == "true" || lowerValue == "1" || lowerValue == "yes"
 		case "basic_auth_username":
@@ -93,25 +93,25 @@ func (p *HttpCollectorPlugin) Configure(req *proto.ConfigureRequest) (*proto.Con
 			config.BodyRegexPattern = value
 		}
 	}
-	
+
 	// Validate required configuration
 	if config.URL == "" {
 		return nil, fmt.Errorf("url is required in configuration")
 	}
-	
+
 	p.config = config
-	p.logger.Info("HTTP collector configured successfully", 
-		"url", config.URL, 
+	p.logger.Info("HTTP collector configured successfully",
+		"url", config.URL,
 		"method", config.Method,
 		"timeout", config.Timeout)
-	
+
 	return &proto.ConfigureResponse{}, nil
 }
 
 // makeHttpRequest performs the HTTP request and returns structured response data
 func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 	startTime := time.Now()
-	
+
 	// Create HTTP client with timeout and TLS settings
 	client := &http.Client{
 		Timeout: time.Duration(p.config.Timeout) * time.Millisecond,
@@ -121,7 +121,7 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 			},
 		},
 	}
-	
+
 	// Create HTTP request
 	req, err := http.NewRequest(p.config.Method, p.config.URL, nil)
 	if err != nil {
@@ -130,13 +130,13 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 			Error:   fmt.Sprintf("failed to create request: %v", err),
 		}, nil
 	}
-	
+
 	// Add basic authentication if configured
 	if p.config.BasicAuth && p.config.BasicAuthUsername != "" {
 		req.SetBasicAuth(p.config.BasicAuthUsername, p.config.BasicAuthPassword)
 		p.logger.Debug("Added basic authentication")
 	}
-	
+
 	// Parse and add additional headers
 	if p.config.AdditionalHeaders != "" {
 		headers := strings.Split(p.config.AdditionalHeaders, ";")
@@ -148,7 +148,7 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 		}
 		p.logger.Debug("Added additional headers", "count", len(headers))
 	}
-	
+
 	// Execute the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
@@ -159,7 +159,7 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 		}, nil
 	}
 	defer resp.Body.Close()
-	
+
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -172,10 +172,10 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 			ResponseTime: time.Since(startTime).Milliseconds(),
 		}, nil
 	}
-	
+
 	// Check if status code indicates success (200 <= x < 300)
 	success := resp.StatusCode >= 200 && resp.StatusCode < 300
-	
+
 	responseData := &HttpResponseData{
 		StatusCode:   resp.StatusCode,
 		Status:       resp.Status,
@@ -184,7 +184,7 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 		Success:      success,
 		ResponseTime: time.Since(startTime).Milliseconds(),
 	}
-	
+
 	// Check regex pattern if configured
 	if p.config.BodyRegexPattern != "" {
 		matched, err := regexp.MatchString(p.config.BodyRegexPattern, string(body))
@@ -196,12 +196,12 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 			p.logger.Debug("Regex pattern check", "pattern", p.config.BodyRegexPattern, "matched", matched)
 		}
 	}
-	
-	p.logger.Info("HTTP request completed", 
-		"status", resp.StatusCode, 
+
+	p.logger.Info("HTTP request completed",
+		"status", resp.StatusCode,
 		"success", success,
 		"response_time_ms", responseData.ResponseTime)
-	
+
 	return responseData, nil
 }
 
@@ -209,11 +209,11 @@ func (p *HttpCollectorPlugin) makeHttpRequest() (*HttpResponseData, error) {
 func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jsonData string) (*proto.Evidence, error) {
 	startTime := time.Now().Add(-time.Duration(responseData.ResponseTime) * time.Millisecond)
 	endTime := time.Now()
-	
+
 	// Determine evidence status based on HTTP success and regex matching
 	evidenceState := proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED
 	statusReason := "HTTP request successful"
-	
+
 	if !responseData.Success {
 		evidenceState = proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED
 		if responseData.Error != "" {
@@ -225,7 +225,7 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 		evidenceState = proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED
 		statusReason = fmt.Sprintf("Response body did not match required pattern: %s", responseData.BodyRegexPattern)
 	}
-	
+
 	// Create evidence with comprehensive metadata
 	description := fmt.Sprintf("HTTP %s request to %s", p.config.Method, p.config.URL)
 	evidence := &proto.Evidence{
@@ -252,8 +252,8 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 				Description: fmt.Sprintf("Performed %s request to %s for health monitoring", p.config.Method, p.config.URL),
 				Steps: []*proto.Step{
 					{
-						Title:       "Configure HTTP Client",
-						Description: fmt.Sprintf("Set timeout: %dms, certificate check: %t, basic auth: %t", 
+						Title: "Configure HTTP Client",
+						Description: fmt.Sprintf("Set timeout: %dms, certificate check: %t, basic auth: %t",
 							p.config.Timeout, p.config.CheckCertificate, p.config.BasicAuth),
 					},
 					{
@@ -261,8 +261,8 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 						Description: fmt.Sprintf("Made %s request to %s", p.config.Method, p.config.URL),
 					},
 					{
-						Title:       "Process Response",
-						Description: fmt.Sprintf("Received status %d, processed %d bytes in %dms", 
+						Title: "Process Response",
+						Description: fmt.Sprintf("Received status %d, processed %d bytes in %dms",
 							responseData.StatusCode, len(responseData.Body), responseData.ResponseTime),
 					},
 				},
@@ -276,7 +276,7 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 			},
 		},
 	}
-	
+
 	// Add regex-specific properties if configured
 	if responseData.BodyRegexPattern != "" {
 		evidence.Props = append(evidence.Props, &proto.Property{
@@ -288,7 +288,7 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 			Value: strconv.FormatBool(responseData.MatchedRegex),
 		})
 	}
-	
+
 	return evidence, nil
 }
 
@@ -296,38 +296,38 @@ func (p *HttpCollectorPlugin) createEvidence(responseData *HttpResponseData, jso
 // This is the main execution function where we make HTTP requests and create evidence
 func (p *HttpCollectorPlugin) Eval(req *proto.EvalRequest, helper runner.ApiHelper) (*proto.EvalResponse, error) {
 	p.logger.Debug("Starting HTTP evaluation")
-	
+
 	// Make HTTP request
 	responseData, err := p.makeHttpRequest()
 	if err != nil {
 		p.logger.Error("HTTP request failed", "error", err)
 		return &proto.EvalResponse{Status: proto.ExecutionStatus_FAILURE}, err
 	}
-	
+
 	// Convert response data to JSON for evidence
 	jsonData, err := json.MarshalIndent(responseData, "", "  ")
 	if err != nil {
 		p.logger.Error("Failed to marshal response data", "error", err)
 		return &proto.EvalResponse{Status: proto.ExecutionStatus_FAILURE}, err
 	}
-	
+
 	// Create evidence from HTTP response
 	evidence, err := p.createEvidence(responseData, string(jsonData))
 	if err != nil {
 		p.logger.Error("Failed to create evidence", "error", err)
 		return &proto.EvalResponse{Status: proto.ExecutionStatus_FAILURE}, err
 	}
-	
+
 	// Send evidence to the compliance API via helper
 	err = helper.CreateEvidence(context.Background(), []*proto.Evidence{evidence})
 	if err != nil {
 		p.logger.Error("Failed to send evidence", "error", err)
 		return &proto.EvalResponse{Status: proto.ExecutionStatus_FAILURE}, err
 	}
-	
+
 	p.logger.Info("HTTP evaluation completed successfully", "success", responseData.Success)
 	p.logger.Debug("Response data", "json", string(jsonData))
-	
+
 	return &proto.EvalResponse{Status: proto.ExecutionStatus_SUCCESS}, nil
 }
 
@@ -338,7 +338,7 @@ func main() {
 		Output: hclog.DefaultOutput,
 		Level:  hclog.Debug,
 	})
-	
+
 	// Serve the plugin using HashiCorp's plugin framework
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: runner.HandshakeConfig,
