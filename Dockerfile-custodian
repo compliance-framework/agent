@@ -1,0 +1,8 @@
+FROM ghcr.io/compliance-framework/agent:0.2.1 AS agent
+
+FROM cloudcustodian/c7n:0.9.49.0
+
+COPY --from=agent /app/concom /app/concom
+
+ENTRYPOINT ["/app/concom"]
+CMD ["agent", "-c", "/app/config.yml"]
