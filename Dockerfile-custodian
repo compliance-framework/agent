@@ -16,5 +16,6 @@ FROM cloudcustodian/c7n@sha256:275e79ff9fc4650f2aa7029a371beeab1a4101dcb975f2b29
 
 COPY --from=builder /app/concom /app/concom
 
+WORKDIR /app
 ENTRYPOINT ["/app/concom"]
 CMD ["agent", "-c", "/app/config.yml"]
