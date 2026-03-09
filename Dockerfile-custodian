@@ -11,7 +11,8 @@ COPY . .
 RUN go build -o concom main.go
 
 
-FROM cloudcustodian/c7n:0.9.49.0
+# 0.9.49.0
+FROM cloudcustodian/c7n@sha256:275e79ff9fc4650f2aa7029a371beeab1a4101dcb975f2b29038e391880de902
 
 COPY --from=builder /app/concom /app/concom
 
