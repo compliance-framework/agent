@@ -44,7 +44,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./Dockerfile
+          context: .
+          file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -52,7 +53,8 @@ jobs:
       - name: Build and push (custodian)
         uses: docker/build-push-action@v5
         with:
-          context: ./Dockerfile-custodian
+          context: .
+          file: ./Dockerfile-custodian
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}-custodian
           labels: ${{ steps.meta.outputs.labels }}
