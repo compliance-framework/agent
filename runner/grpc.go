@@ -56,7 +56,7 @@ func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.Cre
 	return &proto.CreateEvidenceResponse{}, err
 }
 
-// GRPCClient is an implementation of KV that talks over RPC.
+// GRPCClient implements Runner over go-plugin gRPC.
 type GRPCClient struct {
 	client proto.RunnerClient
 	broker *plugin.GRPCBroker
@@ -66,6 +66,7 @@ type GRPCClient struct {
 	apiServerOnce   sync.Once
 }
 
+// GRPCClientV2 extends GRPCClient with RunnerV2 support over go-plugin gRPC.
 type GRPCClientV2 struct {
 	*GRPCClient
 }
