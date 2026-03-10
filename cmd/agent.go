@@ -337,7 +337,7 @@ type AgentRunner struct {
 
 	pluginLocations  map[string]string
 	policyLocations  map[string]string
-	fetchAnnotations func(source string, option ...remote.Option) (map[string]string, error)
+	fetchAnnotations func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 
 	queryBundles []*rego.Rego
 }
@@ -369,7 +369,7 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 		return err
 	}
 
-	ar.resolvePluginProtocols()
+	ar.resolvePluginProtocols(ctx)
 
 	err = ar.DownloadPolicies(ctx)
 	if err != nil {
@@ -386,13 +386,19 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	return ar.runAllPlugins(ctx)
 }
 
-func (ar *AgentRunner) resolvePluginProtocols() {
+func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	for pluginName, pluginConfig := range ar.config.Plugins {
 		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
 			continue
 		}
 
-		annotations, err := ar.fetchAnnotations(pluginConfig.Source)
+		annotationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		annotations, err := ar.fetchAnnotations(annotationCtx, pluginConfig.Source)
+		cancel()
 		if err != nil {
 			ar.logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
 			continue
@@ -643,12 +649,12 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		OS:           runtime.GOOS,
 	}))
 
-	ar.logger.Info("Running plugin", "source", plugin.Source, "protocol_version", plugin.ProtocolVersion)
-	ar.logger.Info("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
-
 	if err != nil {
 		return err
 	}
+
+	ar.logger.Info("Running plugin", "source", plugin.Source, "protocol_version", plugin.ProtocolVersion)
+	ar.logger.Info("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   fmt.Sprintf("runner.%s", name),

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -293,8 +294,12 @@ func TestMergeConfig_DoesNotFetchAnnotations(t *testing.T) {
 
 func TestResolvePluginProtocols_UsesAnnotationsOnlyForImplicitOCIPlugins(t *testing.T) {
 	lookupCount := 0
-	fetchAnnotations := func(source string, option ...remote.Option) (map[string]string, error) {
+	ctx := context.Background()
+	fetchAnnotations := func(fetchCtx context.Context, source string, option ...remote.Option) (map[string]string, error) {
 		lookupCount++
+		if fetchCtx == nil {
+			t.Fatalf("expected fetchAnnotations context to be set")
+		}
 		return map[string]string{
 			AnnotationProtocolVersionKey: "2",
 		}, nil
@@ -323,7 +328,7 @@ func TestResolvePluginProtocols_UsesAnnotationsOnlyForImplicitOCIPlugins(t *test
 	runner := NewAgentRunner()
 	runner.fetchAnnotations = fetchAnnotations
 	runner.UpdateConfig(config)
-	runner.resolvePluginProtocols()
+	runner.resolvePluginProtocols(ctx)
 
 	if lookupCount != 1 {
 		t.Fatalf("Expected one annotation lookup, got %d", lookupCount)
@@ -343,7 +348,10 @@ func TestResolvePluginProtocols_UsesAnnotationsOnlyForImplicitOCIPlugins(t *test
 }
 
 func TestResolvePluginProtocols_KeepsDefaultWhenLookupFails(t *testing.T) {
-	fetchAnnotations := func(source string, option ...remote.Option) (map[string]string, error) {
+	fetchAnnotations := func(fetchCtx context.Context, source string, option ...remote.Option) (map[string]string, error) {
+		if fetchCtx == nil {
+			t.Fatalf("expected fetchAnnotations context to be set")
+		}
 		return nil, errors.New("lookup failed")
 	}
 
@@ -360,7 +368,7 @@ func TestResolvePluginProtocols_KeepsDefaultWhenLookupFails(t *testing.T) {
 	runner := NewAgentRunner()
 	runner.fetchAnnotations = fetchAnnotations
 	runner.UpdateConfig(config)
-	runner.resolvePluginProtocols()
+	runner.resolvePluginProtocols(context.Background())
 
 	if got := config.Plugins["implicit-oci"].ProtocolVersion; got != DefaultProtocolVersion {
 		t.Fatalf("Expected implicit-oci protocol version to remain %d, got %d", DefaultProtocolVersion, got)

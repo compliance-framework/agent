@@ -16,17 +16,18 @@ import (
 
 func IsOCI(source string) bool {
 	// Check whether this can be parsed as an OCI endpoint
-	_, err := name.NewTag(source, name.StrictValidation)
+	_, err := name.ParseReference(source, name.StrictValidation)
 	return err == nil
 }
 
-func GetAnnotations(source string, option ...remote.Option) (map[string]string, error) {
+func GetAnnotations(ctx context.Context, source string, option ...remote.Option) (map[string]string, error) {
 	ref, err := name.ParseReference(source)
 	if err != nil {
 		return nil, err
 	}
 
 	opts := append([]remote.Option{
+		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 	}, option...)
 

@@ -87,6 +87,11 @@ func TestIsOci(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "Basic OCI url with digest",
+			source:   "ghcr.io/example/plugin@sha256:88252198a40099248f5cc3272bc879fade8b7001a2bcb36d7b43aa8f54328714",
+			expected: true,
+		},
+		{
 			name:     "Tar artifact",
 			source:   "docker.io/library/alpine.tar.gz",
 			expected: false,
