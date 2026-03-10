@@ -83,10 +83,14 @@ func (ac *agentConfig) validate() error {
 
 	for name, pluginConfig := range ac.Plugins {
 		if pluginConfig == nil {
-			continue
+			return fmt.Errorf("plugin %s has null configuration", name)
 		}
 
 		if pluginConfig.ProtocolVersion == 0 {
+			if pluginConfig.protocolSet {
+				return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
+			}
+
 			pluginConfig.ProtocolVersion = DefaultProtocolVersion
 		}
 
@@ -174,6 +178,16 @@ func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
 	rawPlugins := fileConfig.GetStringMap("plugins")
 	for name, rawPlugin := range rawPlugins {
 		pluginConfig, ok := config.Plugins[name]
+		if rawPlugin == nil {
+			if config.Plugins == nil {
+				config.Plugins = map[string]*agentPlugin{}
+			}
+			if !ok {
+				config.Plugins[name] = nil
+			}
+			continue
+		}
+
 		if !ok || pluginConfig == nil {
 			continue
 		}
@@ -189,7 +203,7 @@ func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
 
 func updateAllPluginProtocols(agentConfig *agentConfig) {
 	for _, pluginConfig := range agentConfig.Plugins {
-		if pluginConfig.ProtocolVersion == 0 {
+		if pluginConfig != nil && !pluginConfig.protocolSet && pluginConfig.ProtocolVersion == 0 {
 			pluginConfig.ProtocolVersion = DefaultProtocolVersion
 		}
 	}

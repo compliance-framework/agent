@@ -58,6 +58,17 @@ plugins:
 `,
 			valid: false,
 		},
+		{
+			name: "Null Plugin Configuration",
+			configYamlContent: `
+api:
+  url: http://localhost:8080
+
+plugins:
+  test-plugin: null
+`,
+			valid: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -165,6 +176,12 @@ func TestUpdateAllPluginProtocols_DefaultsOnlyUnset(t *testing.T) {
 			"explicit": {
 				Source:          "ghcr.io/explicit:v2",
 				ProtocolVersion: 2,
+				protocolSet:     true,
+			},
+			"explicit-zero": {
+				Source:          "ghcr.io/explicit-zero:v1",
+				ProtocolVersion: 0,
+				protocolSet:     true,
 			},
 		},
 	}
@@ -177,6 +194,10 @@ func TestUpdateAllPluginProtocols_DefaultsOnlyUnset(t *testing.T) {
 
 	if got := config.Plugins["explicit"].ProtocolVersion; got != 2 {
 		t.Fatalf("Expected explicit plugin protocol version to remain 2, got %d", got)
+	}
+
+	if got := config.Plugins["explicit-zero"].ProtocolVersion; got != 0 {
+		t.Fatalf("Expected explicit-zero plugin protocol version to remain 0, got %d", got)
 	}
 }
 
@@ -199,6 +220,54 @@ func TestMergeConfig_RejectsUnsupportedExplicitProtocolVersion(t *testing.T) {
 	}
 
 	expected := "plugin plugin-with-invalid-version has unsupported protocol_version=100; supported values are 1 and 2"
+	if err.Error() != expected {
+		t.Fatalf("Expected error %q, got %q", expected, err.Error())
+	}
+}
+
+func TestMergeConfig_RejectsExplicitZeroProtocolVersion(t *testing.T) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	err := v.ReadConfig(bytes.NewBufferString("api:\n  url: http://localhost:8080\n\nplugins:\n  plugin-with-zero-version:\n    source: ghcr.io/some-plugin:v1\n    protocol_version: 0\n"))
+	if err != nil {
+		t.Fatalf("Error reading config: %v", err)
+	}
+
+	config, err := mergeConfig(AgentCmd(), v)
+	if err != nil {
+		t.Fatalf("Error merging config: %v", err)
+	}
+
+	err = config.validate()
+	if err == nil {
+		t.Fatalf("Expected config validation to fail for explicit zero protocol version")
+	}
+
+	expected := "plugin plugin-with-zero-version has unsupported protocol_version=0; supported values are 1 and 2"
+	if err.Error() != expected {
+		t.Fatalf("Expected error %q, got %q", expected, err.Error())
+	}
+}
+
+func TestMergeConfig_RejectsNullPluginConfiguration(t *testing.T) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	err := v.ReadConfig(bytes.NewBufferString("api:\n  url: http://localhost:8080\n\nplugins:\n  null-plugin: null\n"))
+	if err != nil {
+		t.Fatalf("Error reading config: %v", err)
+	}
+
+	config, err := mergeConfig(AgentCmd(), v)
+	if err != nil {
+		t.Fatalf("Error merging config: %v", err)
+	}
+
+	err = config.validate()
+	if err == nil {
+		t.Fatalf("Expected config validation to fail for null plugin configuration")
+	}
+
+	expected := "plugin null-plugin has null configuration"
 	if err.Error() != expected {
 		t.Fatalf("Expected error %q, got %q", expected, err.Error())
 	}

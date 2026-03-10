@@ -29,7 +29,7 @@ type RunnerV2GRPCPlugin struct {
 	plugin.Plugin
 
 	// Impl Injection
-	Impl Runner
+	Impl RunnerV2
 }
 
 func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
