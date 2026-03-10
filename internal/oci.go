@@ -2,19 +2,62 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path"
+
 	"github.com/compliance-framework/gooci/pkg/oci"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
-	"os"
-	"path"
 )
 
 func IsOCI(source string) bool {
 	// Check whether this can be parsed as an OCI endpoint
 	_, err := name.NewTag(source, name.StrictValidation)
 	return err == nil
+}
+
+func GetAnnotations(source string, option ...remote.Option) (map[string]string, error) {
+	ref, err := name.ParseReference(source)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := append([]remote.Option{
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}, option...)
+
+	desc, err := remote.Get(ref, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return annotationsFromDescriptor(desc), nil
+}
+
+func annotationsFromDescriptor(desc *remote.Descriptor) map[string]string {
+	if desc == nil {
+		return map[string]string{}
+	}
+
+	if len(desc.Manifest) > 0 {
+		var payload struct {
+			Annotations map[string]string `json:"annotations"`
+		}
+
+		if err := json.Unmarshal(desc.Manifest, &payload); err == nil && len(payload.Annotations) > 0 {
+			return payload.Annotations
+		}
+	}
+
+	if len(desc.Annotations) > 0 {
+		return desc.Annotations
+	}
+
+	return map[string]string{}
 }
 
 func Download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {

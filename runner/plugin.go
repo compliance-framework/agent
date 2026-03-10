@@ -13,6 +13,11 @@ type Runner interface {
 	Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error)
 }
 
+type RunnerV2 interface {
+	Runner
+	Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error)
+}
+
 type RunnerGRPCPlugin struct {
 	plugin.Plugin
 
@@ -42,5 +47,6 @@ var HandshakeConfig = plugin.HandshakeConfig{
 }
 
 var PluginMap = map[string]plugin.Plugin{
-	"runner": &RunnerGRPCPlugin{},
+	"runner":    &RunnerGRPCPlugin{},
+	"runner-v2": &RunnerGRPCPlugin{},
 }

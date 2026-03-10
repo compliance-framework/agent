@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/compliance-framework/agent/runner/proto"
-	"github.com/google/uuid"
-	"github.com/robfig/cron/v3"
 	"math/rand"
 	"net/http"
 	"os"
@@ -16,10 +13,15 @@ import (
 	"os/signal"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
@@ -46,11 +48,13 @@ type agentPolicy string
 type agentPluginConfig map[string]string
 
 type agentPlugin struct {
-	Schedule *string           `mapstructure:"schedule,omitempty"`
-	Source   string            `mapstructure:"source"`
-	Policies []agentPolicy     `mapstructure:"policies"`
-	Config   agentPluginConfig `mapstructure:"config"`
-	Labels   map[string]string `mapstructure:"labels"`
+	ProtocolVersion int32             `mapstructure:"protocol_version"`
+	Schedule        *string           `mapstructure:"schedule,omitempty"`
+	Source          string            `mapstructure:"source"`
+	Policies        []agentPolicy     `mapstructure:"policies"`
+	Config          agentPluginConfig `mapstructure:"config"`
+	Labels          map[string]string `mapstructure:"labels"`
+	protocolSet     bool
 }
 
 type agentConfig struct {
@@ -82,6 +86,9 @@ func (ac *agentConfig) validate() error {
 
 const AgentPluginDir = ".compliance-framework/plugins"
 const AgentPolicyDir = ".compliance-framework/policies"
+const DefaultProtocolVersion int32 = 1
+const RunnerV2ProtocolVersion int32 = 2
+const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 
 func AgentCmd() *cobra.Command {
 	var agentCmd = &cobra.Command{
@@ -138,11 +145,73 @@ func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, err
 
 	config := &agentConfig{}
 	err := fileConfig.Unmarshal(config)
+
 	if err != nil {
 		return nil, err
 	}
 
+	markExplicitPluginProtocols(fileConfig, config)
+	updateAllPluginProtocols(config)
+
 	return config, nil
+}
+
+func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
+	rawPlugins := fileConfig.GetStringMap("plugins")
+	for name, rawPlugin := range rawPlugins {
+		pluginConfig, ok := config.Plugins[name]
+		if !ok || pluginConfig == nil {
+			continue
+		}
+
+		pluginMap, ok := rawPlugin.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		_, pluginConfig.protocolSet = pluginMap["protocol_version"]
+	}
+}
+
+func updateAllPluginProtocols(agentConfig *agentConfig) {
+	for _, pluginConfig := range agentConfig.Plugins {
+		if pluginConfig.ProtocolVersion == 0 {
+			pluginConfig.ProtocolVersion = DefaultProtocolVersion
+		}
+	}
+}
+
+func protocolVersionFromAnnotations(annotations map[string]string) (int32, bool) {
+	value, ok := annotations[AnnotationProtocolVersionKey]
+	if !ok {
+		return 0, false
+	}
+
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return 0, false
+	}
+
+	if parsed < 1 {
+		return 0, false
+	}
+
+	if parsed != int64(DefaultProtocolVersion) && parsed != int64(RunnerV2ProtocolVersion) {
+		return 0, false
+	}
+
+	return int32(parsed), true
+}
+
+func runnerDispenseName(protocolVersion int32) (string, error) {
+	switch protocolVersion {
+	case DefaultProtocolVersion:
+		return "runner", nil
+	case RunnerV2ProtocolVersion:
+		return "runner-v2", nil
+	default:
+		return "", fmt.Errorf("unsupported plugin protocol_version=%d", protocolVersion)
+	}
 }
 
 func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
@@ -234,16 +303,18 @@ type AgentRunner struct {
 	mu     sync.Mutex
 	config *agentConfig
 
-	pluginLocations map[string]string
-	policyLocations map[string]string
+	pluginLocations  map[string]string
+	policyLocations  map[string]string
+	fetchAnnotations func(source string, option ...remote.Option) (map[string]string, error)
 
 	queryBundles []*rego.Rego
 }
 
 func NewAgentRunner() *AgentRunner {
 	return &AgentRunner{
-		pluginLocations: map[string]string{},
-		policyLocations: map[string]string{},
+		pluginLocations:  map[string]string{},
+		policyLocations:  map[string]string{},
+		fetchAnnotations: internal.GetAnnotations,
 	}
 }
 
@@ -266,6 +337,8 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 		return err
 	}
 
+	ar.resolvePluginProtocols()
+
 	err = ar.DownloadPolicies(ctx)
 	if err != nil {
 		ar.logger.Error("Error downloading policies", "error", err)
@@ -279,6 +352,33 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	}
 
 	return ar.runAllPlugins(ctx)
+}
+
+func (ar *AgentRunner) resolvePluginProtocols() {
+	for pluginName, pluginConfig := range ar.config.Plugins {
+		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
+			continue
+		}
+
+		annotations, err := ar.fetchAnnotations(pluginConfig.Source)
+		if err != nil {
+			ar.logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
+			continue
+		}
+
+		value, ok := annotations[AnnotationProtocolVersionKey]
+		if !ok {
+			continue
+		}
+
+		protocolVersion, ok := protocolVersionFromAnnotations(annotations)
+		if !ok {
+			ar.logger.Warn("Ignoring unsupported plugin protocol version annotation", "plugin", pluginName, "source", pluginConfig.Source, "value", value, "protocol_version", pluginConfig.ProtocolVersion)
+			continue
+		}
+
+		pluginConfig.ProtocolVersion = protocolVersion
+	}
 }
 
 // Should never return, either handles any error or panics.
@@ -363,7 +463,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 			err := ar.runPlugin(ctx, pluginName, pluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
-				ar.logger.Error("Error running plugin", "error", err)
+				ar.logger.Error("Error running plugin", "error", err, "protocol_version", pluginConfig.ProtocolVersion)
 			}
 		})
 
@@ -405,13 +505,13 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
-		logger.Debug("Running plugin", "source", source)
+		logger.Debug("Running plugin", "source", source, "protocol_version", pluginConfig.ProtocolVersion)
 
 		if _, err := os.ReadFile(source); err != nil {
 			return err
 		}
 
-		runnerInstance, err := ar.getRunnerInstance(logger, source)
+		runnerInstance, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
 
 		if err != nil {
 			return err
@@ -443,6 +543,21 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 
 		// Create a new results helper for the plugin to send results back to
 		resultsHelper := runner.NewApiHelper(logger, client, labels)
+
+		if pluginConfig.ProtocolVersion > 1 {
+			runnerV2, ok := runnerInstance.(runner.RunnerV2)
+			if !ok {
+				return fmt.Errorf("plugin %s configured as protocol_version=%d but does not support RunnerV2", pluginName, pluginConfig.ProtocolVersion)
+			}
+
+			_, err := runnerV2.Init(&proto.InitRequest{
+				PolicyPaths: policyPaths,
+			}, resultsHelper)
+
+			if err != nil {
+				return err
+			}
+		}
 
 		// TODO: Send failed results to the database?
 		_, err = runnerInstance.Eval(&proto.EvalRequest{
@@ -496,8 +611,8 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		OS:           runtime.GOOS,
 	}))
 
-	fmt.Println("Running plugin", "source", plugin.Source)
-	fmt.Println("Running plugin", "source", pluginExecutable)
+	ar.logger.Info("Running plugin", "source", plugin.Source, "protocol_version", plugin.ProtocolVersion)
+	ar.logger.Info("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
 	if err != nil {
 		return err
@@ -517,13 +632,13 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		labels[k] = v
 	}
 
-	logger.Debug("Running plugin", "source", pluginExecutable)
+	logger.Debug("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
 	if _, err := os.ReadFile(pluginExecutable); err != nil {
 		return err
 	}
 
-	runnerInstance, err := ar.getRunnerInstance(logger, pluginExecutable)
+	runnerInstance, err := ar.getRunnerInstance(logger, pluginExecutable, plugin.ProtocolVersion)
 
 	if err != nil {
 		return err
@@ -538,6 +653,21 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 
 	// Create a new results helper for the plugin to send results back to
 	resultsHelper := runner.NewApiHelper(logger, client, labels)
+
+	if plugin.ProtocolVersion > 1 {
+		runnerV2, ok := runnerInstance.(runner.RunnerV2)
+		if !ok {
+			return fmt.Errorf("plugin %s configured as protocol_version=%d but does not support RunnerV2", name, plugin.ProtocolVersion)
+		}
+
+		_, err := runnerV2.Init(&proto.InitRequest{
+			PolicyPaths: policyPaths,
+		}, resultsHelper)
+
+		if err != nil {
+			return err
+		}
+	}
 
 	// TODO: Send failed results to the database?
 	_, err = runnerInstance.Eval(&proto.EvalRequest{
@@ -581,7 +711,7 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	return nil
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runner.Runner, error) {
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.Runner, error) {
 	// We're a host! Start by launching the plugin process.
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
@@ -598,15 +728,24 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string) (runn
 		return nil, err
 	}
 
+	dispenseName, err := runnerDispenseName(protocolVersion)
+	if err != nil {
+		return nil, err
+	}
+
 	// Request the plugin
-	raw, err := rpcClient.Dispense("runner")
+	logger.Debug("Dispensing plugin", "runner", dispenseName)
+	raw, err := rpcClient.Dispense(dispenseName)
 	if err != nil {
 		return nil, err
 	}
 
 	// We should have a Greeter now! This feels like a normal interface
 	// implementation but is in fact over an RPC connection.
-	runnerInstance := raw.(runner.Runner)
+	runnerInstance, ok := raw.(runner.Runner)
+	if !ok {
+		return nil, fmt.Errorf("dispensed plugin %q does not implement runner.Runner", dispenseName)
+	}
 	return runnerInstance, nil
 }
 

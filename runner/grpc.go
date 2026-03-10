@@ -2,10 +2,13 @@ package runner
 
 import (
 	"context"
+
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type ApiHelper interface {
@@ -43,25 +46,33 @@ type GRPCClient struct {
 	broker *plugin.GRPCBroker
 }
 
-func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
-	return m.client.Configure(context.Background(), request)
-}
-
-func (m *GRPCClient) Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error) {
+func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
 	apiHelperServer := &GRPCApiHelperServer{Impl: a}
 
-	var s *grpc.Server
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-		s = grpc.NewServer(opts...)
+		s := grpc.NewServer(opts...)
 		proto.RegisterApiHelperServer(s, apiHelperServer)
-
 		return s
 	}
 
 	brokerID := m.broker.NextId()
 	go m.broker.AcceptAndServe(brokerID, serverFunc)
 
-	request.ApiServer = brokerID
+	return brokerID
+}
+
+func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
+	return m.client.Configure(context.Background(), request)
+}
+
+func (m *GRPCClient) Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error) {
+	request.ApiServer = m.startAPIServer(a)
+	resp, err := m.client.Init(context.Background(), request)
+	return resp, err
+}
+
+func (m *GRPCClient) Eval(request *proto.EvalRequest, a ApiHelper) (*proto.EvalResponse, error) {
+	request.ApiServer = m.startAPIServer(a)
 	resp, err := m.client.Eval(context.Background(), request)
 	return resp, err
 }
@@ -73,6 +84,22 @@ type GRPCServer struct {
 
 func (m *GRPCServer) Configure(ctx context.Context, req *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
 	return m.Impl.Configure(req)
+}
+
+func (m *GRPCServer) Init(ctx context.Context, req *proto.InitRequest) (*proto.InitResponse, error) {
+	runnerV2, ok := m.Impl.(RunnerV2)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "Init is only supported for protocol v2 plugins")
+	}
+
+	conn, err := m.broker.Dial(req.ApiServer)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	a := &GRPCApiHelperClient{proto.NewApiHelperClient(conn)}
+	return runnerV2.Init(req, a)
 }
 
 func (m *GRPCServer) Eval(ctx context.Context, req *proto.EvalRequest) (*proto.EvalResponse, error) {

@@ -43,3 +43,11 @@ test:  ## Run tests
 		exit 1; \
 	fi ; \
 	$(OK) Tests passed
+
+
+build: ## Build the project
+	@go build -o dist/concom main.go
+
+run: ## Run the project	
+	@go run main.go agent --config ./.config/config.yaml
+
