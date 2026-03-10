@@ -91,7 +91,7 @@ func (ac *agentConfig) validate() error {
 				return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
 			}
 
-			pluginConfig.ProtocolVersion = DefaultProtocolVersion
+			continue
 		}
 
 		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
@@ -396,26 +396,29 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 			continue
 		}
 
-		annotationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		annotations, err := ar.fetchAnnotations(annotationCtx, pluginConfig.Source)
-		cancel()
-		if err != nil {
-			ar.logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
-			continue
-		}
+		func() {
+			annotationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
 
-		value, ok := annotations[AnnotationProtocolVersionKey]
-		if !ok {
-			continue
-		}
+			annotations, err := ar.fetchAnnotations(annotationCtx, pluginConfig.Source)
+			if err != nil {
+				ar.logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
+				return
+			}
 
-		protocolVersion, ok := protocolVersionFromAnnotations(annotations)
-		if !ok {
-			ar.logger.Warn("Ignoring unsupported plugin protocol version annotation", "plugin", pluginName, "source", pluginConfig.Source, "value", value, "protocol_version", pluginConfig.ProtocolVersion)
-			continue
-		}
+			value, ok := annotations[AnnotationProtocolVersionKey]
+			if !ok {
+				return
+			}
 
-		pluginConfig.ProtocolVersion = protocolVersion
+			protocolVersion, ok := protocolVersionFromAnnotations(annotations)
+			if !ok {
+				ar.logger.Warn("Ignoring unsupported plugin protocol version annotation", "plugin", pluginName, "source", pluginConfig.Source, "value", value, "protocol_version", pluginConfig.ProtocolVersion)
+				return
+			}
+
+			pluginConfig.ProtocolVersion = protocolVersion
+		}()
 	}
 }
 
@@ -772,7 +775,7 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, proto
 	}
 
 	// Request the plugin
-	logger.Debug("Dispensing plugin", "runner", dispenseName)
+	logger.Debug("Dispensing plugin", "dispense_name", dispenseName)
 	raw, err := rpcClient.Dispense(dispenseName)
 	if err != nil {
 		return nil, err

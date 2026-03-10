@@ -65,3 +65,34 @@ func TestAnnotationsFromDescriptor(t *testing.T) {
 		})
 	}
 }
+
+func TestAnnotationsFromDescriptor_ReturnsDefensiveCopy(t *testing.T) {
+	t.Run("Descriptor annotations are copied", func(t *testing.T) {
+		desc := &remote.Descriptor{
+			Descriptor: v1.Descriptor{
+				Annotations: map[string]string{"from": "descriptor"},
+			},
+		}
+
+		got := annotationsFromDescriptor(desc)
+		got["from"] = "modified"
+
+		if desc.Annotations["from"] != "descriptor" {
+			t.Fatalf("expected descriptor annotations to remain unchanged, got %q", desc.Annotations["from"])
+		}
+	})
+
+	t.Run("Manifest annotations are copied", func(t *testing.T) {
+		desc := &remote.Descriptor{
+			Manifest: []byte(`{"schemaVersion":2,"annotations":{"org.ccf.plugin.protocol.version":"2"}}`),
+		}
+
+		got := annotationsFromDescriptor(desc)
+		got["org.ccf.plugin.protocol.version"] = "1"
+
+		again := annotationsFromDescriptor(desc)
+		if again["org.ccf.plugin.protocol.version"] != "2" {
+			t.Fatalf("expected manifest annotations to remain unchanged, got %q", again["org.ccf.plugin.protocol.version"])
+		}
+	})
+}

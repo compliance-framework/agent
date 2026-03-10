@@ -50,15 +50,24 @@ func annotationsFromDescriptor(desc *remote.Descriptor) map[string]string {
 		}
 
 		if err := json.Unmarshal(desc.Manifest, &payload); err == nil && len(payload.Annotations) > 0 {
-			return payload.Annotations
+			return copyAnnotations(payload.Annotations)
 		}
 	}
 
 	if len(desc.Annotations) > 0 {
-		return desc.Annotations
+		return copyAnnotations(desc.Annotations)
 	}
 
 	return map[string]string{}
+}
+
+func copyAnnotations(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+
+	return out
 }
 
 func Download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
