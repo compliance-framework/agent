@@ -46,6 +46,7 @@ test:  ## Run tests
 
 
 build: ## Build the project
+	@mkdir -p dist
 	@go build -o dist/concom main.go
 
 run: ## Run the project	

@@ -81,6 +81,20 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
+	for name, pluginConfig := range ac.Plugins {
+		if pluginConfig == nil {
+			continue
+		}
+
+		if pluginConfig.ProtocolVersion == 0 {
+			pluginConfig.ProtocolVersion = DefaultProtocolVersion
+		}
+
+		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
+			return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
+		}
+	}
+
 	return nil
 }
 
@@ -181,6 +195,10 @@ func updateAllPluginProtocols(agentConfig *agentConfig) {
 	}
 }
 
+func isSupportedProtocolVersion(protocolVersion int32) bool {
+	return protocolVersion == DefaultProtocolVersion || protocolVersion == RunnerV2ProtocolVersion
+}
+
 func protocolVersionFromAnnotations(annotations map[string]string) (int32, bool) {
 	value, ok := annotations[AnnotationProtocolVersionKey]
 	if !ok {
@@ -196,7 +214,7 @@ func protocolVersionFromAnnotations(annotations map[string]string) (int32, bool)
 		return 0, false
 	}
 
-	if parsed != int64(DefaultProtocolVersion) && parsed != int64(RunnerV2ProtocolVersion) {
+	if !isSupportedProtocolVersion(int32(parsed)) {
 		return 0, false
 	}
 

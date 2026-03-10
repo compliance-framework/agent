@@ -46,6 +46,10 @@ type GRPCClient struct {
 	broker *plugin.GRPCBroker
 }
 
+type GRPCClientV2 struct {
+	*GRPCClient
+}
+
 func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
 	apiHelperServer := &GRPCApiHelperServer{Impl: a}
 
@@ -65,7 +69,7 @@ func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.Configur
 	return m.client.Configure(context.Background(), request)
 }
 
-func (m *GRPCClient) Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error) {
+func (m *GRPCClientV2) Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error) {
 	request.ApiServer = m.startAPIServer(a)
 	resp, err := m.client.Init(context.Background(), request)
 	return resp, err

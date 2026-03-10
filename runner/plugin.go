@@ -25,6 +25,13 @@ type RunnerGRPCPlugin struct {
 	Impl Runner
 }
 
+type RunnerV2GRPCPlugin struct {
+	plugin.Plugin
+
+	// Impl Injection
+	Impl Runner
+}
+
 func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
 	proto.RegisterRunnerServer(s, &GRPCServer{
 		Impl:   p.Impl,
@@ -40,6 +47,23 @@ func (p *RunnerGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBr
 	}, nil
 }
 
+func (p *RunnerV2GRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
+	proto.RegisterRunnerServer(s, &GRPCServer{
+		Impl:   p.Impl,
+		broker: broker,
+	})
+	return nil
+}
+
+func (p *RunnerV2GRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+	return &GRPCClientV2{
+		GRPCClient: &GRPCClient{
+			client: proto.NewRunnerClient(c),
+			broker: broker,
+		},
+	}, nil
+}
+
 var HandshakeConfig = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
 	MagicCookieKey:   "RUNNER_PLUGIN",
@@ -48,5 +72,5 @@ var HandshakeConfig = plugin.HandshakeConfig{
 
 var PluginMap = map[string]plugin.Plugin{
 	"runner":    &RunnerGRPCPlugin{},
-	"runner-v2": &RunnerGRPCPlugin{},
+	"runner-v2": &RunnerV2GRPCPlugin{},
 }

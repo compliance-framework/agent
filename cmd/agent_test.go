@@ -45,6 +45,19 @@ api:
 `,
 			valid: false,
 		},
+		{
+			name: "Unsupported Explicit Protocol Version",
+			configYamlContent: `
+api:
+  url: http://localhost:8080
+
+plugins:
+  test-plugin:
+    source: ghcr.io/some-plugin:v1
+    protocol_version: 100
+`,
+			valid: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -164,6 +177,30 @@ func TestUpdateAllPluginProtocols_DefaultsOnlyUnset(t *testing.T) {
 
 	if got := config.Plugins["explicit"].ProtocolVersion; got != 2 {
 		t.Fatalf("Expected explicit plugin protocol version to remain 2, got %d", got)
+	}
+}
+
+func TestMergeConfig_RejectsUnsupportedExplicitProtocolVersion(t *testing.T) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	err := v.ReadConfig(bytes.NewBufferString("api:\n  url: http://localhost:8080\n\nplugins:\n  plugin-with-invalid-version:\n    source: ghcr.io/some-plugin:v1\n    protocol_version: 100\n"))
+	if err != nil {
+		t.Fatalf("Error reading config: %v", err)
+	}
+
+	config, err := mergeConfig(AgentCmd(), v)
+	if err != nil {
+		t.Fatalf("Error merging config: %v", err)
+	}
+
+	err = config.validate()
+	if err == nil {
+		t.Fatalf("Expected config validation to fail for unsupported protocol version")
+	}
+
+	expected := "plugin plugin-with-invalid-version has unsupported protocol_version=100; supported values are 1 and 2"
+	if err.Error() != expected {
+		t.Fatalf("Expected error %q, got %q", expected, err.Error())
 	}
 }
 

@@ -31,3 +31,15 @@ func TestGRPCServerInitReturnsUnimplementedForRunnerV1(t *testing.T) {
 		t.Fatalf("expected code %v, got %v", codes.Unimplemented, status.Code(err))
 	}
 }
+
+func TestGRPCClientCapabilitiesMatchProtocolVersion(t *testing.T) {
+	v1Client := &GRPCClient{}
+	if _, ok := interface{}(v1Client).(RunnerV2); ok {
+		t.Fatalf("expected v1 gRPC client to not implement RunnerV2")
+	}
+
+	v2Client := &GRPCClientV2{GRPCClient: &GRPCClient{}}
+	if _, ok := interface{}(v2Client).(RunnerV2); !ok {
+		t.Fatalf("expected v2 gRPC client to implement RunnerV2")
+	}
+}
