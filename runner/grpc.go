@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"sync"
 
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/hashicorp/go-hclog"
@@ -28,12 +29,27 @@ func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*pr
 }
 
 type GRPCApiHelperServer struct {
+	mu sync.RWMutex
+
 	// This is the real implementation
 	Impl ApiHelper
 }
 
+func (m *GRPCApiHelperServer) SetImpl(impl ApiHelper) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Impl = impl
+}
+
 func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.CreateEvidenceRequest) (resp *proto.CreateEvidenceResponse, err error) {
-	err = m.Impl.CreateEvidence(ctx, req.GetEvidence())
+	m.mu.RLock()
+	impl := m.Impl
+	m.mu.RUnlock()
+	if impl == nil {
+		return nil, status.Error(codes.FailedPrecondition, "API helper server is not configured")
+	}
+
+	err = impl.CreateEvidence(ctx, req.GetEvidence())
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +60,10 @@ func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.Cre
 type GRPCClient struct {
 	client proto.RunnerClient
 	broker *plugin.GRPCBroker
+
+	apiHelperServer *GRPCApiHelperServer
+	apiServerID     uint32
+	apiServerOnce   sync.Once
 }
 
 type GRPCClientV2 struct {
@@ -51,18 +71,22 @@ type GRPCClientV2 struct {
 }
 
 func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
-	apiHelperServer := &GRPCApiHelperServer{Impl: a}
+	m.apiServerOnce.Do(func() {
+		m.apiHelperServer = &GRPCApiHelperServer{}
 
-	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-		s := grpc.NewServer(opts...)
-		proto.RegisterApiHelperServer(s, apiHelperServer)
-		return s
-	}
+		serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
+			s := grpc.NewServer(opts...)
+			proto.RegisterApiHelperServer(s, m.apiHelperServer)
+			return s
+		}
 
-	brokerID := m.broker.NextId()
-	go m.broker.AcceptAndServe(brokerID, serverFunc)
+		m.apiServerID = m.broker.NextId()
+		go m.broker.AcceptAndServe(m.apiServerID, serverFunc)
+	})
 
-	return brokerID
+	m.apiHelperServer.SetImpl(a)
+
+	return m.apiServerID
 }
 
 func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {

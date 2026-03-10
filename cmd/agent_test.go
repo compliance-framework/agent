@@ -375,39 +375,6 @@ func TestResolvePluginProtocols_KeepsDefaultWhenLookupFails(t *testing.T) {
 	}
 }
 
-func TestResolvePluginProtocols_UsesAnnotationsForImplicitOCIDigestPlugins(t *testing.T) {
-	lookupCount := 0
-	fetchAnnotations := func(fetchCtx context.Context, source string, option ...remote.Option) (map[string]string, error) {
-		lookupCount++
-		return map[string]string{
-			AnnotationProtocolVersionKey: "2",
-		}, nil
-	}
-
-	config := &agentConfig{
-		Plugins: map[string]*agentPlugin{
-			"implicit-oci-digest": {
-				Source:          "ghcr.io/example/plugin@sha256:88252198a40099248f5cc3272bc879fade8b7001a2bcb36d7b43aa8f54328714",
-				ProtocolVersion: DefaultProtocolVersion,
-				protocolSet:     false,
-			},
-		},
-	}
-
-	runner := NewAgentRunner()
-	runner.fetchAnnotations = fetchAnnotations
-	runner.UpdateConfig(config)
-	runner.resolvePluginProtocols(context.Background())
-
-	if lookupCount != 1 {
-		t.Fatalf("Expected one annotation lookup, got %d", lookupCount)
-	}
-
-	if got := config.Plugins["implicit-oci-digest"].ProtocolVersion; got != RunnerV2ProtocolVersion {
-		t.Fatalf("Expected implicit-oci-digest protocol version to be %d, got %d", RunnerV2ProtocolVersion, got)
-	}
-}
-
 func TestProtocolVersionFromAnnotations(t *testing.T) {
 	tests := []struct {
 		name        string

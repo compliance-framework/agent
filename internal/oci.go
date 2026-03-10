@@ -20,12 +20,6 @@ func IsOCI(source string) bool {
 	return err == nil
 }
 
-func IsOCIReference(source string) bool {
-	// Check whether this can be parsed as an OCI endpoint
-	_, err := name.ParseReference(source, name.StrictValidation)
-	return err == nil
-}
-
 func GetAnnotations(ctx context.Context, source string, option ...remote.Option) (map[string]string, error) {
 	ref, err := name.ParseReference(source, name.StrictValidation)
 	if err != nil {
