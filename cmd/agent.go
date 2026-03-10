@@ -392,7 +392,7 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 	}
 
 	for pluginName, pluginConfig := range ar.config.Plugins {
-		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
+		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCIReference(pluginConfig.Source) {
 			continue
 		}
 

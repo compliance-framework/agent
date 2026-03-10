@@ -89,7 +89,7 @@ func TestIsOci(t *testing.T) {
 		{
 			name:     "Basic OCI url with digest",
 			source:   "ghcr.io/example/plugin@sha256:88252198a40099248f5cc3272bc879fade8b7001a2bcb36d7b43aa8f54328714",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "Tar artifact",
@@ -116,6 +116,38 @@ func TestIsOci(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsOCI(tt.source); got != tt.expected {
 				t.Errorf("isOciPlugin() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsOCIReference(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		expected bool
+	}{
+		{
+			name:     "Basic OCI url with version",
+			source:   "docker.io/library/alpine:1.0",
+			expected: true,
+		},
+		{
+			name:     "Basic OCI url with digest",
+			source:   "ghcr.io/example/plugin@sha256:88252198a40099248f5cc3272bc879fade8b7001a2bcb36d7b43aa8f54328714",
+			expected: true,
+		},
+		{
+			name:     "Tar artifact",
+			source:   "docker.io/library/alpine.tar.gz",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsOCIReference(tt.source); got != tt.expected {
+				t.Errorf("IsOCIReference() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
