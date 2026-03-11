@@ -16,6 +16,14 @@ message ConfigureResponse {
   bytes value = 1;
 }
 
+message InitRequest {
+  repeated string policyPaths = 1;
+  uint32 apiServer = 2;
+}
+
+message InitResponse {
+}
+
 message EvalRequest {
   repeated string policyPaths = 1;
   uint32 apiServer = 2;
@@ -33,4 +41,5 @@ message EvalResponse {
 service Runner {
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);
   rpc Eval(EvalRequest) returns (EvalResponse);
+  rpc Init(InitRequest) returns (InitResponse);
 }
