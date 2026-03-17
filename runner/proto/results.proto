@@ -9,8 +9,14 @@ message CreateEvidenceRequest {
   repeated Evidence Evidence = 1;
 }
 
+message UpsertRiskTemplatesRequest {
+  repeated RiskTemplate RiskTemplates = 1;
+}
+
 message CreateEvidenceResponse {}
+message UpsertRiskTemplatesResponse {}
 
 service ApiHelper {
   rpc CreateEvidence(CreateEvidenceRequest) returns (CreateEvidenceResponse);
+  rpc UpsertRiskTemplates(UpsertRiskTemplatesRequest) returns (UpsertRiskTemplatesResponse);
 }

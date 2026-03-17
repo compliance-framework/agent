@@ -32,14 +32,13 @@ func TestGRPCServerInitReturnsUnimplementedForRunnerV1(t *testing.T) {
 	}
 }
 
-func TestGRPCClientCapabilitiesMatchProtocolVersion(t *testing.T) {
-	v1Client := &GRPCClient{}
-	if _, ok := interface{}(v1Client).(RunnerV2); ok {
-		t.Fatalf("expected v1 gRPC client to not implement RunnerV2")
+func TestCanonicalRunnerClientSupportsInitLifecycle(t *testing.T) {
+	client, err := (&RunnerGRPCPlugin{}).GRPCClient(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("GRPCClient() error = %v", err)
 	}
 
-	v2Client := &GRPCClientV2{GRPCClient: &GRPCClient{}}
-	if _, ok := interface{}(v2Client).(RunnerV2); !ok {
-		t.Fatalf("expected v2 gRPC client to implement RunnerV2")
+	if _, ok := client.(RunnerV2); !ok {
+		t.Fatal("expected canonical runner client to implement RunnerV2")
 	}
 }

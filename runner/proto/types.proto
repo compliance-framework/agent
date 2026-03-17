@@ -191,3 +191,34 @@ message Evidence {
   // Did we satisfy what was being tested for, or did we fail ?
   EvidenceStatus Status = 16;
 }
+
+message Threat {
+  string System = 1;
+  string ExternalID = 2;
+  string Title = 3;
+  string Url = 4;
+}
+
+message RemediationTask {
+  string Title = 1;
+  int32 OrderIndex = 2; 
+}
+
+message Remediation {
+  string Title = 1;
+  string Description = 2;
+  repeated RemediationTask Tasks = 3;
+}
+
+message RiskTemplate {
+  string UUID = 1;
+  string PolicyPackage = 2;
+  string Name = 3;
+  string Title = 4;
+  string Statement = 5;
+  string Likelihood_hint = 6;
+  string Impact_hint = 7;
+  repeated string Violation_ids = 8;
+  repeated Threat Threats = 9;
+  Remediation Remediation = 10;
+}

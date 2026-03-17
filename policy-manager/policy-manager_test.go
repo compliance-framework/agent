@@ -2,16 +2,32 @@ package policy_manager
 
 import (
 	"context"
+	"os"
+	"testing"
+
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/bundle"
 	"github.com/open-policy-agent/opa/v1/rego"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
 )
 
 func buildPolicyManager(regoContents []byte) *PolicyManager {
+	return buildPolicyManagerWithModules(map[string][]byte{
+		"test.rego": regoContents,
+	})
+}
+
+func buildPolicyManagerWithModules(modules map[string][]byte) *PolicyManager {
+	bundleModules := make([]bundle.ModuleFile, 0, len(modules))
+	for path, regoContents := range modules {
+		bundleModules = append(bundleModules, bundle.ModuleFile{
+			Path:   path,
+			Parsed: ast.MustParseModule(string(regoContents[:])),
+			Raw:    []byte(regoContents),
+		})
+	}
+
 	return &PolicyManager{
 		logger: hclog.New(&hclog.LoggerOptions{
 			Level:      hclog.Debug,
@@ -19,13 +35,7 @@ func buildPolicyManager(regoContents []byte) *PolicyManager {
 		}),
 		loaderOptions: []func(r *rego.Rego){
 			rego.ParsedBundle("test", &bundle.Bundle{
-				Modules: []bundle.ModuleFile{
-					{
-						Path:   "test.rego",
-						Parsed: ast.MustParseModule(string(regoContents[:])),
-						Raw:    []byte(regoContents),
-					},
-				},
+				Modules:  bundleModules,
 				Manifest: bundle.Manifest{Revision: "test", Roots: &[]string{"/"}},
 			}),
 		},
@@ -108,4 +118,101 @@ func TestPolicyManager(t *testing.T) {
 	//
 	//	assert.EqualError(t, err, "Activity entry contains unexpected key: nonsense")
 	//})
+
+	t.Run("Policy Manager evaluates risk templates with helper refs without evaluating unrelated rules", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents := []byte(`package compliance_framework.static_risk_templates
+
+template_name := "password_auth_enabled"
+template_title := "Password authentication enabled"
+template_statement := "SSH password authentication is enabled."
+template_likelihood := "medium"
+template_impact := "high"
+template_violation_ids := ["ssh.password_auth_enabled"]
+template_threat := {
+	"system": "ATT&CK",
+	"external_id": "T1110",
+	"title": "Brute Force",
+	"url": "https://attack.mitre.org/techniques/T1110/"
+}
+template_remediation := {
+	"title": "Disable password authentication",
+	"description": "Use SSH keys instead of passwords.",
+	"tasks": [{"title": "Set PasswordAuthentication to no"}]
+}
+
+risk_templates := [{
+	"name": template_name,
+	"title": template_title,
+	"statement": template_statement,
+	"likelihood_hint": template_likelihood,
+	"impact_hint": template_impact,
+	"violation_ids": template_violation_ids,
+	"threat_refs": [template_threat],
+	"remediation": template_remediation,
+}]
+
+violation[{"title": "this should not be evaluated"}] if {
+	_ := 1 / 0
+}
+`)
+
+		templates, err := buildPolicyManager(regoContents).GetRiskTemplates(ctx)
+
+		assert.NoError(t, err)
+		if assert.Len(t, templates, 1) {
+			template := templates[0]
+			assert.NotEmpty(t, template.UUID)
+			assert.Equal(t, "compliance_framework.static_risk_templates", template.PolicyPackage)
+			assert.Equal(t, "password_auth_enabled", template.Name)
+			assert.Equal(t, "Password authentication enabled", template.Title)
+			assert.Equal(t, "SSH password authentication is enabled.", template.Statement)
+			assert.Equal(t, "medium", template.LikelihoodHint)
+			assert.Equal(t, "high", template.ImpactHint)
+			assert.Equal(t, []string{"ssh.password_auth_enabled"}, template.ViolationIds)
+			if assert.Len(t, template.Threats, 1) {
+				assert.Equal(t, "ATT&CK", template.Threats[0].System)
+				assert.Equal(t, "T1110", template.Threats[0].ExternalID)
+			}
+			if assert.NotNil(t, template.Remediation) {
+				assert.Equal(t, "Disable password authentication", template.Remediation.Title)
+				if assert.Len(t, template.Remediation.Tasks, 1) {
+					assert.Equal(t, "Set PasswordAuthentication to no", template.Remediation.Tasks[0].Title)
+				}
+			}
+		}
+	})
+
+	t.Run("Policy Manager skips modules without static risk templates", func(t *testing.T) {
+		ctx := context.Background()
+
+		modules := map[string][]byte{
+			"no_templates.rego": []byte(`package compliance_framework.no_templates
+
+violation[{"title": "no template here"}] if {
+	input.violated
+}
+`),
+			"with_templates.rego": []byte(`package compliance_framework.with_templates
+
+risk_templates := [{
+	"name": "password_auth_enabled",
+	"title": "Password authentication enabled",
+	"statement": "SSH password authentication is enabled.",
+	"likelihood_hint": "medium",
+	"impact_hint": "high",
+	"violation_ids": ["ssh.password_auth_enabled"]
+}]
+`),
+		}
+
+		templates, err := buildPolicyManagerWithModules(modules).GetRiskTemplates(ctx)
+
+		assert.NoError(t, err)
+		if assert.Len(t, templates, 1) {
+			assert.Equal(t, "password_auth_enabled", templates[0].Name)
+			assert.Equal(t, "compliance_framework.with_templates", templates[0].PolicyPackage)
+		}
+	})
 }

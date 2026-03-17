@@ -217,3 +217,42 @@ func EvidenceProtoToSdk(evidence *proto.Evidence) *types.Evidence {
 		},
 	}
 }
+
+func ThreatProtoToSdk(threat *proto.Threat) types.Threat {
+	return types.Threat{
+		System:     threat.GetSystem(),
+		ExternalID: threat.GetExternalID(),
+		Title:      threat.GetTitle(),
+		Url:        threat.GetUrl(),
+	}
+}
+
+func RemediationTaskProtoToSdk(task *proto.RemediationTask) types.RemediationTask {
+	return types.RemediationTask{
+		Title:      task.GetTitle(),
+		OrderIndex: int(task.GetOrderIndex()),
+	}
+}
+
+func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
+	return &types.Remediation{
+		Title:       remediation.GetTitle(),
+		Description: remediation.GetDescription(),
+		Tasks:       *ProtoToSdk(remediation.GetTasks(), RemediationTaskProtoToSdk),
+	}
+}
+
+func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
+	return &types.RiskTemplate{
+		ID:             riskTemplate.GetUUID(),
+		PolicyPackage:  riskTemplate.GetPolicyPackage(),
+		Name:           riskTemplate.GetName(),
+		Title:          riskTemplate.GetTitle(),
+		Statement:      riskTemplate.GetStatement(),
+		LikelihoodHint: riskTemplate.GetLikelihoodHint(),
+		ImpactHint:     riskTemplate.GetImpactHint(),
+		ViolationIds:   riskTemplate.GetViolationIds(),
+		Threats:        *ProtoToSdk(riskTemplate.GetThreats(), ThreatProtoToSdk),
+		Remediation:    RemediationProtoToSdk(riskTemplate.Remediation),
+	}
+}

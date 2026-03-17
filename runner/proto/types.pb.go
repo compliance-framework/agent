@@ -1314,6 +1314,302 @@ func (x *Evidence) GetStatus() *EvidenceStatus {
 	return nil
 }
 
+type Threat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	System        string                 `protobuf:"bytes,1,opt,name=System,proto3" json:"System,omitempty"`
+	ExternalID    string                 `protobuf:"bytes,2,opt,name=ExternalID,proto3" json:"ExternalID,omitempty"`
+	Title         string                 `protobuf:"bytes,3,opt,name=Title,proto3" json:"Title,omitempty"`
+	Url           string                 `protobuf:"bytes,4,opt,name=Url,proto3" json:"Url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Threat) Reset() {
+	*x = Threat{}
+	mi := &file_runner_proto_types_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Threat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Threat) ProtoMessage() {}
+
+func (x *Threat) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_types_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Threat.ProtoReflect.Descriptor instead.
+func (*Threat) Descriptor() ([]byte, []int) {
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *Threat) GetSystem() string {
+	if x != nil {
+		return x.System
+	}
+	return ""
+}
+
+func (x *Threat) GetExternalID() string {
+	if x != nil {
+		return x.ExternalID
+	}
+	return ""
+}
+
+func (x *Threat) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Threat) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type RemediationTask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=Title,proto3" json:"Title,omitempty"`
+	OrderIndex    int32                  `protobuf:"varint,2,opt,name=OrderIndex,proto3" json:"OrderIndex,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemediationTask) Reset() {
+	*x = RemediationTask{}
+	mi := &file_runner_proto_types_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemediationTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemediationTask) ProtoMessage() {}
+
+func (x *RemediationTask) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_types_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemediationTask.ProtoReflect.Descriptor instead.
+func (*RemediationTask) Descriptor() ([]byte, []int) {
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RemediationTask) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *RemediationTask) GetOrderIndex() int32 {
+	if x != nil {
+		return x.OrderIndex
+	}
+	return 0
+}
+
+type Remediation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=Title,proto3" json:"Title,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=Description,proto3" json:"Description,omitempty"`
+	Tasks         []*RemediationTask     `protobuf:"bytes,3,rep,name=Tasks,proto3" json:"Tasks,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Remediation) Reset() {
+	*x = Remediation{}
+	mi := &file_runner_proto_types_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Remediation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Remediation) ProtoMessage() {}
+
+func (x *Remediation) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_types_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Remediation.ProtoReflect.Descriptor instead.
+func (*Remediation) Descriptor() ([]byte, []int) {
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Remediation) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Remediation) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Remediation) GetTasks() []*RemediationTask {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+type RiskTemplate struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	UUID           string                 `protobuf:"bytes,1,opt,name=UUID,proto3" json:"UUID,omitempty"`
+	PolicyPackage  string                 `protobuf:"bytes,2,opt,name=PolicyPackage,proto3" json:"PolicyPackage,omitempty"`
+	Name           string                 `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
+	Title          string                 `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
+	Statement      string                 `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
+	LikelihoodHint string                 `protobuf:"bytes,6,opt,name=Likelihood_hint,json=LikelihoodHint,proto3" json:"Likelihood_hint,omitempty"`
+	ImpactHint     string                 `protobuf:"bytes,7,opt,name=Impact_hint,json=ImpactHint,proto3" json:"Impact_hint,omitempty"`
+	ViolationIds   []string               `protobuf:"bytes,8,rep,name=Violation_ids,json=ViolationIds,proto3" json:"Violation_ids,omitempty"`
+	Threats        []*Threat              `protobuf:"bytes,9,rep,name=Threats,proto3" json:"Threats,omitempty"`
+	Remediation    *Remediation           `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RiskTemplate) Reset() {
+	*x = RiskTemplate{}
+	mi := &file_runner_proto_types_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RiskTemplate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RiskTemplate) ProtoMessage() {}
+
+func (x *RiskTemplate) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_types_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RiskTemplate.ProtoReflect.Descriptor instead.
+func (*RiskTemplate) Descriptor() ([]byte, []int) {
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RiskTemplate) GetUUID() string {
+	if x != nil {
+		return x.UUID
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetPolicyPackage() string {
+	if x != nil {
+		return x.PolicyPackage
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetStatement() string {
+	if x != nil {
+		return x.Statement
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetLikelihoodHint() string {
+	if x != nil {
+		return x.LikelihoodHint
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetImpactHint() string {
+	if x != nil {
+		return x.ImpactHint
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetViolationIds() []string {
+	if x != nil {
+		return x.ViolationIds
+	}
+	return nil
+}
+
+func (x *RiskTemplate) GetThreats() []*Threat {
+	if x != nil {
+		return x.Threats
+	}
+	return nil
+}
+
+func (x *RiskTemplate) GetRemediation() *Remediation {
+	if x != nil {
+		return x.Remediation
+	}
+	return nil
+}
+
 var File_runner_proto_types_proto protoreflect.FileDescriptor
 
 const file_runner_proto_types_proto_rawDesc = "" +
@@ -1454,7 +1750,36 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\n" +
 	"\b_RemarksB\n" +
 	"\n" +
-	"\b_Expires*c\n" +
+	"\b_Expires\"h\n" +
+	"\x06Threat\x12\x16\n" +
+	"\x06System\x18\x01 \x01(\tR\x06System\x12\x1e\n" +
+	"\n" +
+	"ExternalID\x18\x02 \x01(\tR\n" +
+	"ExternalID\x12\x14\n" +
+	"\x05Title\x18\x03 \x01(\tR\x05Title\x12\x10\n" +
+	"\x03Url\x18\x04 \x01(\tR\x03Url\"G\n" +
+	"\x0fRemediationTask\x12\x14\n" +
+	"\x05Title\x18\x01 \x01(\tR\x05Title\x12\x1e\n" +
+	"\n" +
+	"OrderIndex\x18\x02 \x01(\x05R\n" +
+	"OrderIndex\"s\n" +
+	"\vRemediation\x12\x14\n" +
+	"\x05Title\x18\x01 \x01(\tR\x05Title\x12 \n" +
+	"\vDescription\x18\x02 \x01(\tR\vDescription\x12,\n" +
+	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xde\x02\n" +
+	"\fRiskTemplate\x12\x12\n" +
+	"\x04UUID\x18\x01 \x01(\tR\x04UUID\x12$\n" +
+	"\rPolicyPackage\x18\x02 \x01(\tR\rPolicyPackage\x12\x12\n" +
+	"\x04Name\x18\x03 \x01(\tR\x04Name\x12\x14\n" +
+	"\x05Title\x18\x04 \x01(\tR\x05Title\x12\x1c\n" +
+	"\tStatement\x18\x05 \x01(\tR\tStatement\x12'\n" +
+	"\x0fLikelihood_hint\x18\x06 \x01(\tR\x0eLikelihoodHint\x12\x1f\n" +
+	"\vImpact_hint\x18\a \x01(\tR\n" +
+	"ImpactHint\x12#\n" +
+	"\rViolation_ids\x18\b \x03(\tR\fViolationIds\x12'\n" +
+	"\aThreats\x18\t \x03(\v2\r.proto.ThreatR\aThreats\x124\n" +
+	"\vRemediation\x18\n" +
+	" \x01(\v2\x12.proto.RemediationR\vRemediation*c\n" +
 	"\x13EvidenceStatusState\x12#\n" +
 	"\x1fEVIDENCE_STATUS_STATE_SATISFIED\x10\x00\x12'\n" +
 	"#EVIDENCE_STATUS_STATE_NOT_SATISFIED\x10\x01*J\n" +
@@ -1475,7 +1800,7 @@ func file_runner_proto_types_proto_rawDescGZIP() []byte {
 }
 
 var file_runner_proto_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_runner_proto_types_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_runner_proto_types_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_runner_proto_types_proto_goTypes = []any{
 	(EvidenceStatusState)(0),                  // 0: proto.EvidenceStatusState
 	(SubjectType)(0),                          // 1: proto.SubjectType
@@ -1493,8 +1818,12 @@ var file_runner_proto_types_proto_goTypes = []any{
 	(*InventoryItem)(nil),                     // 13: proto.InventoryItem
 	(*Subject)(nil),                           // 14: proto.Subject
 	(*Evidence)(nil),                          // 15: proto.Evidence
-	nil,                                       // 16: proto.Evidence.LabelsEntry
-	(*timestamppb.Timestamp)(nil),             // 17: google.protobuf.Timestamp
+	(*Threat)(nil),                            // 16: proto.Threat
+	(*RemediationTask)(nil),                   // 17: proto.RemediationTask
+	(*Remediation)(nil),                       // 18: proto.Remediation
+	(*RiskTemplate)(nil),                      // 19: proto.RiskTemplate
+	nil,                                       // 20: proto.Evidence.LabelsEntry
+	(*timestamppb.Timestamp)(nil),             // 21: google.protobuf.Timestamp
 }
 var file_runner_proto_types_proto_depIdxs = []int32{
 	3,  // 0: proto.OriginActor.Links:type_name -> proto.Link
@@ -1516,10 +1845,10 @@ var file_runner_proto_types_proto_depIdxs = []int32{
 	1,  // 16: proto.Subject.Type:type_name -> proto.SubjectType
 	3,  // 17: proto.Subject.Links:type_name -> proto.Link
 	2,  // 18: proto.Subject.Props:type_name -> proto.Property
-	16, // 19: proto.Evidence.Labels:type_name -> proto.Evidence.LabelsEntry
-	17, // 20: proto.Evidence.Start:type_name -> google.protobuf.Timestamp
-	17, // 21: proto.Evidence.End:type_name -> google.protobuf.Timestamp
-	17, // 22: proto.Evidence.Expires:type_name -> google.protobuf.Timestamp
+	20, // 19: proto.Evidence.Labels:type_name -> proto.Evidence.LabelsEntry
+	21, // 20: proto.Evidence.Start:type_name -> google.protobuf.Timestamp
+	21, // 21: proto.Evidence.End:type_name -> google.protobuf.Timestamp
+	21, // 22: proto.Evidence.Expires:type_name -> google.protobuf.Timestamp
 	3,  // 23: proto.Evidence.Links:type_name -> proto.Link
 	2,  // 24: proto.Evidence.Props:type_name -> proto.Property
 	5,  // 25: proto.Evidence.Origins:type_name -> proto.Origin
@@ -1528,11 +1857,14 @@ var file_runner_proto_types_proto_depIdxs = []int32{
 	11, // 28: proto.Evidence.Components:type_name -> proto.Component
 	14, // 29: proto.Evidence.Subjects:type_name -> proto.Subject
 	8,  // 30: proto.Evidence.Status:type_name -> proto.EvidenceStatus
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	17, // 31: proto.Remediation.Tasks:type_name -> proto.RemediationTask
+	16, // 32: proto.RiskTemplate.Threats:type_name -> proto.Threat
+	18, // 33: proto.RiskTemplate.Remediation:type_name -> proto.Remediation
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_types_proto_init() }
@@ -1551,7 +1883,7 @@ func file_runner_proto_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_types_proto_rawDesc), len(file_runner_proto_types_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   15,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -32,36 +32,35 @@ type RunnerV2GRPCPlugin struct {
 	Impl RunnerV2
 }
 
-func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
+func registerRunnerServer(broker *plugin.GRPCBroker, s *grpc.Server, impl Runner) error {
 	proto.RegisterRunnerServer(s, &GRPCServer{
-		Impl:   p.Impl,
+		Impl:   impl,
 		broker: broker,
 	})
 	return nil
 }
 
-func (p *RunnerGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+func newGRPCClient(broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return &GRPCClient{
 		client: proto.NewRunnerClient(c),
 		broker: broker,
 	}, nil
 }
 
+func (p *RunnerGRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
+	return registerRunnerServer(broker, s, p.Impl)
+}
+
+func (p *RunnerGRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+	return newGRPCClient(broker, c)
+}
+
 func (p *RunnerV2GRPCPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
-	proto.RegisterRunnerServer(s, &GRPCServer{
-		Impl:   p.Impl,
-		broker: broker,
-	})
-	return nil
+	return registerRunnerServer(broker, s, p.Impl)
 }
 
 func (p *RunnerV2GRPCPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
-	return &GRPCClientV2{
-		GRPCClient: &GRPCClient{
-			client: proto.NewRunnerClient(c),
-			broker: broker,
-		},
-	}, nil
+	return newGRPCClient(broker, c)
 }
 
 var HandshakeConfig = plugin.HandshakeConfig{
@@ -71,6 +70,5 @@ var HandshakeConfig = plugin.HandshakeConfig{
 }
 
 var PluginMap = map[string]plugin.Plugin{
-	"runner":    &RunnerGRPCPlugin{},
-	"runner-v2": &RunnerV2GRPCPlugin{},
+	"runner": &RunnerGRPCPlugin{},
 }

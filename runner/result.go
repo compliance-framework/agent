@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/compliance-framework/api/sdk/types"
@@ -12,14 +13,16 @@ type apiHelper struct {
 	logger      hclog.Logger
 	client      *sdk.Client
 	agentLabels map[string]string
+	pluginName  string
 }
 
-func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string) *apiHelper {
+func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string) *apiHelper {
 	logger = logger.Named("api-helper")
 	return &apiHelper{
 		logger:      logger,
 		client:      client,
 		agentLabels: agentLabels,
+		pluginName:  pluginName,
 	}
 }
 
@@ -41,6 +44,23 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 		labelled = append(labelled, *evid)
 	}
 
-	err := h.client.Evidence.Create(ctx, labelled...)
-	return err
+	return h.client.Evidence.Create(ctx, labelled...)
+}
+
+func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, riskTemplates []*proto.RiskTemplate) error {
+	templates := ProtoToSdk(riskTemplates, RiskTemplateProtoToSdk)
+
+	enriched := make([]types.RiskTemplate, 0)
+	for _, temp := range *templates {
+		temp.PluginId = h.pluginName
+		temp.IsActive = true
+
+		for i := range temp.Remediation.Tasks {
+			temp.Remediation.Tasks[i].OrderIndex = i
+		}
+
+		enriched = append(enriched, *temp)
+	}
+
+	return h.client.RiskTemplate.Upsert(ctx, enriched...)
 }
