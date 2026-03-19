@@ -47,12 +47,11 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 	return h.client.Evidence.Create(ctx, labelled...)
 }
 
-func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, riskTemplates []*proto.RiskTemplate) error {
+func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
 	templates := ProtoToSdk(riskTemplates, RiskTemplateProtoToSdk)
 
 	enriched := make([]types.RiskTemplate, 0)
 	for _, temp := range *templates {
-		temp.PluginId = h.pluginName
 		temp.IsActive = true
 
 		for i := range temp.Remediation.Tasks {
@@ -62,7 +61,7 @@ func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, riskTemplates []*pr
 		enriched = append(enriched, *temp)
 	}
 
-	return h.client.RiskTemplate.Upsert(ctx, enriched...)
+	return h.client.RiskTemplate.Upsert(ctx, h.pluginName, packageName, enriched...)
 }
 
 func (h *apiHelper) UpsertSubjectTemplates(ctx context.Context, subjectTemplates []*proto.SubjectTemplate) error {

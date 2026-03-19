@@ -67,7 +67,8 @@ func (x *CreateEvidenceRequest) GetEvidence() []*Evidence {
 
 type UpsertRiskTemplatesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RiskTemplates []*RiskTemplate        `protobuf:"bytes,1,rep,name=RiskTemplates,proto3" json:"RiskTemplates,omitempty"`
+	PackageName   string                 `protobuf:"bytes,1,opt,name=PackageName,proto3" json:"PackageName,omitempty"`
+	RiskTemplates []*RiskTemplate        `protobuf:"bytes,2,rep,name=RiskTemplates,proto3" json:"RiskTemplates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -100,6 +101,13 @@ func (x *UpsertRiskTemplatesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UpsertRiskTemplatesRequest.ProtoReflect.Descriptor instead.
 func (*UpsertRiskTemplatesRequest) Descriptor() ([]byte, []int) {
 	return file_runner_proto_results_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *UpsertRiskTemplatesRequest) GetPackageName() string {
+	if x != nil {
+		return x.PackageName
+	}
+	return ""
 }
 
 func (x *UpsertRiskTemplatesRequest) GetRiskTemplates() []*RiskTemplate {
@@ -267,9 +275,10 @@ const file_runner_proto_results_proto_rawDesc = "" +
 	"\n" +
 	"\x1arunner/proto/results.proto\x12\x05proto\x1a\x18runner/proto/types.proto\"D\n" +
 	"\x15CreateEvidenceRequest\x12+\n" +
-	"\bEvidence\x18\x01 \x03(\v2\x0f.proto.EvidenceR\bEvidence\"W\n" +
-	"\x1aUpsertRiskTemplatesRequest\x129\n" +
-	"\rRiskTemplates\x18\x01 \x03(\v2\x13.proto.RiskTemplateR\rRiskTemplates\"c\n" +
+	"\bEvidence\x18\x01 \x03(\v2\x0f.proto.EvidenceR\bEvidence\"y\n" +
+	"\x1aUpsertRiskTemplatesRequest\x12 \n" +
+	"\vPackageName\x18\x01 \x01(\tR\vPackageName\x129\n" +
+	"\rRiskTemplates\x18\x02 \x03(\v2\x13.proto.RiskTemplateR\rRiskTemplates\"c\n" +
 	"\x1dUpsertSubjectTemplatesRequest\x12B\n" +
 	"\x10SubjectTemplates\x18\x01 \x03(\v2\x16.proto.SubjectTemplateR\x10SubjectTemplates\"\x18\n" +
 	"\x16CreateEvidenceResponse\"\x1d\n" +

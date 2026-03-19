@@ -249,7 +249,6 @@ func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
 func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
 	return &types.RiskTemplate{
 		ID:             riskTemplate.GetUUID(),
-		PolicyPackage:  riskTemplate.GetPolicyPackage(),
 		Name:           riskTemplate.GetName(),
 		Title:          riskTemplate.GetTitle(),
 		Statement:      riskTemplate.GetStatement(),

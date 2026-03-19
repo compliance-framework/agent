@@ -14,7 +14,7 @@ import (
 
 type ApiHelper interface {
 	CreateEvidence(context.Context, []*proto.Evidence) error
-	UpsertRiskTemplates(context.Context, []*proto.RiskTemplate) error
+	UpsertRiskTemplates(context.Context, string, []*proto.RiskTemplate) error
 	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
@@ -30,8 +30,9 @@ func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*pr
 	return err
 }
 
-func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, riskTemplates []*proto.RiskTemplate) error {
+func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
 	_, err := m.client.UpsertRiskTemplates(ctx, &proto.UpsertRiskTemplatesRequest{
+		PackageName:   packageName,
 		RiskTemplates: riskTemplates,
 	})
 	if err != nil {
@@ -75,7 +76,7 @@ func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.Cre
 	if err != nil {
 		return nil, err
 	}
-	return &proto.CreateEvidenceResponse{}, err
+	return &proto.CreateEvidenceResponse{}, nil
 }
 
 func (m *GRPCApiHelperServer) UpsertRiskTemplates(ctx context.Context, req *proto.UpsertRiskTemplatesRequest) (resp *proto.UpsertRiskTemplatesResponse, err error) {
@@ -86,11 +87,11 @@ func (m *GRPCApiHelperServer) UpsertRiskTemplates(ctx context.Context, req *prot
 		return nil, status.Error(codes.FailedPrecondition, "API helper server is not configured")
 	}
 
-	err = impl.UpsertRiskTemplates(ctx, req.GetRiskTemplates())
+	err = impl.UpsertRiskTemplates(ctx, req.PackageName, req.GetRiskTemplates())
 	if err != nil {
 		return nil, err
 	}
-	return &proto.UpsertRiskTemplatesResponse{}, err
+	return &proto.UpsertRiskTemplatesResponse{}, nil
 }
 
 func (m *GRPCApiHelperServer) UpsertSubjectTemplates(ctx context.Context, req *proto.UpsertSubjectTemplatesRequest) (resp *proto.UpsertSubjectTemplatesResponse, err error) {
@@ -105,7 +106,7 @@ func (m *GRPCApiHelperServer) UpsertSubjectTemplates(ctx context.Context, req *p
 	if err != nil {
 		return nil, err
 	}
-	return &proto.UpsertSubjectTemplatesResponse{}, err
+	return &proto.UpsertSubjectTemplatesResponse{}, nil
 }
 
 // GRPCClient implements Runner over go-plugin gRPC.

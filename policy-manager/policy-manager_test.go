@@ -161,8 +161,9 @@ violation[{"title": "this should not be evaluated"}] if {
 		templates, err := buildPolicyManager(regoContents).GetRiskTemplates(ctx)
 
 		assert.NoError(t, err)
-		if assert.Len(t, templates, 1) {
-			template := templates[0]
+		policyTemplates := templates["compliance_framework.static_risk_templates"]
+		if assert.Len(t, policyTemplates, 1) {
+			template := policyTemplates[0]
 			assert.NotEmpty(t, template.UUID)
 			assert.Equal(t, "compliance_framework.static_risk_templates", template.PolicyPackage)
 			assert.Equal(t, "password_auth_enabled", template.Name)
@@ -210,9 +211,13 @@ risk_templates := [{
 		templates, err := buildPolicyManagerWithModules(modules).GetRiskTemplates(ctx)
 
 		assert.NoError(t, err)
-		if assert.Len(t, templates, 1) {
-			assert.Equal(t, "password_auth_enabled", templates[0].Name)
-			assert.Equal(t, "compliance_framework.with_templates", templates[0].PolicyPackage)
+		if assert.Len(t, templates, 2) {
+			assert.Empty(t, templates["compliance_framework.no_templates"])
+			policyTemplates := templates["compliance_framework.with_templates"]
+			if assert.Len(t, policyTemplates, 1) {
+				assert.Equal(t, "password_auth_enabled", policyTemplates[0].Name)
+				assert.Equal(t, "compliance_framework.with_templates", policyTemplates[0].PolicyPackage)
+			}
 		}
 	})
 }

@@ -283,7 +283,7 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 	return &evidence, nil
 }
 
-func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) ([]*proto.RiskTemplate, error) {
+func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*proto.RiskTemplate, error) {
 	regoArgs := []func(r *rego.Rego){
 		rego.Query("data.compliance_framework"),
 		rego.Package("compliance_framework"),
@@ -296,7 +296,7 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) ([]*proto.RiskTem
 		return nil, err
 	}
 
-	templates := make([]*proto.RiskTemplate, 0)
+	allTemplates := map[string][]*proto.RiskTemplate{}
 
 	for _, module := range query.Modules() {
 		// Exclude any test files for this compilation
@@ -309,15 +309,18 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) ([]*proto.RiskTem
 			Package:     Package(module.Package.Path.String()),
 			Annotations: module.Annotations,
 		}
+		purePackage := policy.Package.PurePackage()
 
 		riskTemplates, err := pm.evaluateRiskTemplates(ctx, policy)
 		if err != nil {
 			return nil, err
 		}
-		if len(riskTemplates) == 0 {
-			continue
+
+		if _, exists := allTemplates[purePackage]; !exists {
+			allTemplates[purePackage] = make([]*proto.RiskTemplate, 0)
 		}
 
+		moduleTemplates := make([]*proto.RiskTemplate, 0, len(riskTemplates))
 		for _, riskTemplate := range riskTemplates {
 			temp := &RiskTemplate{}
 			if err := mapstructure.Decode(riskTemplate, temp); err != nil {
@@ -329,12 +332,17 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) ([]*proto.RiskTem
 				return nil, err
 			}
 
-			templates = append(templates, template)
+			moduleTemplates = append(moduleTemplates, template)
 		}
+		allTemplates[purePackage] = append(allTemplates[purePackage], moduleTemplates...)
 	}
 
-	pm.logger.Trace("Finished processing risk_templates", "num_templates", len(templates))
-	return templates, nil
+	totalTemplates := 0
+	for _, t := range allTemplates {
+		totalTemplates += len(t)
+	}
+	pm.logger.Trace("Finished processing risk_templates", "num_policies", len(allTemplates), "num_templates", totalTemplates)
+	return allTemplates, nil
 }
 
 func (pm *PolicyManager) evaluateRiskTemplates(ctx context.Context, policy Policy) ([]interface{}, error) {
