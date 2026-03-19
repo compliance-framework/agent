@@ -209,12 +209,12 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) == 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
-			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+			evidence.Title = *FirstOf(result.Title, Pointer(""))
+			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidence.Status = &proto.EvidenceStatus{
 				Reason:  "pass",
-				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				Remarks: *FirstOf(result.Remarks, Pointer("")),
 				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
 			}
 
@@ -222,15 +222,26 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) > 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
-			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
+			evidence.Title = *FirstOf(result.Title, Pointer(""))
+			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidences = append(evidences, evidence)
 			evidence.Status = &proto.EvidenceStatus{
 				Reason:  "fail",
-				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				Remarks: *FirstOf(result.Remarks, Pointer("")),
 				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED,
 			}
+
+			props := make([]*proto.Property, 0, len(result.Violations))
+			for _, value := range result.Violations {
+				if value.ID != nil {
+					props = append(props, &proto.Property{
+						Name:  "_violation_id",
+						Value: *value.ID,
+					})
+				}
+			}
+			evidence.Props = props
 		}
 	}
 
@@ -251,15 +262,6 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 	if result.Labels != nil {
 		resultLabels = *result.Labels
 	}
-	props := make([]*proto.Property, 0, len(result.Violations))
-	for _, value := range result.Violations {
-		if value.ID != nil {
-			props = append(props, &proto.Property{
-				Name:  "_violation_id",
-				Value: *value.ID,
-			})
-		}
-	}
 	evidence := proto.Evidence{
 		UUID: evidenceUUID.String(),
 		Labels: MergeMaps(
@@ -277,7 +279,6 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 		Components:     p.components,
 		Subjects:       p.subjects,
 		Status:         nil,
-		Props:          props,
 	}
 	return &evidence, nil
 }
