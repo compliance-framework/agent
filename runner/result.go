@@ -64,3 +64,52 @@ func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, riskTemplates []*pr
 
 	return h.client.RiskTemplate.Upsert(ctx, enriched...)
 }
+
+func (h *apiHelper) UpsertSubjectTemplates(ctx context.Context, subjectTemplates []*proto.SubjectTemplate) error {
+	templates := ProtoToSdk(subjectTemplates, SubjectTemplateProtoToSdk)
+
+	enriched := make([]types.SubjectTemplate, 0)
+	for _, temp := range *templates {
+		temp.ID = optimisticUUID(temp.ID, map[string]string{
+			"type":         "subject_template",
+			"subject_type": temp.Type,
+			"name":         temp.Name,
+			"plugin_id":    h.pluginName,
+		}).String()
+		temp.SourceMode = "runtime-derived"
+		temp.SelectorLabels = withPluginSelectorLabel(temp.SelectorLabels, h.pluginName)
+
+		enriched = append(enriched, *temp)
+	}
+	return h.client.SubjectTemplate.Upsert(ctx, h.pluginName, enriched...)
+}
+
+func withPluginSelectorLabel(labels []types.SubjectTemplateSelectorLabel, pluginName string) []types.SubjectTemplateSelectorLabel {
+	pluginSelectorLabel := "_plugin"
+	result := make([]types.SubjectTemplateSelectorLabel, 0, len(labels)+1)
+	replaced := false
+
+	for _, label := range labels {
+		if label.Key != pluginSelectorLabel {
+			result = append(result, label)
+			continue
+		}
+
+		if replaced {
+			continue
+		}
+
+		label.Value = pluginName
+		result = append(result, label)
+		replaced = true
+	}
+
+	if replaced {
+		return result
+	}
+
+	return append(result, types.SubjectTemplateSelectorLabel{
+		Key:   pluginSelectorLabel,
+		Value: pluginName,
+	})
+}

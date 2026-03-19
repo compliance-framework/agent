@@ -15,6 +15,7 @@ import (
 type ApiHelper interface {
 	CreateEvidence(context.Context, []*proto.Evidence) error
 	UpsertRiskTemplates(context.Context, []*proto.RiskTemplate) error
+	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
@@ -35,6 +36,16 @@ func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, riskTempl
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding risk template", "error", err)
+	}
+	return err
+}
+
+func (m *GRPCApiHelperClient) UpsertSubjectTemplates(ctx context.Context, subjectTemplates []*proto.SubjectTemplate) error {
+	_, err := m.client.UpsertSubjectTemplates(ctx, &proto.UpsertSubjectTemplatesRequest{
+		SubjectTemplates: subjectTemplates,
+	})
+	if err != nil {
+		hclog.Default().Error("Error adding subject template", "error", err)
 	}
 	return err
 }
@@ -80,6 +91,21 @@ func (m *GRPCApiHelperServer) UpsertRiskTemplates(ctx context.Context, req *prot
 		return nil, err
 	}
 	return &proto.UpsertRiskTemplatesResponse{}, err
+}
+
+func (m *GRPCApiHelperServer) UpsertSubjectTemplates(ctx context.Context, req *proto.UpsertSubjectTemplatesRequest) (resp *proto.UpsertSubjectTemplatesResponse, err error) {
+	m.mu.RLock()
+	impl := m.Impl
+	m.mu.RUnlock()
+	if impl == nil {
+		return nil, status.Error(codes.FailedPrecondition, "API helper server is not configured")
+	}
+
+	err = impl.UpsertSubjectTemplates(ctx, req.GetSubjectTemplates())
+	if err != nil {
+		return nil, err
+	}
+	return &proto.UpsertSubjectTemplatesResponse{}, err
 }
 
 // GRPCClient implements Runner over go-plugin gRPC.

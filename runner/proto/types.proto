@@ -150,6 +150,10 @@ message InventoryItem {
 enum SubjectType {
   SUBJECT_TYPE_INVENTORY_ITEM = 0;
   SUBJECT_TYPE_COMPONENT = 1;
+  SUBJECT_TYPE_USER = 2;
+  SUBJECT_TYPE_LOCATION = 3;
+  SUBJECT_TYPE_PARTY = 4;
+  SUBJECT_TYPE_RESOURCE = 5;
 }
 
 message Subject {
@@ -221,4 +225,37 @@ message RiskTemplate {
   repeated string Violation_ids = 8;
   repeated Threat Threats = 9;
   Remediation Remediation = 10;
+}
+
+message SubjectProp {
+  string Name = 1;
+  string Value = 2;
+}
+
+message SubjectLink {
+  string Href = 1;
+}
+
+message SubjectLabelSelector {
+  string Key = 1;
+  string Value = 2;
+}
+
+message SubjectLabelSchema {
+  string Key = 1;
+  string Description = 2;
+}
+
+message SubjectTemplate {
+  string Name = 1;
+  SubjectType Type = 2;
+  string TitleTemplate = 3;
+  string DescriptionTemplate = 4;
+  string PurposeTemplate = 5;
+  string RemarksTemplate = 6;
+  repeated string IdentityLabelKeys = 7;
+  repeated SubjectProp Props = 8;
+  repeated SubjectLink Links = 9;
+  repeated SubjectLabelSelector SelectorLabels = 10;
+  repeated SubjectLabelSchema LabelSchema = 11;
 }

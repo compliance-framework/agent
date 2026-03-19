@@ -11,6 +11,10 @@ func SubjectTypeFromEnum(in proto.SubjectType) string {
 	subjectTypes := map[proto.SubjectType]string{
 		proto.SubjectType_SUBJECT_TYPE_INVENTORY_ITEM: "InventoryItem",
 		proto.SubjectType_SUBJECT_TYPE_COMPONENT:      "Component",
+		proto.SubjectType_SUBJECT_TYPE_USER:           "User",
+		proto.SubjectType_SUBJECT_TYPE_LOCATION:       "Location",
+		proto.SubjectType_SUBJECT_TYPE_PARTY:          "Party",
+		proto.SubjectType_SUBJECT_TYPE_RESOURCE:       "Resource",
 	}
 
 	if val, ok := subjectTypes[in]; ok {
@@ -254,5 +258,48 @@ func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplat
 		ViolationIds:   riskTemplate.GetViolationIds(),
 		Threats:        *ProtoToSdk(riskTemplate.GetThreats(), ThreatProtoToSdk),
 		Remediation:    RemediationProtoToSdk(riskTemplate.Remediation),
+	}
+}
+
+func SubjectPropToSdk(prop *proto.SubjectProp) types.SubjectProp {
+	return types.SubjectProp{
+		Name:  prop.GetName(),
+		Value: prop.GetValue(),
+	}
+}
+
+func SubjectLinkProtoToSdk(link *proto.SubjectLink) types.SubjectLink {
+	return types.SubjectLink{
+		Href: link.GetHref(),
+	}
+}
+
+func SubjectSelectorLabelProtoToSdk(label *proto.SubjectLabelSelector) types.SubjectTemplateSelectorLabel {
+	return types.SubjectTemplateSelectorLabel{
+		Key:   label.GetKey(),
+		Value: label.GetValue(),
+	}
+}
+
+func SubjectLabelSchemaProtoToSdk(label *proto.SubjectLabelSchema) types.SubjectTemplateLabelSchema {
+	return types.SubjectTemplateLabelSchema{
+		Key:         label.GetKey(),
+		Description: label.GetDescription(),
+	}
+}
+
+func SubjectTemplateProtoToSdk(subjectTemplate *proto.SubjectTemplate) *types.SubjectTemplate {
+	return &types.SubjectTemplate{
+		Name:                subjectTemplate.GetName(),
+		Type:                SubjectTypeFromEnum(subjectTemplate.GetType()),
+		TitleTemplate:       subjectTemplate.GetTitleTemplate(),
+		DescriptionTemplate: subjectTemplate.GetDescriptionTemplate(),
+		PurposeTemplate:     subjectTemplate.GetPurposeTemplate(),
+		RemarksTemplate:     subjectTemplate.GetRemarksTemplate(),
+		IdentityLabelKeys:   subjectTemplate.GetIdentityLabelKeys(),
+		Props:               *ProtoToSdk(subjectTemplate.GetProps(), SubjectPropToSdk),
+		Links:               *ProtoToSdk(subjectTemplate.GetLinks(), SubjectLinkProtoToSdk),
+		SelectorLabels:      *ProtoToSdk(subjectTemplate.GetSelectorLabels(), SubjectSelectorLabelProtoToSdk),
+		LabelSchema:         *ProtoToSdk(subjectTemplate.GetLabelSchema(), SubjectLabelSchemaProtoToSdk),
 	}
 }
