@@ -36,7 +36,7 @@ func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, packageNa
 		RiskTemplates: riskTemplates,
 	})
 	if err != nil {
-		hclog.Default().Error("Error adding risk template", "error", err)
+		hclog.Default().Error("Error upserting risk template", "error", err)
 	}
 	return err
 }
@@ -46,7 +46,7 @@ func (m *GRPCApiHelperClient) UpsertSubjectTemplates(ctx context.Context, subjec
 		SubjectTemplates: subjectTemplates,
 	})
 	if err != nil {
-		hclog.Default().Error("Error adding subject template", "error", err)
+		hclog.Default().Error("Error upserting subject template", "error", err)
 	}
 	return err
 }

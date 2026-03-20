@@ -68,6 +68,10 @@ func (h *apiHelper) UpsertSubjectTemplates(ctx context.Context, subjectTemplates
 
 	enriched := make([]types.SubjectTemplate, 0)
 	for _, temp := range *templates {
+		if temp == nil {
+			continue
+		}
+
 		temp.ID = optimisticUUID(temp.ID, map[string]string{
 			"type":         "subject_template",
 			"subject_type": temp.Type,

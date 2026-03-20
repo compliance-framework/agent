@@ -253,6 +253,10 @@ func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
 }
 
 func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
+	if riskTemplate == nil {
+		return nil
+	}
+
 	likelihood := riskTemplate.GetLikelihoodHint()
 	impact := riskTemplate.GetImpactHint()
 
@@ -298,6 +302,10 @@ func SubjectLabelSchemaProtoToSdk(label *proto.SubjectLabelSchema) types.Subject
 }
 
 func SubjectTemplateProtoToSdk(subjectTemplate *proto.SubjectTemplate) *types.SubjectTemplate {
+	if subjectTemplate == nil {
+		return nil
+	}
+
 	titleTemplate := subjectTemplate.GetTitleTemplate()
 	descriptionTemplate := subjectTemplate.GetDescriptionTemplate()
 	purposeTemplate := subjectTemplate.GetPurposeTemplate()

@@ -250,7 +250,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 
 func validateNewEvidence(result Result) error {
 	if result.Title == nil {
-		return fmt.Errorf("Evidence title is required")
+		return fmt.Errorf("evidence title is required")
 	}
 
 	return nil

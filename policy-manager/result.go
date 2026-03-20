@@ -9,9 +9,9 @@ import (
 
 type Violation struct {
 	ID          *string `json:"id,omitempty" mapstructure:"id"`
-	Title       *string `json:"title,omitempty" mapstructure:"title,omitempty"`
-	Description *string `json:"description,omitempty" mapstructure:"description,omitempty"`
-	Remarks     *string `json:"remarks,omitempty" mapstructure:"remarks,omitempty"`
+	Title       *string `json:"title,omitempty" mapstructure:"title"`
+	Description *string `json:"description,omitempty" mapstructure:"description"`
+	Remarks     *string `json:"remarks,omitempty" mapstructure:"remarks"`
 }
 
 type Package string
