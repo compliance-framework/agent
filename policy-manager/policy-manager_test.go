@@ -240,7 +240,7 @@ func TestPolicyProcessorNewEvidenceRejectsMissingTitle(t *testing.T) {
 	}, nil)
 
 	assert.Nil(t, evidence)
-	assert.EqualError(t, err, "Evidence title is required")
+	assert.EqualError(t, err, "evidence title is required")
 }
 
 func TestPolicyProcessorGenerateResultsRejectsEvidenceWithoutTitle(t *testing.T) {
@@ -273,6 +273,6 @@ description := "Evidence was generated without a title"
 
 	assert.Empty(t, evidences)
 	if assert.Error(t, err) {
-		assert.Contains(t, err.Error(), "Evidence title is required")
+		assert.Contains(t, err.Error(), "evidence title is required")
 	}
 }
