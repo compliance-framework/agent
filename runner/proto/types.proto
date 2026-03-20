@@ -220,9 +220,9 @@ message RiskTemplate {
   string Name = 3;
   string Title = 4;
   string Statement = 5;
-  string Likelihood_hint = 6;
-  string Impact_hint = 7;
-  repeated string Violation_ids = 8;
+  string LikelihoodHint = 6;
+  string ImpactHint = 7;
+  repeated string ViolationIds = 8;
   repeated ThreatRef ThreatRefs = 9;
   Remediation Remediation = 10;
 }

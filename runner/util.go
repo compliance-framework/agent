@@ -240,6 +240,10 @@ func RemediationTaskProtoToSdk(task *proto.RemediationTask) types.RemediationTas
 }
 
 func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
+	if remediation == nil {
+		return nil
+	}
+
 	description := remediation.GetDescription()
 	return &types.Remediation{
 		Title:       remediation.GetTitle(),
@@ -261,7 +265,7 @@ func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplat
 		ImpactHint:     &impact,
 		ViolationIds:   riskTemplate.GetViolationIds(),
 		ThreatRefs:     *ProtoToSdk(riskTemplate.GetThreatRefs(), ThreatRefProtoToSdk),
-		Remediation:    RemediationProtoToSdk(riskTemplate.Remediation),
+		Remediation:    RemediationProtoToSdk(riskTemplate.GetRemediation()),
 	}
 }
 

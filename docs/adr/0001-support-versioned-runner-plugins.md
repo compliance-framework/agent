@@ -20,8 +20,9 @@ This is implemented by:
 	- this currently applies to tag-form OCI references such as `ghcr.io/example/plugin:v1`
 	- digest-form references such as `ghcr.io/example/plugin@sha256:...` are not currently treated as supported OCI download sources by the agent
 - supporting only protocol versions 1 and 2
-- mapping protocol version 1 to the `runner` dispense name and protocol version 2 to `runner-v2`
-- calling `Init` before `Eval` for protocol version 2 plugins
+- using the `runner` dispense name for both protocol versions
+- differentiating protocol version 2 by lifecycle rather than dispense name
+- calling `Init` before `Eval` for protocol version 2 plugins and requiring those plugins to implement the `RunnerV2` contract
 - treating explicit configuration as authoritative over OCI metadata
 
 ## Consequences
@@ -30,6 +31,7 @@ This is implemented by:
 
 - Existing plugins continue to work without configuration changes.
 - New plugins can adopt protocol version 2 and perform setup during `Init`.
+- Plugin authors can expose a single canonical `runner` entrypoint regardless of protocol version.
 - OCI-published plugins can self-describe their protocol version, reducing configuration drift.
 - The supported OCI source shape is explicit: tag-form references participate in annotation lookup and download.
 - Unsupported or invalid annotations do not break execution; the agent logs and falls back to the configured or default version.
@@ -39,4 +41,4 @@ This is implemented by:
 - OCI-backed plugins may require an extra registry metadata lookup before execution.
 - Digest-form OCI references are not currently supported for plugin download or annotation-based protocol resolution.
 - The agent now maintains two supported runner contracts instead of one.
-- Plugin authors adopting protocol version 2 must implement `Init`.
+- Plugin authors adopting protocol version 2 must implement `Init`, even though they share the same `runner` dispense name as protocol version 1 plugins.

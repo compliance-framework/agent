@@ -52,11 +52,9 @@ func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string,
 
 	enriched := make([]types.RiskTemplate, 0)
 	for _, temp := range *templates {
-		isActive := true
-		temp.IsActive = &isActive
-
-		for i := range temp.Remediation.Tasks {
-			temp.Remediation.Tasks[i].OrderIndex = i
+		temp = prepareRiskTemplateForUpsert(temp)
+		if temp == nil {
+			continue
 		}
 
 		enriched = append(enriched, *temp)
@@ -82,6 +80,25 @@ func (h *apiHelper) UpsertSubjectTemplates(ctx context.Context, subjectTemplates
 		enriched = append(enriched, *temp)
 	}
 	return h.client.SubjectTemplate.Upsert(ctx, h.pluginName, enriched...)
+}
+
+func prepareRiskTemplateForUpsert(temp *types.RiskTemplate) *types.RiskTemplate {
+	if temp == nil {
+		return nil
+	}
+
+	isActive := true
+	temp.IsActive = &isActive
+
+	if temp.Remediation == nil {
+		return temp
+	}
+
+	for i := range temp.Remediation.Tasks {
+		temp.Remediation.Tasks[i].OrderIndex = i
+	}
+
+	return temp
 }
 
 func withPluginSelectorLabel(labels []types.SubjectTemplateSelectorLabel, pluginName string) []types.SubjectTemplateSelectorLabel {

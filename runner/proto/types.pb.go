@@ -1513,9 +1513,9 @@ type RiskTemplate struct {
 	Name           string                 `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
 	Title          string                 `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
 	Statement      string                 `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
-	LikelihoodHint string                 `protobuf:"bytes,6,opt,name=Likelihood_hint,json=LikelihoodHint,proto3" json:"Likelihood_hint,omitempty"`
-	ImpactHint     string                 `protobuf:"bytes,7,opt,name=Impact_hint,json=ImpactHint,proto3" json:"Impact_hint,omitempty"`
-	ViolationIds   []string               `protobuf:"bytes,8,rep,name=Violation_ids,json=ViolationIds,proto3" json:"Violation_ids,omitempty"`
+	LikelihoodHint string                 `protobuf:"bytes,6,opt,name=LikelihoodHint,proto3" json:"LikelihoodHint,omitempty"`
+	ImpactHint     string                 `protobuf:"bytes,7,opt,name=ImpactHint,proto3" json:"ImpactHint,omitempty"`
+	ViolationIds   []string               `protobuf:"bytes,8,rep,name=ViolationIds,proto3" json:"ViolationIds,omitempty"`
 	ThreatRefs     []*ThreatRef           `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
 	Remediation    *Remediation           `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -2102,17 +2102,18 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\vRemediation\x12\x14\n" +
 	"\x05Title\x18\x01 \x01(\tR\x05Title\x12 \n" +
 	"\vDescription\x18\x02 \x01(\tR\vDescription\x12,\n" +
-	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xe7\x02\n" +
+	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xe4\x02\n" +
 	"\fRiskTemplate\x12\x12\n" +
 	"\x04UUID\x18\x01 \x01(\tR\x04UUID\x12$\n" +
 	"\rPolicyPackage\x18\x02 \x01(\tR\rPolicyPackage\x12\x12\n" +
 	"\x04Name\x18\x03 \x01(\tR\x04Name\x12\x14\n" +
 	"\x05Title\x18\x04 \x01(\tR\x05Title\x12\x1c\n" +
-	"\tStatement\x18\x05 \x01(\tR\tStatement\x12'\n" +
-	"\x0fLikelihood_hint\x18\x06 \x01(\tR\x0eLikelihoodHint\x12\x1f\n" +
-	"\vImpact_hint\x18\a \x01(\tR\n" +
-	"ImpactHint\x12#\n" +
-	"\rViolation_ids\x18\b \x03(\tR\fViolationIds\x120\n" +
+	"\tStatement\x18\x05 \x01(\tR\tStatement\x12&\n" +
+	"\x0eLikelihoodHint\x18\x06 \x01(\tR\x0eLikelihoodHint\x12\x1e\n" +
+	"\n" +
+	"ImpactHint\x18\a \x01(\tR\n" +
+	"ImpactHint\x12\"\n" +
+	"\fViolationIds\x18\b \x03(\tR\fViolationIds\x120\n" +
 	"\n" +
 	"ThreatRefs\x18\t \x03(\v2\x10.proto.ThreatRefR\n" +
 	"ThreatRefs\x124\n" +
