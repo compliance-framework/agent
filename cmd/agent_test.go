@@ -7,9 +7,29 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/compliance-framework/agent/runner"
+	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type initTestRunner struct {
+	initErr error
+}
+
+func (r *initTestRunner) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
+	return &proto.ConfigureResponse{}, nil
+}
+
+func (r *initTestRunner) Eval(request *proto.EvalRequest, a runner.ApiHelper) (*proto.EvalResponse, error) {
+	return &proto.EvalResponse{}, nil
+}
+
+func (r *initTestRunner) Init(request *proto.InitRequest, a runner.ApiHelper) (*proto.InitResponse, error) {
+	return &proto.InitResponse{}, r.initErr
+}
 
 func TestAgentCmd_ConfigurationValidation(t *testing.T) {
 	tests := []struct {
@@ -446,9 +466,9 @@ func TestRunnerDispenseName(t *testing.T) {
 			wantErr:         false,
 		},
 		{
-			name:            "Uses runner-v2 for v2",
+			name:            "Uses runner for v2",
 			protocolVersion: RunnerV2ProtocolVersion,
-			expected:        "runner-v2",
+			expected:        "runner",
 			wantErr:         false,
 		},
 		{
@@ -471,4 +491,45 @@ func TestRunnerDispenseName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInitRunner(t *testing.T) {
+	t.Run("skips init for v1", func(t *testing.T) {
+		err := initRunner("test-plugin", DefaultProtocolVersion, &initTestRunner{}, nil, nil)
+		if err != nil {
+			t.Fatalf("initRunner() error = %v, expected nil", err)
+		}
+	})
+
+	t.Run("wraps unimplemented init for configured v2 plugin", func(t *testing.T) {
+		err := initRunner(
+			"test-plugin",
+			RunnerV2ProtocolVersion,
+			&initTestRunner{initErr: status.Error(codes.Unimplemented, "not implemented")},
+			nil,
+			nil,
+		)
+		if err == nil {
+			t.Fatal("initRunner() error = nil, expected wrapped error")
+		}
+
+		expected := "plugin test-plugin configured as protocol_version=2 but does not implement Init"
+		if err.Error() != expected {
+			t.Fatalf("initRunner() error = %q, expected %q", err.Error(), expected)
+		}
+	})
+
+	t.Run("passes through non-unimplemented init errors", func(t *testing.T) {
+		expectedErr := errors.New("boom")
+		err := initRunner(
+			"test-plugin",
+			RunnerV2ProtocolVersion,
+			&initTestRunner{initErr: expectedErr},
+			nil,
+			nil,
+		)
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("initRunner() error = %v, expected %v", err, expectedErr)
+		}
+	})
 }

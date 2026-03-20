@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
+	"time"
+
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/rego"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"slices"
-	"strings"
-	"time"
 )
 
 type EvalOutput struct {
@@ -208,12 +209,12 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) == 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage())))
-			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed no violations on the %s policy within the Local SSH Compliance Plugin.", result.Policy.Package.PurePackage())))
+			evidence.Title = *result.Title
+			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidence.Status = &proto.EvidenceStatus{
 				Reason:  "pass",
-				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				Remarks: *FirstOf(result.Remarks, Pointer("")),
 				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
 			}
 
@@ -221,22 +222,45 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) > 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(fmt.Sprintf("Validation on %s failed.", result.Policy.Package.PurePackage())))
-			evidence.Description = FirstOf(result.Description, Pointer(fmt.Sprintf("Observed %d violation(s) on the %s policy within the Local SSH Compliance Plugin.", len(result.Violations), result.Policy.Package.PurePackage())))
+			evidence.Title = *result.Title
+			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidences = append(evidences, evidence)
 			evidence.Status = &proto.EvidenceStatus{
 				Reason:  "fail",
-				Remarks: *FirstOf(result.Title, Pointer(fmt.Sprintf("Local SSH Validation on %s passed.", result.Policy.Package.PurePackage()))),
+				Remarks: *FirstOf(result.Remarks, Pointer("")),
 				State:   proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_NOT_SATISFIED,
 			}
+
+			props := make([]*proto.Property, 0, len(result.Violations))
+			for _, value := range result.Violations {
+				if value.ID != nil {
+					props = append(props, &proto.Property{
+						Name:  "_violation_id",
+						Value: *value.ID,
+					})
+				}
+			}
+			evidence.Props = props
 		}
 	}
 
 	return evidences, resultErr
 }
 
+func validateNewEvidence(result Result) error {
+	if result.Title == nil {
+		return fmt.Errorf("evidence title is required")
+	}
+
+	return nil
+}
+
 func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activity) (*proto.Evidence, error) {
+	if err := validateNewEvidence(result); err != nil {
+		return nil, err
+	}
+
 	evidenceUUID, err := sdk.SeededUUID(MergeMaps(map[string]string{
 		"type":        "evidence",
 		"policy":      result.Policy.Package.PurePackage(),
@@ -269,4 +293,141 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 		Status:         nil,
 	}
 	return &evidence, nil
+}
+
+func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*proto.RiskTemplate, error) {
+	regoArgs := []func(r *rego.Rego){
+		rego.Query("data.compliance_framework"),
+		rego.Package("compliance_framework"),
+	}
+	regoArgs = append(regoArgs, pm.loaderOptions...)
+	r := rego.New(regoArgs...)
+
+	query, err := r.PrepareForEval(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	allTemplates := map[string][]*proto.RiskTemplate{}
+
+	for _, module := range query.Modules() {
+		// Exclude any test files for this compilation
+		if strings.HasSuffix(module.Package.Location.File, "_test.rego") {
+			continue
+		}
+
+		policy := Policy{
+			File:        module.Package.Location.File,
+			Package:     Package(module.Package.Path.String()),
+			Annotations: module.Annotations,
+		}
+		purePackage := policy.Package.PurePackage()
+
+		riskTemplates, err := pm.evaluateRiskTemplates(ctx, policy)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, exists := allTemplates[purePackage]; !exists {
+			allTemplates[purePackage] = make([]*proto.RiskTemplate, 0)
+		}
+
+		moduleTemplates := make([]*proto.RiskTemplate, 0, len(riskTemplates))
+		for _, riskTemplate := range riskTemplates {
+			temp := &RiskTemplate{}
+			if err := mapstructure.Decode(riskTemplate, temp); err != nil {
+				return nil, err
+			}
+
+			template, err := newProtoRiskTemplate(policy, temp)
+			if err != nil {
+				return nil, err
+			}
+
+			moduleTemplates = append(moduleTemplates, template)
+		}
+		allTemplates[purePackage] = append(allTemplates[purePackage], moduleTemplates...)
+	}
+
+	totalTemplates := 0
+	for _, t := range allTemplates {
+		totalTemplates += len(t)
+	}
+	pm.logger.Trace("Finished processing risk_templates", "num_policies", len(allTemplates), "num_templates", totalTemplates)
+	return allTemplates, nil
+}
+
+func (pm *PolicyManager) evaluateRiskTemplates(ctx context.Context, policy Policy) ([]interface{}, error) {
+	regoArgs := []func(r *rego.Rego){
+		rego.Query(fmt.Sprintf("%s.risk_templates", policy.Package)),
+	}
+	regoArgs = append(regoArgs, pm.loaderOptions...)
+
+	evaluation, err := rego.New(regoArgs...).Eval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate %q in %s: %w", "risk_templates", policy.File, err)
+	}
+
+	if len(evaluation) == 0 || len(evaluation[0].Expressions) == 0 {
+		return nil, nil
+	}
+
+	raw := evaluation[0].Expressions[0].Value
+	riskTemplates, ok := raw.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid risk_templates type %T, expected array", raw)
+	}
+
+	return riskTemplates, nil
+}
+
+func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplate, error) {
+	threatRefs := make([]*proto.ThreatRef, 0, len(temp.ThreatRefs))
+	for _, ref := range temp.ThreatRefs {
+		threatRefs = append(threatRefs, &proto.ThreatRef{
+			System:     ref.System,
+			ExternalID: ref.ExternalID,
+			Title:      ref.Title,
+			Url:        ref.Url,
+		})
+	}
+
+	var remediation *proto.Remediation
+	if temp.Remediation != nil {
+		remediationTasks := make([]*proto.RemediationTask, 0, len(temp.Remediation.Tasks))
+		for _, task := range temp.Remediation.Tasks {
+			remediationTasks = append(remediationTasks, &proto.RemediationTask{
+				Title: task.Title,
+			})
+		}
+
+		remediation = &proto.Remediation{
+			Title:       temp.Remediation.Title,
+			Description: temp.Remediation.Description,
+			Tasks:       remediationTasks,
+		}
+	}
+
+	templateUUID, err := sdk.SeededUUID(map[string]string{
+		"type":        "risk_template",
+		"name":        temp.Name,
+		"policy":      policy.Package.PurePackage(),
+		"policy_file": policy.File,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &proto.RiskTemplate{
+		UUID:           templateUUID.String(),
+		PolicyPackage:  policy.Package.PurePackage(),
+		Name:           temp.Name,
+		Title:          temp.Title,
+		Statement:      temp.Statement,
+		LikelihoodHint: temp.LikelihoodHint,
+		ImpactHint:     temp.ImpactHint,
+		ViolationIds:   temp.ViolationIds,
+		ThreatRefs:     threatRefs,
+		Remediation:    remediation,
+	}, nil
 }

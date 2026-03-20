@@ -37,6 +37,8 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type apiConfig struct {
@@ -240,10 +242,29 @@ func runnerDispenseName(protocolVersion int32) (string, error) {
 	case DefaultProtocolVersion:
 		return "runner", nil
 	case RunnerV2ProtocolVersion:
-		return "runner-v2", nil
+		return "runner", nil
 	default:
 		return "", fmt.Errorf("unsupported plugin protocol_version=%d", protocolVersion)
 	}
+}
+
+func initRunner(name string, protocolVersion int32, runnerInstance runner.RunnerV2, policyPaths []string, resultsHelper runner.ApiHelper) error {
+	if protocolVersion <= DefaultProtocolVersion {
+		return nil
+	}
+
+	_, err := runnerInstance.Init(&proto.InitRequest{
+		PolicyPaths: policyPaths,
+	}, resultsHelper)
+	if err == nil {
+		return nil
+	}
+
+	if status.Code(err) == codes.Unimplemented {
+		return fmt.Errorf("plugin %s configured as protocol_version=%d but does not implement Init", name, protocolVersion)
+	}
+
+	return err
 }
 
 func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
@@ -583,21 +604,10 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		}
 
 		// Create a new results helper for the plugin to send results back to
-		resultsHelper := runner.NewApiHelper(logger, client, labels)
+		resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
-		if pluginConfig.ProtocolVersion > 1 {
-			runnerV2, ok := runnerInstance.(runner.RunnerV2)
-			if !ok {
-				return fmt.Errorf("plugin %s configured as protocol_version=%d but does not support RunnerV2", pluginName, pluginConfig.ProtocolVersion)
-			}
-
-			_, err := runnerV2.Init(&proto.InitRequest{
-				PolicyPaths: policyPaths,
-			}, resultsHelper)
-
-			if err != nil {
-				return err
-			}
+		if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
+			return err
 		}
 
 		// TODO: Send failed results to the database?
@@ -693,21 +703,10 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 
 	// Create a new results helper for the plugin to send results back to
-	resultsHelper := runner.NewApiHelper(logger, client, labels)
+	resultsHelper := runner.NewApiHelper(logger, client, labels, name)
 
-	if plugin.ProtocolVersion > 1 {
-		runnerV2, ok := runnerInstance.(runner.RunnerV2)
-		if !ok {
-			return fmt.Errorf("plugin %s configured as protocol_version=%d but does not support RunnerV2", name, plugin.ProtocolVersion)
-		}
-
-		_, err := runnerV2.Init(&proto.InitRequest{
-			PolicyPaths: policyPaths,
-		}, resultsHelper)
-
-		if err != nil {
-			return err
-		}
+	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
+		return err
 	}
 
 	// TODO: Send failed results to the database?
@@ -752,7 +751,7 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	return nil
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.Runner, error) {
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, error) {
 	// We're a host! Start by launching the plugin process.
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
@@ -783,9 +782,9 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, proto
 
 	// We should have a Greeter now! This feels like a normal interface
 	// implementation but is in fact over an RPC connection.
-	runnerInstance, ok := raw.(runner.Runner)
+	runnerInstance, ok := raw.(runner.RunnerV2)
 	if !ok {
-		return nil, fmt.Errorf("dispensed plugin %q does not implement runner.Runner", dispenseName)
+		return nil, fmt.Errorf("dispensed plugin %q does not implement runner.RunnerV2", dispenseName)
 	}
 	return runnerInstance, nil
 }

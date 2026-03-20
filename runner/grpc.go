@@ -14,6 +14,8 @@ import (
 
 type ApiHelper interface {
 	CreateEvidence(context.Context, []*proto.Evidence) error
+	UpsertRiskTemplates(context.Context, string, []*proto.RiskTemplate) error
+	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
@@ -24,6 +26,27 @@ func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*pr
 	})
 	if err != nil {
 		hclog.Default().Error("Error adding result", "error", err)
+	}
+	return err
+}
+
+func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
+	_, err := m.client.UpsertRiskTemplates(ctx, &proto.UpsertRiskTemplatesRequest{
+		PackageName:   packageName,
+		RiskTemplates: riskTemplates,
+	})
+	if err != nil {
+		hclog.Default().Error("Error upserting risk template", "error", err)
+	}
+	return err
+}
+
+func (m *GRPCApiHelperClient) UpsertSubjectTemplates(ctx context.Context, subjectTemplates []*proto.SubjectTemplate) error {
+	_, err := m.client.UpsertSubjectTemplates(ctx, &proto.UpsertSubjectTemplatesRequest{
+		SubjectTemplates: subjectTemplates,
+	})
+	if err != nil {
+		hclog.Default().Error("Error upserting subject template", "error", err)
 	}
 	return err
 }
@@ -53,48 +76,66 @@ func (m *GRPCApiHelperServer) CreateEvidence(ctx context.Context, req *proto.Cre
 	if err != nil {
 		return nil, err
 	}
-	return &proto.CreateEvidenceResponse{}, err
+	return &proto.CreateEvidenceResponse{}, nil
+}
+
+func (m *GRPCApiHelperServer) UpsertRiskTemplates(ctx context.Context, req *proto.UpsertRiskTemplatesRequest) (resp *proto.UpsertRiskTemplatesResponse, err error) {
+	m.mu.RLock()
+	impl := m.Impl
+	m.mu.RUnlock()
+	if impl == nil {
+		return nil, status.Error(codes.FailedPrecondition, "API helper server is not configured")
+	}
+
+	err = impl.UpsertRiskTemplates(ctx, req.PackageName, req.GetRiskTemplates())
+	if err != nil {
+		return nil, err
+	}
+	return &proto.UpsertRiskTemplatesResponse{}, nil
+}
+
+func (m *GRPCApiHelperServer) UpsertSubjectTemplates(ctx context.Context, req *proto.UpsertSubjectTemplatesRequest) (resp *proto.UpsertSubjectTemplatesResponse, err error) {
+	m.mu.RLock()
+	impl := m.Impl
+	m.mu.RUnlock()
+	if impl == nil {
+		return nil, status.Error(codes.FailedPrecondition, "API helper server is not configured")
+	}
+
+	err = impl.UpsertSubjectTemplates(ctx, req.GetSubjectTemplates())
+	if err != nil {
+		return nil, err
+	}
+	return &proto.UpsertSubjectTemplatesResponse{}, nil
 }
 
 // GRPCClient implements Runner over go-plugin gRPC.
 type GRPCClient struct {
 	client proto.RunnerClient
 	broker *plugin.GRPCBroker
-
-	apiHelperServer *GRPCApiHelperServer
-	apiServerID     uint32
-	apiServerOnce   sync.Once
-}
-
-// GRPCClientV2 extends GRPCClient with RunnerV2 support over go-plugin gRPC.
-type GRPCClientV2 struct {
-	*GRPCClient
 }
 
 func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
-	m.apiServerOnce.Do(func() {
-		m.apiHelperServer = &GRPCApiHelperServer{}
+	apiHelperServer := &GRPCApiHelperServer{}
+	apiHelperServer.SetImpl(a)
 
-		serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-			s := grpc.NewServer(opts...)
-			proto.RegisterApiHelperServer(s, m.apiHelperServer)
-			return s
-		}
+	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
+		s := grpc.NewServer(opts...)
+		proto.RegisterApiHelperServer(s, apiHelperServer)
+		return s
+	}
 
-		m.apiServerID = m.broker.NextId()
-		go m.broker.AcceptAndServe(m.apiServerID, serverFunc)
-	})
+	apiServerID := m.broker.NextId()
+	go m.broker.AcceptAndServe(apiServerID, serverFunc)
 
-	m.apiHelperServer.SetImpl(a)
-
-	return m.apiServerID
+	return apiServerID
 }
 
 func (m *GRPCClient) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
 	return m.client.Configure(context.Background(), request)
 }
 
-func (m *GRPCClientV2) Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error) {
+func (m *GRPCClient) Init(request *proto.InitRequest, a ApiHelper) (*proto.InitResponse, error) {
 	request.ApiServer = m.startAPIServer(a)
 	resp, err := m.client.Init(context.Background(), request)
 	return resp, err

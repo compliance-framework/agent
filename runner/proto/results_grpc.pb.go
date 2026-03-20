@@ -19,7 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ApiHelper_CreateEvidence_FullMethodName = "/proto.ApiHelper/CreateEvidence"
+	ApiHelper_CreateEvidence_FullMethodName         = "/proto.ApiHelper/CreateEvidence"
+	ApiHelper_UpsertRiskTemplates_FullMethodName    = "/proto.ApiHelper/UpsertRiskTemplates"
+	ApiHelper_UpsertSubjectTemplates_FullMethodName = "/proto.ApiHelper/UpsertSubjectTemplates"
 )
 
 // ApiHelperClient is the client API for ApiHelper service.
@@ -27,6 +29,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ApiHelperClient interface {
 	CreateEvidence(ctx context.Context, in *CreateEvidenceRequest, opts ...grpc.CallOption) (*CreateEvidenceResponse, error)
+	UpsertRiskTemplates(ctx context.Context, in *UpsertRiskTemplatesRequest, opts ...grpc.CallOption) (*UpsertRiskTemplatesResponse, error)
+	UpsertSubjectTemplates(ctx context.Context, in *UpsertSubjectTemplatesRequest, opts ...grpc.CallOption) (*UpsertSubjectTemplatesResponse, error)
 }
 
 type apiHelperClient struct {
@@ -46,11 +50,31 @@ func (c *apiHelperClient) CreateEvidence(ctx context.Context, in *CreateEvidence
 	return out, nil
 }
 
+func (c *apiHelperClient) UpsertRiskTemplates(ctx context.Context, in *UpsertRiskTemplatesRequest, opts ...grpc.CallOption) (*UpsertRiskTemplatesResponse, error) {
+	out := new(UpsertRiskTemplatesResponse)
+	err := c.cc.Invoke(ctx, ApiHelper_UpsertRiskTemplates_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *apiHelperClient) UpsertSubjectTemplates(ctx context.Context, in *UpsertSubjectTemplatesRequest, opts ...grpc.CallOption) (*UpsertSubjectTemplatesResponse, error) {
+	out := new(UpsertSubjectTemplatesResponse)
+	err := c.cc.Invoke(ctx, ApiHelper_UpsertSubjectTemplates_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ApiHelperServer is the server API for ApiHelper service.
 // All implementations should embed UnimplementedApiHelperServer
 // for forward compatibility
 type ApiHelperServer interface {
 	CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error)
+	UpsertRiskTemplates(context.Context, *UpsertRiskTemplatesRequest) (*UpsertRiskTemplatesResponse, error)
+	UpsertSubjectTemplates(context.Context, *UpsertSubjectTemplatesRequest) (*UpsertSubjectTemplatesResponse, error)
 }
 
 // UnimplementedApiHelperServer should be embedded to have forward compatible implementations.
@@ -59,6 +83,12 @@ type UnimplementedApiHelperServer struct {
 
 func (UnimplementedApiHelperServer) CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateEvidence not implemented")
+}
+func (UnimplementedApiHelperServer) UpsertRiskTemplates(context.Context, *UpsertRiskTemplatesRequest) (*UpsertRiskTemplatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpsertRiskTemplates not implemented")
+}
+func (UnimplementedApiHelperServer) UpsertSubjectTemplates(context.Context, *UpsertSubjectTemplatesRequest) (*UpsertSubjectTemplatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpsertSubjectTemplates not implemented")
 }
 
 // UnsafeApiHelperServer may be embedded to opt out of forward compatibility for this service.
@@ -90,6 +120,42 @@ func _ApiHelper_CreateEvidence_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ApiHelper_UpsertRiskTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertRiskTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApiHelperServer).UpsertRiskTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApiHelper_UpsertRiskTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApiHelperServer).UpsertRiskTemplates(ctx, req.(*UpsertRiskTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApiHelper_UpsertSubjectTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertSubjectTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApiHelperServer).UpsertSubjectTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApiHelper_UpsertSubjectTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApiHelperServer).UpsertSubjectTemplates(ctx, req.(*UpsertSubjectTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ApiHelper_ServiceDesc is the grpc.ServiceDesc for ApiHelper service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -100,6 +166,14 @@ var ApiHelper_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateEvidence",
 			Handler:    _ApiHelper_CreateEvidence_Handler,
+		},
+		{
+			MethodName: "UpsertRiskTemplates",
+			Handler:    _ApiHelper_UpsertRiskTemplates_Handler,
+		},
+		{
+			MethodName: "UpsertSubjectTemplates",
+			Handler:    _ApiHelper_UpsertSubjectTemplates_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

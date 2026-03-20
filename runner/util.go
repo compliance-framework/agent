@@ -11,6 +11,10 @@ func SubjectTypeFromEnum(in proto.SubjectType) string {
 	subjectTypes := map[proto.SubjectType]string{
 		proto.SubjectType_SUBJECT_TYPE_INVENTORY_ITEM: "InventoryItem",
 		proto.SubjectType_SUBJECT_TYPE_COMPONENT:      "Component",
+		proto.SubjectType_SUBJECT_TYPE_USER:           "User",
+		proto.SubjectType_SUBJECT_TYPE_LOCATION:       "Location",
+		proto.SubjectType_SUBJECT_TYPE_PARTY:          "Party",
+		proto.SubjectType_SUBJECT_TYPE_RESOURCE:       "Resource",
 	}
 
 	if val, ok := subjectTypes[in]; ok {
@@ -215,5 +219,109 @@ func EvidenceProtoToSdk(evidence *proto.Evidence) *types.Evidence {
 			Remarks: evidence.GetStatus().GetRemarks(),
 			State:   EvidenceStatusStateFromEnum(evidence.GetStatus().GetState()),
 		},
+	}
+}
+
+func ThreatRefProtoToSdk(threatRef *proto.ThreatRef) types.ThreatRef {
+	url := threatRef.GetUrl()
+	return types.ThreatRef{
+		System:     threatRef.GetSystem(),
+		ExternalID: threatRef.GetExternalID(),
+		Title:      threatRef.GetTitle(),
+		URL:        &url,
+	}
+}
+
+func RemediationTaskProtoToSdk(task *proto.RemediationTask) types.RemediationTask {
+	return types.RemediationTask{
+		Title:      task.GetTitle(),
+		OrderIndex: int(task.GetOrderIndex()),
+	}
+}
+
+func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
+	if remediation == nil {
+		return nil
+	}
+
+	description := remediation.GetDescription()
+	return &types.Remediation{
+		Title:       remediation.GetTitle(),
+		Description: &description,
+		Tasks:       *ProtoToSdk(remediation.GetTasks(), RemediationTaskProtoToSdk),
+	}
+}
+
+func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
+	if riskTemplate == nil {
+		return nil
+	}
+
+	likelihood := riskTemplate.GetLikelihoodHint()
+	impact := riskTemplate.GetImpactHint()
+
+	return &types.RiskTemplate{
+		ID:             riskTemplate.GetUUID(),
+		Name:           riskTemplate.GetName(),
+		Title:          riskTemplate.GetTitle(),
+		Statement:      riskTemplate.GetStatement(),
+		LikelihoodHint: &likelihood,
+		ImpactHint:     &impact,
+		ViolationIds:   riskTemplate.GetViolationIds(),
+		ThreatRefs:     *ProtoToSdk(riskTemplate.GetThreatRefs(), ThreatRefProtoToSdk),
+		Remediation:    RemediationProtoToSdk(riskTemplate.GetRemediation()),
+	}
+}
+
+func SubjectPropToSdk(prop *proto.SubjectProp) types.SubjectProp {
+	return types.SubjectProp{
+		Name:  prop.GetName(),
+		Value: prop.GetValue(),
+	}
+}
+
+func SubjectLinkProtoToSdk(link *proto.SubjectLink) types.SubjectLink {
+	return types.SubjectLink{
+		Href: link.GetHref(),
+	}
+}
+
+func SubjectSelectorLabelProtoToSdk(label *proto.SubjectLabelSelector) types.SubjectTemplateSelectorLabel {
+	return types.SubjectTemplateSelectorLabel{
+		Key:   label.GetKey(),
+		Value: label.GetValue(),
+	}
+}
+
+func SubjectLabelSchemaProtoToSdk(label *proto.SubjectLabelSchema) types.SubjectTemplateLabelSchema {
+	description := label.GetDescription()
+	return types.SubjectTemplateLabelSchema{
+		Key:         label.GetKey(),
+		Description: &description,
+	}
+}
+
+func SubjectTemplateProtoToSdk(subjectTemplate *proto.SubjectTemplate) *types.SubjectTemplate {
+	if subjectTemplate == nil {
+		return nil
+	}
+
+	titleTemplate := subjectTemplate.GetTitleTemplate()
+	descriptionTemplate := subjectTemplate.GetDescriptionTemplate()
+	purposeTemplate := subjectTemplate.GetPurposeTemplate()
+	remarksTemplate := subjectTemplate.GetRemarksTemplate()
+
+	return &types.SubjectTemplate{
+		Name:                subjectTemplate.GetName(),
+		Type:                SubjectTypeFromEnum(subjectTemplate.GetType()),
+		TitleTemplate:       &titleTemplate,
+		DescriptionTemplate: &descriptionTemplate,
+		PurposeTemplate:     &purposeTemplate,
+		RemarksTemplate:     &remarksTemplate,
+		IdentityLabelKeys:   subjectTemplate.GetIdentityLabelKeys(),
+		Props:               *ProtoToSdk(subjectTemplate.GetProps(), SubjectPropToSdk),
+		Links:               *ProtoToSdk(subjectTemplate.GetLinks(), SubjectLinkProtoToSdk),
+		SelectorLabels:      *ProtoToSdk(subjectTemplate.GetSelectorLabels(), SubjectSelectorLabelProtoToSdk),
+		LabelSchema:         *ProtoToSdk(subjectTemplate.GetLabelSchema(), SubjectLabelSchemaProtoToSdk),
 	}
 }
