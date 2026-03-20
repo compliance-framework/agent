@@ -3,6 +3,7 @@ package policy_manager
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
@@ -217,7 +218,61 @@ risk_templates := [{
 			if assert.Len(t, policyTemplates, 1) {
 				assert.Equal(t, "password_auth_enabled", policyTemplates[0].Name)
 				assert.Equal(t, "compliance_framework.with_templates", policyTemplates[0].PolicyPackage)
+				assert.Nil(t, policyTemplates[0].Remediation)
 			}
 		}
 	})
+}
+
+func TestPolicyProcessorNewEvidenceRejectsMissingTitle(t *testing.T) {
+	processor := &PolicyProcessor{
+		labels: map[string]string{
+			"_plugin": "test-plugin",
+		},
+	}
+
+	evidence, err := processor.newEvidence(Result{
+		Policy: Policy{
+			File:    "test.rego",
+			Package: Package("data.compliance_framework.missing_title"),
+		},
+		EvalOutput: &EvalOutput{},
+	}, nil)
+
+	assert.Nil(t, evidence)
+	assert.EqualError(t, err, "Evidence title is required")
+}
+
+func TestPolicyProcessorGenerateResultsRejectsEvidenceWithoutTitle(t *testing.T) {
+	ctx := context.Background()
+	policyDir := t.TempDir()
+	regoContents := []byte(`package compliance_framework.missing_title
+
+description := "Evidence was generated without a title"
+`)
+
+	err := os.WriteFile(filepath.Join(policyDir, "missing_title.rego"), regoContents, 0o644)
+	assert.NoError(t, err)
+
+	processor := NewPolicyProcessor(
+		hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		map[string]string{
+			"_plugin": "test-plugin",
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	evidences, err := processor.GenerateResults(ctx, policyDir, map[string]interface{}{})
+
+	assert.Empty(t, evidences)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "Evidence title is required")
+	}
 }

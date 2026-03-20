@@ -209,7 +209,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) == 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(""))
+			evidence.Title = *result.Title
 			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidence.Status = &proto.EvidenceStatus{
@@ -222,7 +222,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		}
 
 		if len(result.Violations) > 0 {
-			evidence.Title = *FirstOf(result.Title, Pointer(""))
+			evidence.Title = *result.Title
 			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
 			evidences = append(evidences, evidence)
@@ -248,7 +248,19 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 	return evidences, resultErr
 }
 
+func validateNewEvidence(result Result) error {
+	if result.Title == nil {
+		return fmt.Errorf("Evidence title is required")
+	}
+
+	return nil
+}
+
 func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activity) (*proto.Evidence, error) {
+	if err := validateNewEvidence(result); err != nil {
+		return nil, err
+	}
+
 	evidenceUUID, err := sdk.SeededUUID(MergeMaps(map[string]string{
 		"type":        "evidence",
 		"policy":      result.Policy.Package.PurePackage(),
@@ -380,17 +392,20 @@ func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplat
 		})
 	}
 
-	remediationTasks := make([]*proto.RemediationTask, 0, len(temp.Remediation.Tasks))
-	for _, task := range temp.Remediation.Tasks {
-		remediationTasks = append(remediationTasks, &proto.RemediationTask{
-			Title: task.Title,
-		})
-	}
+	var remediation *proto.Remediation
+	if temp.Remediation != nil {
+		remediationTasks := make([]*proto.RemediationTask, 0, len(temp.Remediation.Tasks))
+		for _, task := range temp.Remediation.Tasks {
+			remediationTasks = append(remediationTasks, &proto.RemediationTask{
+				Title: task.Title,
+			})
+		}
 
-	remediation := &proto.Remediation{
-		Title:       temp.Remediation.Title,
-		Description: temp.Remediation.Description,
-		Tasks:       remediationTasks,
+		remediation = &proto.Remediation{
+			Title:       temp.Remediation.Title,
+			Description: temp.Remediation.Description,
+			Tasks:       remediationTasks,
+		}
 	}
 
 	templateUUID, err := sdk.SeededUUID(map[string]string{
