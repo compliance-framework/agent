@@ -370,13 +370,13 @@ func (pm *PolicyManager) evaluateRiskTemplates(ctx context.Context, policy Polic
 }
 
 func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplate, error) {
-	threats := make([]*proto.Threat, 0, len(temp.Threats))
-	for _, threat := range temp.Threats {
-		threats = append(threats, &proto.Threat{
-			System:     threat.System,
-			ExternalID: threat.ExternalID,
-			Title:      threat.Title,
-			Url:        threat.Url,
+	threatRefs := make([]*proto.ThreatRef, 0, len(temp.ThreatRefs))
+	for _, ref := range temp.ThreatRefs {
+		threatRefs = append(threatRefs, &proto.ThreatRef{
+			System:     ref.System,
+			ExternalID: ref.ExternalID,
+			Title:      ref.Title,
+			Url:        ref.Url,
 		})
 	}
 
@@ -412,7 +412,7 @@ func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplat
 		LikelihoodHint: temp.LikelihoodHint,
 		ImpactHint:     temp.ImpactHint,
 		ViolationIds:   temp.ViolationIds,
-		Threats:        threats,
+		ThreatRefs:     threatRefs,
 		Remediation:    remediation,
 	}, nil
 }

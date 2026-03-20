@@ -52,7 +52,8 @@ func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string,
 
 	enriched := make([]types.RiskTemplate, 0)
 	for _, temp := range *templates {
-		temp.IsActive = true
+		isActive := true
+		temp.IsActive = &isActive
 
 		for i := range temp.Remediation.Tasks {
 			temp.Remediation.Tasks[i].OrderIndex = i

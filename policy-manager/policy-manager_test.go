@@ -172,9 +172,9 @@ violation[{"title": "this should not be evaluated"}] if {
 			assert.Equal(t, "medium", template.LikelihoodHint)
 			assert.Equal(t, "high", template.ImpactHint)
 			assert.Equal(t, []string{"ssh.password_auth_enabled"}, template.ViolationIds)
-			if assert.Len(t, template.Threats, 1) {
-				assert.Equal(t, "ATT&CK", template.Threats[0].System)
-				assert.Equal(t, "T1110", template.Threats[0].ExternalID)
+			if assert.Len(t, template.ThreatRefs, 1) {
+				assert.Equal(t, "ATT&CK", template.ThreatRefs[0].System)
+				assert.Equal(t, "T1110", template.ThreatRefs[0].ExternalID)
 			}
 			if assert.NotNil(t, template.Remediation) {
 				assert.Equal(t, "Disable password authentication", template.Remediation.Title)

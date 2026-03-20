@@ -1326,7 +1326,7 @@ func (x *Evidence) GetStatus() *EvidenceStatus {
 	return nil
 }
 
-type Threat struct {
+type ThreatRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	System        string                 `protobuf:"bytes,1,opt,name=System,proto3" json:"System,omitempty"`
 	ExternalID    string                 `protobuf:"bytes,2,opt,name=ExternalID,proto3" json:"ExternalID,omitempty"`
@@ -1336,20 +1336,20 @@ type Threat struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Threat) Reset() {
-	*x = Threat{}
+func (x *ThreatRef) Reset() {
+	*x = ThreatRef{}
 	mi := &file_runner_proto_types_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Threat) String() string {
+func (x *ThreatRef) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Threat) ProtoMessage() {}
+func (*ThreatRef) ProtoMessage() {}
 
-func (x *Threat) ProtoReflect() protoreflect.Message {
+func (x *ThreatRef) ProtoReflect() protoreflect.Message {
 	mi := &file_runner_proto_types_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1361,33 +1361,33 @@ func (x *Threat) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Threat.ProtoReflect.Descriptor instead.
-func (*Threat) Descriptor() ([]byte, []int) {
+// Deprecated: Use ThreatRef.ProtoReflect.Descriptor instead.
+func (*ThreatRef) Descriptor() ([]byte, []int) {
 	return file_runner_proto_types_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *Threat) GetSystem() string {
+func (x *ThreatRef) GetSystem() string {
 	if x != nil {
 		return x.System
 	}
 	return ""
 }
 
-func (x *Threat) GetExternalID() string {
+func (x *ThreatRef) GetExternalID() string {
 	if x != nil {
 		return x.ExternalID
 	}
 	return ""
 }
 
-func (x *Threat) GetTitle() string {
+func (x *ThreatRef) GetTitle() string {
 	if x != nil {
 		return x.Title
 	}
 	return ""
 }
 
-func (x *Threat) GetUrl() string {
+func (x *ThreatRef) GetUrl() string {
 	if x != nil {
 		return x.Url
 	}
@@ -1516,7 +1516,7 @@ type RiskTemplate struct {
 	LikelihoodHint string                 `protobuf:"bytes,6,opt,name=Likelihood_hint,json=LikelihoodHint,proto3" json:"Likelihood_hint,omitempty"`
 	ImpactHint     string                 `protobuf:"bytes,7,opt,name=Impact_hint,json=ImpactHint,proto3" json:"Impact_hint,omitempty"`
 	ViolationIds   []string               `protobuf:"bytes,8,rep,name=Violation_ids,json=ViolationIds,proto3" json:"Violation_ids,omitempty"`
-	Threats        []*Threat              `protobuf:"bytes,9,rep,name=Threats,proto3" json:"Threats,omitempty"`
+	ThreatRefs     []*ThreatRef           `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
 	Remediation    *Remediation           `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1608,9 +1608,9 @@ func (x *RiskTemplate) GetViolationIds() []string {
 	return nil
 }
 
-func (x *RiskTemplate) GetThreats() []*Threat {
+func (x *RiskTemplate) GetThreatRefs() []*ThreatRef {
 	if x != nil {
-		return x.Threats
+		return x.ThreatRefs
 	}
 	return nil
 }
@@ -2086,8 +2086,8 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\n" +
 	"\b_RemarksB\n" +
 	"\n" +
-	"\b_Expires\"h\n" +
-	"\x06Threat\x12\x16\n" +
+	"\b_Expires\"k\n" +
+	"\tThreatRef\x12\x16\n" +
 	"\x06System\x18\x01 \x01(\tR\x06System\x12\x1e\n" +
 	"\n" +
 	"ExternalID\x18\x02 \x01(\tR\n" +
@@ -2102,7 +2102,7 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\vRemediation\x12\x14\n" +
 	"\x05Title\x18\x01 \x01(\tR\x05Title\x12 \n" +
 	"\vDescription\x18\x02 \x01(\tR\vDescription\x12,\n" +
-	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xde\x02\n" +
+	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xe7\x02\n" +
 	"\fRiskTemplate\x12\x12\n" +
 	"\x04UUID\x18\x01 \x01(\tR\x04UUID\x12$\n" +
 	"\rPolicyPackage\x18\x02 \x01(\tR\rPolicyPackage\x12\x12\n" +
@@ -2112,8 +2112,10 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\x0fLikelihood_hint\x18\x06 \x01(\tR\x0eLikelihoodHint\x12\x1f\n" +
 	"\vImpact_hint\x18\a \x01(\tR\n" +
 	"ImpactHint\x12#\n" +
-	"\rViolation_ids\x18\b \x03(\tR\fViolationIds\x12'\n" +
-	"\aThreats\x18\t \x03(\v2\r.proto.ThreatR\aThreats\x124\n" +
+	"\rViolation_ids\x18\b \x03(\tR\fViolationIds\x120\n" +
+	"\n" +
+	"ThreatRefs\x18\t \x03(\v2\x10.proto.ThreatRefR\n" +
+	"ThreatRefs\x124\n" +
 	"\vRemediation\x18\n" +
 	" \x01(\v2\x12.proto.RemediationR\vRemediation\"7\n" +
 	"\vSubjectProp\x12\x12\n" +
@@ -2182,7 +2184,7 @@ var file_runner_proto_types_proto_goTypes = []any{
 	(*InventoryItem)(nil),                     // 13: proto.InventoryItem
 	(*Subject)(nil),                           // 14: proto.Subject
 	(*Evidence)(nil),                          // 15: proto.Evidence
-	(*Threat)(nil),                            // 16: proto.Threat
+	(*ThreatRef)(nil),                         // 16: proto.ThreatRef
 	(*RemediationTask)(nil),                   // 17: proto.RemediationTask
 	(*Remediation)(nil),                       // 18: proto.Remediation
 	(*RiskTemplate)(nil),                      // 19: proto.RiskTemplate
@@ -2227,7 +2229,7 @@ var file_runner_proto_types_proto_depIdxs = []int32{
 	14, // 29: proto.Evidence.Subjects:type_name -> proto.Subject
 	8,  // 30: proto.Evidence.Status:type_name -> proto.EvidenceStatus
 	17, // 31: proto.Remediation.Tasks:type_name -> proto.RemediationTask
-	16, // 32: proto.RiskTemplate.Threats:type_name -> proto.Threat
+	16, // 32: proto.RiskTemplate.ThreatRefs:type_name -> proto.ThreatRef
 	18, // 33: proto.RiskTemplate.Remediation:type_name -> proto.Remediation
 	1,  // 34: proto.SubjectTemplate.Type:type_name -> proto.SubjectType
 	20, // 35: proto.SubjectTemplate.Props:type_name -> proto.SubjectProp

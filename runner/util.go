@@ -222,12 +222,13 @@ func EvidenceProtoToSdk(evidence *proto.Evidence) *types.Evidence {
 	}
 }
 
-func ThreatProtoToSdk(threat *proto.Threat) types.Threat {
-	return types.Threat{
-		System:     threat.GetSystem(),
-		ExternalID: threat.GetExternalID(),
-		Title:      threat.GetTitle(),
-		Url:        threat.GetUrl(),
+func ThreatRefProtoToSdk(threatRef *proto.ThreatRef) types.ThreatRef {
+	url := threatRef.GetUrl()
+	return types.ThreatRef{
+		System:     threatRef.GetSystem(),
+		ExternalID: threatRef.GetExternalID(),
+		Title:      threatRef.GetTitle(),
+		URL:        &url,
 	}
 }
 
@@ -239,23 +240,27 @@ func RemediationTaskProtoToSdk(task *proto.RemediationTask) types.RemediationTas
 }
 
 func RemediationProtoToSdk(remediation *proto.Remediation) *types.Remediation {
+	description := remediation.GetDescription()
 	return &types.Remediation{
 		Title:       remediation.GetTitle(),
-		Description: remediation.GetDescription(),
+		Description: &description,
 		Tasks:       *ProtoToSdk(remediation.GetTasks(), RemediationTaskProtoToSdk),
 	}
 }
 
 func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
+	likelihood := riskTemplate.GetLikelihoodHint()
+	impact := riskTemplate.GetImpactHint()
+
 	return &types.RiskTemplate{
 		ID:             riskTemplate.GetUUID(),
 		Name:           riskTemplate.GetName(),
 		Title:          riskTemplate.GetTitle(),
 		Statement:      riskTemplate.GetStatement(),
-		LikelihoodHint: riskTemplate.GetLikelihoodHint(),
-		ImpactHint:     riskTemplate.GetImpactHint(),
+		LikelihoodHint: &likelihood,
+		ImpactHint:     &impact,
 		ViolationIds:   riskTemplate.GetViolationIds(),
-		Threats:        *ProtoToSdk(riskTemplate.GetThreats(), ThreatProtoToSdk),
+		ThreatRefs:     *ProtoToSdk(riskTemplate.GetThreatRefs(), ThreatRefProtoToSdk),
 		Remediation:    RemediationProtoToSdk(riskTemplate.Remediation),
 	}
 }
@@ -281,20 +286,26 @@ func SubjectSelectorLabelProtoToSdk(label *proto.SubjectLabelSelector) types.Sub
 }
 
 func SubjectLabelSchemaProtoToSdk(label *proto.SubjectLabelSchema) types.SubjectTemplateLabelSchema {
+	description := label.GetDescription()
 	return types.SubjectTemplateLabelSchema{
 		Key:         label.GetKey(),
-		Description: label.GetDescription(),
+		Description: &description,
 	}
 }
 
 func SubjectTemplateProtoToSdk(subjectTemplate *proto.SubjectTemplate) *types.SubjectTemplate {
+	titleTemplate := subjectTemplate.GetTitleTemplate()
+	descriptionTemplate := subjectTemplate.GetDescriptionTemplate()
+	purposeTemplate := subjectTemplate.GetPurposeTemplate()
+	remarksTemplate := subjectTemplate.GetRemarksTemplate()
+
 	return &types.SubjectTemplate{
 		Name:                subjectTemplate.GetName(),
 		Type:                SubjectTypeFromEnum(subjectTemplate.GetType()),
-		TitleTemplate:       subjectTemplate.GetTitleTemplate(),
-		DescriptionTemplate: subjectTemplate.GetDescriptionTemplate(),
-		PurposeTemplate:     subjectTemplate.GetPurposeTemplate(),
-		RemarksTemplate:     subjectTemplate.GetRemarksTemplate(),
+		TitleTemplate:       &titleTemplate,
+		DescriptionTemplate: &descriptionTemplate,
+		PurposeTemplate:     &purposeTemplate,
+		RemarksTemplate:     &remarksTemplate,
 		IdentityLabelKeys:   subjectTemplate.GetIdentityLabelKeys(),
 		Props:               *ProtoToSdk(subjectTemplate.GetProps(), SubjectPropToSdk),
 		Links:               *ProtoToSdk(subjectTemplate.GetLinks(), SubjectLinkProtoToSdk),

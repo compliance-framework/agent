@@ -196,7 +196,7 @@ message Evidence {
   EvidenceStatus Status = 16;
 }
 
-message Threat {
+message ThreatRef {
   string System = 1;
   string ExternalID = 2;
   string Title = 3;
@@ -223,7 +223,7 @@ message RiskTemplate {
   string Likelihood_hint = 6;
   string Impact_hint = 7;
   repeated string Violation_ids = 8;
-  repeated Threat Threats = 9;
+  repeated ThreatRef ThreatRefs = 9;
   Remediation Remediation = 10;
 }
 

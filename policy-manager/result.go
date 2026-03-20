@@ -53,7 +53,7 @@ type Risk struct {
 	Links       []Link `json:"links" mapstructure:"links"`
 }
 
-type Threat struct {
+type ThreatRef struct {
 	System     string `json:"system" mapstructure:"system"`
 	ExternalID string `json:"id" mapstructure:"external_id"`
 	Title      string `json:"title" mapstructure:"title"`
@@ -76,7 +76,7 @@ type RiskTemplate struct {
 	LikelihoodHint string      `json:"likelihood_hint" mapstructure:"likelihood_hint"`
 	ImpactHint     string      `json:"impact_hint" mapstructure:"impact_hint"`
 	ViolationIds   []string    `json:"violation_ids" mapstructure:"violation_ids"`
-	Threats        []Threat    `json:"threats" mapstructure:"threat_refs"`
+	ThreatRefs     []ThreatRef `json:"threat_refs" mapstructure:"threat_refs"`
 	Remediation    Remediation `json:"remediation" mapstructure:"remediation"`
 }
 

@@ -58,8 +58,8 @@ github.com/cenkalti/backoff/v4 v4.2.1 h1:y4OZtCnogmCPw98Zjyt5a6+QwPLGkiQsYW5oUqy
 github.com/cenkalti/backoff/v4 v4.2.1/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/compliance-framework/api v0.12.0 h1:SnSxsKoVejJB07PJSEGCvQHFQY+BOlyIjycMusPFpCA=
-github.com/compliance-framework/api v0.12.0/go.mod h1:t5wpPBlgNNr3sqXoKo3Gyg+B2Qi6dcrcawGuGAaLJUs=
+github.com/compliance-framework/api v0.13.0-rc3 h1:t7ZP398JR/cnYpy7DXHT6beoarkNTjPbsAuIEr1l91w=
+github.com/compliance-framework/api v0.13.0-rc3/go.mod h1:CMHwcOOCcVRf1u/n3BeqbrP09WWCuwnFAlD7dQfIWCA=
 github.com/compliance-framework/gooci v0.0.0-20250124145243-d17d4bf31027 h1:tL1tChK9mtx81pw8vhP7I4qeLI1QQ95/jj3WboMeGvs=
 github.com/compliance-framework/gooci v0.0.0-20250124145243-d17d4bf31027/go.mod h1:UAxtWl/zNG1LxUYUxCbDAvJgJhY5KChnw+xZbXIquAY=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
@@ -324,6 +324,8 @@ github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/sagikazarmark/locafero v0.12.0 h1:/NQhBAkUb4+fH1jivKHWusDYFjMOOKU88eegjfxfHb4=
 github.com/sagikazarmark/locafero v0.12.0/go.mod h1:sZh36u/YSZ918v0Io+U9ogLYQJ9tLLBmM4eneO6WwsI=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 h1:KRzFb2m7YtdldCEkzs6KqmJw4nqEVZGK7IN2kJkjTuQ=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.2/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/segmentio/asm v1.2.1 h1:DTNbBqs57ioxAD4PrArqftgypG4/qNpXoJx8TVXxPR0=
 github.com/segmentio/asm v1.2.1/go.mod h1:BqMnlJP91P8d+4ibuonYZw9mfnzI9HfxselHZr5aAcs=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
