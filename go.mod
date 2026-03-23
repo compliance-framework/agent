@@ -4,7 +4,7 @@ go 1.25.8
 
 require (
 	github.com/compliance-framework/api v0.13.0
-	github.com/compliance-framework/gooci v0.0.5
+	github.com/compliance-framework/gooci v0.0.6
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
