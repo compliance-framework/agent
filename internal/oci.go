@@ -123,6 +123,9 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 				logger.Debug("Found source locally, using extracted artifact path", "Path", localPath)
 				return localPath, nil
 			}
+			if binaryPath == "plugin" {
+				return "", fmt.Errorf("expected plugin executable at %q", localPath)
+			}
 		}
 
 		// The file exists. Just return it.

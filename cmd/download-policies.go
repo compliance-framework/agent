@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/hashicorp/go-hclog"
@@ -48,7 +48,7 @@ func (d *PolicyDownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		return loopErr
 	}
 
-	policyPath := path.Join(basePath, AgentPolicyDir)
+	policyPath := filepath.Join(basePath, AgentPolicyDir)
 
 	for _, source := range sources {
 		d.logger.Debug("Received source", "source", source)

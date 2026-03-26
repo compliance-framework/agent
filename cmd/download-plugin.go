@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/hashicorp/go-hclog"
@@ -48,7 +48,7 @@ func (d *DownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		return loopErr
 	}
 
-	pluginPath := path.Join(basePath, AgentPluginDir)
+	pluginPath := filepath.Join(basePath, AgentPluginDir)
 
 	// At some point, we will wrap this in go routine to download concurrently.
 	// For the moment, we've left it without for the sake of simplicity and easy amendments.
