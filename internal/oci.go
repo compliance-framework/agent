@@ -75,11 +75,11 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 	logger.Trace("Checking for source", "source", source)
 
 	// First we check if the source is a path that exists on the fs, if so we just use that.
-	_, err := os.ReadFile(source)
+	_, err := os.Stat(source)
 
 	if err == nil {
 		// The file exists. Just return it.
-		logger.Debug("Found source locally, using local file", "File", source)
+		logger.Debug("Found source locally, using local path", "Path", source)
 
 		// The file exists locally, so we use the local path.
 		return source, nil
@@ -99,6 +99,14 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 		}
 
 		outDir := path.Join(outputDir, tag.RepositoryStr(), tag.Identifier())
+		localPath := path.Join(outDir, binaryPath)
+
+		if _, err := os.Stat(outDir); err == nil {
+			logger.Debug("OCI extraction path already exists, skipping download", "Source", source, "Path", outDir)
+			return localPath, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
 
 		downloaderImpl, err := oci.NewDownloader(
 			tag,
@@ -112,7 +120,7 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
-		return path.Join(outDir, binaryPath), nil
+		return localPath, nil
 	}
 
 	return "", errors.New("downloadable item source cannot be found locally and does not look like OCI")

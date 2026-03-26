@@ -866,11 +866,11 @@ func (ar *AgentRunner) downloadItem(
 	ar.logger.Trace("Checking for source", "type", type_, "source", source)
 
 	// First we check if the source is a path that exists on the fs, if so we just use that.
-	_, err := os.ReadFile(source)
+	_, err := os.Stat(source)
 
 	if err == nil {
 		// The file exists. Just return it.
-		ar.logger.Debug("Found source locally, using local file", "type", type_, "File", source)
+		ar.logger.Debug("Found source locally, using local path", "type", type_, "Path", source)
 
 		// The file exists locally, so we use the local path.
 		return source, nil
@@ -890,6 +890,19 @@ func (ar *AgentRunner) downloadItem(
 		}
 
 		outDir := path.Join(outDirPrefix, tag.RepositoryStr(), tag.Identifier())
+		location := outDir
+		if type_ == "plugins" {
+			location = path.Join(outDir, "plugin")
+		} else if type_ == "policies" {
+			location = path.Join(outDir, "policies")
+		}
+
+		if _, err := os.Stat(outDir); err == nil {
+			ar.logger.Debug("OCI extraction path already exists, skipping download", "type", type_, "Source", source, "Path", outDir)
+			return location, nil
+		} else if !os.IsNotExist(err) {
+			return location, err
+		}
 
 		downloaderImpl, err := oci.NewDownloader(
 			tag,
@@ -908,13 +921,6 @@ func (ar *AgentRunner) downloadItem(
 		}
 		if err != nil {
 			return location, err
-		}
-
-		location := outDir
-		if type_ == "plugins" {
-			location = path.Join(outDir, "plugin")
-		} else if type_ == "policies" {
-			location = path.Join(outDir, "policies")
 		}
 
 		ar.logger.Debug("Source downloaded successfully", "type", type_, "Destination", outDir)

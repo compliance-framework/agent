@@ -1,12 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path"
 
 	"github.com/compliance-framework/agent/internal"
-	"github.com/compliance-framework/gooci/pkg/oci"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-hclog"
 	"github.com/spf13/cobra"
 )
@@ -55,24 +54,12 @@ func (d *PolicyDownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		d.logger.Debug("Received source", "source", source)
 
 		if internal.IsOCI(source) {
-			tag, err := name.NewTag(source)
-			if err != nil {
-				return err
-			}
-			destination := path.Join(policyPath, tag.RepositoryStr(), tag.Identifier())
-			downloaderImpl, err := oci.NewDownloader(
-				tag,
-				destination,
-			)
-			if err != nil {
-				return err
-			}
-			err = downloaderImpl.Download()
+			location, err := internal.Download(context.Background(), source, policyPath, "policies", d.logger)
 			if err != nil {
 				return err
 			}
 
-			d.logger.Debug("Downloaded policy", "path", destination)
+			d.logger.Debug("Policy available locally", "path", location)
 		}
 	}
 
