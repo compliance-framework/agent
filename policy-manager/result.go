@@ -69,6 +69,11 @@ type Remediation struct {
 	Tasks       []RemediationTask `json:"tasks" mapstructure:"tasks"`
 }
 
+type RiskTemplateLabelSchema struct {
+	Key         string `json:"key" mapstructure:"key"`
+	Description string `json:"description" mapstructure:"description"`
+}
+
 type RiskTemplate struct {
 	Name           string       `json:"name" mapstructure:"name"`
 	Title          string       `json:"title" mapstructure:"title"`
@@ -78,6 +83,9 @@ type RiskTemplate struct {
 	ViolationIds   []string     `json:"violation_ids" mapstructure:"violation_ids"`
 	ThreatRefs     []ThreatRef  `json:"threat_refs" mapstructure:"threat_refs"`
 	Remediation    *Remediation `json:"remediation,omitempty" mapstructure:"remediation"`
+
+	DedupeLabelKeys []string                  `json:"dedupe_label_keys" mapstructure:"dedupe_label_keys"`
+	LabelSchema     []RiskTemplateLabelSchema `json:"label_schema" mapstructure:"label_schema"`
 }
 
 type Result struct {

@@ -214,6 +214,11 @@ message Remediation {
   repeated RemediationTask Tasks = 3;
 }
 
+message RiskTemplateLabelSchema {
+  string Key = 1;
+  string Description = 2;
+}
+
 message RiskTemplate {
   string UUID = 1;
   string PolicyPackage = 2;
@@ -225,6 +230,10 @@ message RiskTemplate {
   repeated string ViolationIds = 8;
   repeated ThreatRef ThreatRefs = 9;
   Remediation Remediation = 10;
+  reserved 11, 12, 13, 14;
+  reserved "TitleTemplate", "StatementTemplate", "LikelihoodHintTemplate", "ImpactHintTemplate";
+  repeated string DedupeLabelKeys = 15;
+  repeated RiskTemplateLabelSchema LabelSchema = 16;
 }
 
 message SubjectProp {

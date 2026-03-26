@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/compliance-framework/agent/runner/proto"
@@ -57,5 +58,71 @@ func TestRiskTemplateProtoToSdkConvertsRemediation(t *testing.T) {
 
 	if len(got.Remediation.Tasks) != 2 {
 		t.Fatalf("expected 2 remediation tasks, got %d", len(got.Remediation.Tasks))
+	}
+}
+
+func TestRiskTemplateProtoToSdkPreservesTemplateCapableFieldsAndLabelSchema(t *testing.T) {
+	got := RiskTemplateProtoToSdk(&proto.RiskTemplate{
+		UUID:            "risk-template-id",
+		Name:            "risk-template",
+		Title:           "Risk on {{ .subject }}",
+		Statement:       "Statement for {{ .subject }}",
+		LikelihoodHint:  "{{ .likelihood }}",
+		ImpactHint:      "{{ .impact }}",
+		DedupeLabelKeys: []string{"cluster", "hostname"},
+		LabelSchema: []*proto.RiskTemplateLabelSchema{
+			{
+				Key:         "cluster",
+				Description: "Cluster name",
+			},
+			{
+				Key:         "hostname",
+				Description: "Host name",
+			},
+		},
+	})
+
+	if got == nil {
+		t.Fatal("expected converted risk template, got nil")
+	}
+
+	if got.Title != "Risk on {{ .subject }}" {
+		t.Fatalf("expected title %q, got %q", "Risk on {{ .subject }}", got.Title)
+	}
+
+	if got.Statement != "Statement for {{ .subject }}" {
+		t.Fatalf("expected statement %q, got %q", "Statement for {{ .subject }}", got.Statement)
+	}
+
+	if got.LikelihoodHint == nil || *got.LikelihoodHint != "{{ .likelihood }}" {
+		t.Fatalf("expected likelihood hint %q, got %#v", "{{ .likelihood }}", got.LikelihoodHint)
+	}
+
+	if got.ImpactHint == nil || *got.ImpactHint != "{{ .impact }}" {
+		t.Fatalf("expected impact hint %q, got %#v", "{{ .impact }}", got.ImpactHint)
+	}
+
+	if !slices.Equal(got.DedupeLabelKeys, []string{"cluster", "hostname"}) {
+		t.Fatalf("expected dedupe label keys %v, got %v", []string{"cluster", "hostname"}, got.DedupeLabelKeys)
+	}
+
+	if len(got.LabelSchema) != 2 {
+		t.Fatalf("expected 2 label schema entries, got %d", len(got.LabelSchema))
+	}
+
+	if got.LabelSchema[0].Key != "cluster" {
+		t.Fatalf("expected first label schema key %q, got %q", "cluster", got.LabelSchema[0].Key)
+	}
+
+	if got.LabelSchema[0].Description == nil || *got.LabelSchema[0].Description != "Cluster name" {
+		t.Fatalf("expected first label schema description %q, got %#v", "Cluster name", got.LabelSchema[0].Description)
+	}
+
+	if got.LabelSchema[1].Key != "hostname" {
+		t.Fatalf("expected second label schema key %q, got %q", "hostname", got.LabelSchema[1].Key)
+	}
+
+	if got.LabelSchema[1].Description == nil || *got.LabelSchema[1].Description != "Host name" {
+		t.Fatalf("expected second label schema description %q, got %#v", "Host name", got.LabelSchema[1].Description)
 	}
 }

@@ -418,16 +418,26 @@ func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplat
 		return nil, err
 	}
 
+	labelSchema := make([]*proto.RiskTemplateLabelSchema, 0, len(temp.LabelSchema))
+	for _, ls := range temp.LabelSchema {
+		labelSchema = append(labelSchema, &proto.RiskTemplateLabelSchema{
+			Key:         ls.Key,
+			Description: ls.Description,
+		})
+	}
+
 	return &proto.RiskTemplate{
-		UUID:           templateUUID.String(),
-		PolicyPackage:  policy.Package.PurePackage(),
-		Name:           temp.Name,
-		Title:          temp.Title,
-		Statement:      temp.Statement,
-		LikelihoodHint: temp.LikelihoodHint,
-		ImpactHint:     temp.ImpactHint,
-		ViolationIds:   temp.ViolationIds,
-		ThreatRefs:     threatRefs,
-		Remediation:    remediation,
+		UUID:            templateUUID.String(),
+		PolicyPackage:   policy.Package.PurePackage(),
+		Name:            temp.Name,
+		Title:           temp.Title,
+		Statement:       temp.Statement,
+		LikelihoodHint:  temp.LikelihoodHint,
+		ImpactHint:      temp.ImpactHint,
+		ViolationIds:    temp.ViolationIds,
+		ThreatRefs:      threatRefs,
+		Remediation:     remediation,
+		DedupeLabelKeys: temp.DedupeLabelKeys,
+		LabelSchema:     labelSchema,
 	}, nil
 }
