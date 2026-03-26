@@ -61,16 +61,15 @@ func TestRiskTemplateProtoToSdkConvertsRemediation(t *testing.T) {
 	}
 }
 
-func TestRiskTemplateProtoToSdkConvertsTemplateFieldsAndLabelSchema(t *testing.T) {
+func TestRiskTemplateProtoToSdkPreservesTemplateCapableFieldsAndLabelSchema(t *testing.T) {
 	got := RiskTemplateProtoToSdk(&proto.RiskTemplate{
-		UUID:                   "risk-template-id",
-		Name:                   "risk-template",
-		Title:                  "Risk Template",
-		TitleTemplate:          "Risk on {{ .subject }}",
-		StatementTemplate:      "",
-		LikelihoodHintTemplate: "{{ .likelihood }}",
-		ImpactHintTemplate:     "",
-		DedupeLabelKeys:        []string{"cluster", "hostname"},
+		UUID:            "risk-template-id",
+		Name:            "risk-template",
+		Title:           "Risk on {{ .subject }}",
+		Statement:       "Statement for {{ .subject }}",
+		LikelihoodHint:  "{{ .likelihood }}",
+		ImpactHint:      "{{ .impact }}",
+		DedupeLabelKeys: []string{"cluster", "hostname"},
 		LabelSchema: []*proto.RiskTemplateLabelSchema{
 			{
 				Key:         "cluster",
@@ -87,20 +86,20 @@ func TestRiskTemplateProtoToSdkConvertsTemplateFieldsAndLabelSchema(t *testing.T
 		t.Fatal("expected converted risk template, got nil")
 	}
 
-	if got.TitleTemplate == nil || *got.TitleTemplate != "Risk on {{ .subject }}" {
-		t.Fatalf("expected title template %q, got %#v", "Risk on {{ .subject }}", got.TitleTemplate)
+	if got.Title != "Risk on {{ .subject }}" {
+		t.Fatalf("expected title %q, got %q", "Risk on {{ .subject }}", got.Title)
 	}
 
-	if got.StatementTemplate != nil {
-		t.Fatalf("expected nil statement template for empty string, got %#v", got.StatementTemplate)
+	if got.Statement != "Statement for {{ .subject }}" {
+		t.Fatalf("expected statement %q, got %q", "Statement for {{ .subject }}", got.Statement)
 	}
 
-	if got.LikelihoodHintTemplate == nil || *got.LikelihoodHintTemplate != "{{ .likelihood }}" {
-		t.Fatalf("expected likelihood hint template %q, got %#v", "{{ .likelihood }}", got.LikelihoodHintTemplate)
+	if got.LikelihoodHint == nil || *got.LikelihoodHint != "{{ .likelihood }}" {
+		t.Fatalf("expected likelihood hint %q, got %#v", "{{ .likelihood }}", got.LikelihoodHint)
 	}
 
-	if got.ImpactHintTemplate != nil {
-		t.Fatalf("expected nil impact hint template for empty string, got %#v", got.ImpactHintTemplate)
+	if got.ImpactHint == nil || *got.ImpactHint != "{{ .impact }}" {
+		t.Fatalf("expected impact hint %q, got %#v", "{{ .impact }}", got.ImpactHint)
 	}
 
 	if !slices.Equal(got.DedupeLabelKeys, []string{"cluster", "hostname"}) {

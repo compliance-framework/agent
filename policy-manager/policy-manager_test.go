@@ -186,21 +186,17 @@ violation[{"title": "this should not be evaluated"}] if {
 		}
 	})
 
-	t.Run("Policy Manager propagates templated risk template fields", func(t *testing.T) {
+	t.Run("Policy Manager propagates template-capable risk template fields", func(t *testing.T) {
 		ctx := context.Background()
 
 		regoContents := []byte(`package compliance_framework.templateable_risk_templates
 
 risk_templates := [{
 	"name": "templated_password_auth_enabled",
-	"title": "Password authentication enabled",
-	"statement": "SSH password authentication is enabled.",
-	"likelihood_hint": "medium",
-	"impact_hint": "high",
-	"title_template": "Password authentication enabled on {{ .subject }}",
-	"statement_template": "SSH password authentication is enabled on {{ .subject }}.",
-	"likelihood_hint_template": "{{ .likelihood }}",
-	"impact_hint_template": "{{ .impact }}",
+	"title": "Password authentication enabled on {{ .subject }}",
+	"statement": "SSH password authentication is enabled on {{ .subject }}.",
+	"likelihood_hint": "{{ .likelihood }}",
+	"impact_hint": "{{ .impact }}",
 	"dedupe_label_keys": ["cluster", "hostname"],
 	"label_schema": [
 		{
@@ -222,10 +218,10 @@ risk_templates := [{
 		if assert.Len(t, policyTemplates, 1) {
 			template := policyTemplates[0]
 			assert.Equal(t, "templated_password_auth_enabled", template.Name)
-			assert.Equal(t, "Password authentication enabled on {{ .subject }}", template.TitleTemplate)
-			assert.Equal(t, "SSH password authentication is enabled on {{ .subject }}.", template.StatementTemplate)
-			assert.Equal(t, "{{ .likelihood }}", template.LikelihoodHintTemplate)
-			assert.Equal(t, "{{ .impact }}", template.ImpactHintTemplate)
+			assert.Equal(t, "Password authentication enabled on {{ .subject }}", template.Title)
+			assert.Equal(t, "SSH password authentication is enabled on {{ .subject }}.", template.Statement)
+			assert.Equal(t, "{{ .likelihood }}", template.LikelihoodHint)
+			assert.Equal(t, "{{ .impact }}", template.ImpactHint)
 			assert.Equal(t, []string{"cluster", "hostname"}, template.DedupeLabelKeys)
 			if assert.Len(t, template.LabelSchema, 2) {
 				assert.Equal(t, "cluster", template.LabelSchema[0].Key)

@@ -427,21 +427,17 @@ func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplat
 	}
 
 	return &proto.RiskTemplate{
-		UUID:                   templateUUID.String(),
-		PolicyPackage:          policy.Package.PurePackage(),
-		Name:                   temp.Name,
-		Title:                  temp.Title,
-		Statement:              temp.Statement,
-		LikelihoodHint:         temp.LikelihoodHint,
-		ImpactHint:             temp.ImpactHint,
-		ViolationIds:           temp.ViolationIds,
-		ThreatRefs:             threatRefs,
-		Remediation:            remediation,
-		TitleTemplate:          temp.TitleTemplate,
-		StatementTemplate:      temp.StatementTemplate,
-		LikelihoodHintTemplate: temp.LikelihoodHintTemplate,
-		ImpactHintTemplate:     temp.ImpactHintTemplate,
-		DedupeLabelKeys:        temp.DedupeLabelKeys,
-		LabelSchema:            labelSchema,
+		UUID:            templateUUID.String(),
+		PolicyPackage:   policy.Package.PurePackage(),
+		Name:            temp.Name,
+		Title:           temp.Title,
+		Statement:       temp.Statement,
+		LikelihoodHint:  temp.LikelihoodHint,
+		ImpactHint:      temp.ImpactHint,
+		ViolationIds:    temp.ViolationIds,
+		ThreatRefs:      threatRefs,
+		Remediation:     remediation,
+		DedupeLabelKeys: temp.DedupeLabelKeys,
+		LabelSchema:     labelSchema,
 	}, nil
 }

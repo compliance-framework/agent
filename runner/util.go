@@ -260,13 +260,6 @@ func RiskTemplateLabelSchemaProtoToSdk(label *proto.RiskTemplateLabelSchema) typ
 	}
 }
 
-func optionalStringPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplate {
 	if riskTemplate == nil {
 		return nil
@@ -276,21 +269,17 @@ func RiskTemplateProtoToSdk(riskTemplate *proto.RiskTemplate) *types.RiskTemplat
 	impact := riskTemplate.GetImpactHint()
 
 	return &types.RiskTemplate{
-		ID:                     riskTemplate.GetUUID(),
-		Name:                   riskTemplate.GetName(),
-		Title:                  riskTemplate.GetTitle(),
-		Statement:              riskTemplate.GetStatement(),
-		LikelihoodHint:         &likelihood,
-		ImpactHint:             &impact,
-		TitleTemplate:          optionalStringPtr(riskTemplate.GetTitleTemplate()),
-		StatementTemplate:      optionalStringPtr(riskTemplate.GetStatementTemplate()),
-		LikelihoodHintTemplate: optionalStringPtr(riskTemplate.GetLikelihoodHintTemplate()),
-		ImpactHintTemplate:     optionalStringPtr(riskTemplate.GetImpactHintTemplate()),
-		DedupeLabelKeys:        riskTemplate.GetDedupeLabelKeys(),
-		LabelSchema:            *ProtoToSdk(riskTemplate.GetLabelSchema(), RiskTemplateLabelSchemaProtoToSdk),
-		ViolationIds:           riskTemplate.GetViolationIds(),
-		ThreatRefs:             *ProtoToSdk(riskTemplate.GetThreatRefs(), ThreatRefProtoToSdk),
-		Remediation:            RemediationProtoToSdk(riskTemplate.GetRemediation()),
+		ID:              riskTemplate.GetUUID(),
+		Name:            riskTemplate.GetName(),
+		Title:           riskTemplate.GetTitle(),
+		Statement:       riskTemplate.GetStatement(),
+		LikelihoodHint:  &likelihood,
+		ImpactHint:      &impact,
+		DedupeLabelKeys: riskTemplate.GetDedupeLabelKeys(),
+		LabelSchema:     *ProtoToSdk(riskTemplate.GetLabelSchema(), RiskTemplateLabelSchemaProtoToSdk),
+		ViolationIds:    riskTemplate.GetViolationIds(),
+		ThreatRefs:      *ProtoToSdk(riskTemplate.GetThreatRefs(), ThreatRefProtoToSdk),
+		Remediation:     RemediationProtoToSdk(riskTemplate.GetRemediation()),
 	}
 }
 

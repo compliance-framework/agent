@@ -1559,25 +1559,21 @@ func (x *RiskTemplateLabelSchema) GetDescription() string {
 }
 
 type RiskTemplate struct {
-	state                  protoimpl.MessageState     `protogen:"open.v1"`
-	UUID                   string                     `protobuf:"bytes,1,opt,name=UUID,proto3" json:"UUID,omitempty"`
-	PolicyPackage          string                     `protobuf:"bytes,2,opt,name=PolicyPackage,proto3" json:"PolicyPackage,omitempty"`
-	Name                   string                     `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
-	Title                  string                     `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
-	Statement              string                     `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
-	LikelihoodHint         string                     `protobuf:"bytes,6,opt,name=LikelihoodHint,proto3" json:"LikelihoodHint,omitempty"`
-	ImpactHint             string                     `protobuf:"bytes,7,opt,name=ImpactHint,proto3" json:"ImpactHint,omitempty"`
-	ViolationIds           []string                   `protobuf:"bytes,8,rep,name=ViolationIds,proto3" json:"ViolationIds,omitempty"`
-	ThreatRefs             []*ThreatRef               `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
-	Remediation            *Remediation               `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
-	TitleTemplate          string                     `protobuf:"bytes,11,opt,name=TitleTemplate,proto3" json:"TitleTemplate,omitempty"`
-	StatementTemplate      string                     `protobuf:"bytes,12,opt,name=StatementTemplate,proto3" json:"StatementTemplate,omitempty"`
-	LikelihoodHintTemplate string                     `protobuf:"bytes,13,opt,name=LikelihoodHintTemplate,proto3" json:"LikelihoodHintTemplate,omitempty"`
-	ImpactHintTemplate     string                     `protobuf:"bytes,14,opt,name=ImpactHintTemplate,proto3" json:"ImpactHintTemplate,omitempty"`
-	DedupeLabelKeys        []string                   `protobuf:"bytes,15,rep,name=DedupeLabelKeys,proto3" json:"DedupeLabelKeys,omitempty"`
-	LabelSchema            []*RiskTemplateLabelSchema `protobuf:"bytes,16,rep,name=LabelSchema,proto3" json:"LabelSchema,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state           protoimpl.MessageState     `protogen:"open.v1"`
+	UUID            string                     `protobuf:"bytes,1,opt,name=UUID,proto3" json:"UUID,omitempty"`
+	PolicyPackage   string                     `protobuf:"bytes,2,opt,name=PolicyPackage,proto3" json:"PolicyPackage,omitempty"`
+	Name            string                     `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
+	Title           string                     `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
+	Statement       string                     `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
+	LikelihoodHint  string                     `protobuf:"bytes,6,opt,name=LikelihoodHint,proto3" json:"LikelihoodHint,omitempty"`
+	ImpactHint      string                     `protobuf:"bytes,7,opt,name=ImpactHint,proto3" json:"ImpactHint,omitempty"`
+	ViolationIds    []string                   `protobuf:"bytes,8,rep,name=ViolationIds,proto3" json:"ViolationIds,omitempty"`
+	ThreatRefs      []*ThreatRef               `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
+	Remediation     *Remediation               `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
+	DedupeLabelKeys []string                   `protobuf:"bytes,15,rep,name=DedupeLabelKeys,proto3" json:"DedupeLabelKeys,omitempty"`
+	LabelSchema     []*RiskTemplateLabelSchema `protobuf:"bytes,16,rep,name=LabelSchema,proto3" json:"LabelSchema,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RiskTemplate) Reset() {
@@ -1678,34 +1674,6 @@ func (x *RiskTemplate) GetRemediation() *Remediation {
 		return x.Remediation
 	}
 	return nil
-}
-
-func (x *RiskTemplate) GetTitleTemplate() string {
-	if x != nil {
-		return x.TitleTemplate
-	}
-	return ""
-}
-
-func (x *RiskTemplate) GetStatementTemplate() string {
-	if x != nil {
-		return x.StatementTemplate
-	}
-	return ""
-}
-
-func (x *RiskTemplate) GetLikelihoodHintTemplate() string {
-	if x != nil {
-		return x.LikelihoodHintTemplate
-	}
-	return ""
-}
-
-func (x *RiskTemplate) GetImpactHintTemplate() string {
-	if x != nil {
-		return x.ImpactHintTemplate
-	}
-	return ""
 }
 
 func (x *RiskTemplate) GetDedupeLabelKeys() []string {
@@ -2205,7 +2173,7 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"M\n" +
 	"\x17RiskTemplateLabelSchema\x12\x10\n" +
 	"\x03Key\x18\x01 \x01(\tR\x03Key\x12 \n" +
-	"\vDescription\x18\x02 \x01(\tR\vDescription\"\x8c\x05\n" +
+	"\vDescription\x18\x02 \x01(\tR\vDescription\"\xb6\x04\n" +
 	"\fRiskTemplate\x12\x12\n" +
 	"\x04UUID\x18\x01 \x01(\tR\x04UUID\x12$\n" +
 	"\rPolicyPackage\x18\x02 \x01(\tR\rPolicyPackage\x12\x12\n" +
@@ -2221,13 +2189,9 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"ThreatRefs\x18\t \x03(\v2\x10.proto.ThreatRefR\n" +
 	"ThreatRefs\x124\n" +
 	"\vRemediation\x18\n" +
-	" \x01(\v2\x12.proto.RemediationR\vRemediation\x12$\n" +
-	"\rTitleTemplate\x18\v \x01(\tR\rTitleTemplate\x12,\n" +
-	"\x11StatementTemplate\x18\f \x01(\tR\x11StatementTemplate\x126\n" +
-	"\x16LikelihoodHintTemplate\x18\r \x01(\tR\x16LikelihoodHintTemplate\x12.\n" +
-	"\x12ImpactHintTemplate\x18\x0e \x01(\tR\x12ImpactHintTemplate\x12(\n" +
+	" \x01(\v2\x12.proto.RemediationR\vRemediation\x12(\n" +
 	"\x0fDedupeLabelKeys\x18\x0f \x03(\tR\x0fDedupeLabelKeys\x12@\n" +
-	"\vLabelSchema\x18\x10 \x03(\v2\x1e.proto.RiskTemplateLabelSchemaR\vLabelSchema\"7\n" +
+	"\vLabelSchema\x18\x10 \x03(\v2\x1e.proto.RiskTemplateLabelSchemaR\vLabelSchemaJ\x04\b\v\x10\fJ\x04\b\f\x10\rJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0fR\rTitleTemplateR\x11StatementTemplateR\x16LikelihoodHintTemplateR\x12ImpactHintTemplate\"7\n" +
 	"\vSubjectProp\x12\x12\n" +
 	"\x04Name\x18\x01 \x01(\tR\x04Name\x12\x14\n" +
 	"\x05Value\x18\x02 \x01(\tR\x05Value\"!\n" +

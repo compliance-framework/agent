@@ -230,10 +230,8 @@ message RiskTemplate {
   repeated string ViolationIds = 8;
   repeated ThreatRef ThreatRefs = 9;
   Remediation Remediation = 10;
-  string TitleTemplate = 11;
-  string StatementTemplate = 12;
-  string LikelihoodHintTemplate = 13;
-  string ImpactHintTemplate = 14;
+  reserved 11, 12, 13, 14;
+  reserved "TitleTemplate", "StatementTemplate", "LikelihoodHintTemplate", "ImpactHintTemplate";
   repeated string DedupeLabelKeys = 15;
   repeated RiskTemplateLabelSchema LabelSchema = 16;
 }

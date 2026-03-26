@@ -84,12 +84,8 @@ type RiskTemplate struct {
 	ThreatRefs     []ThreatRef  `json:"threat_refs" mapstructure:"threat_refs"`
 	Remediation    *Remediation `json:"remediation,omitempty" mapstructure:"remediation"`
 
-	TitleTemplate          string                    `json:"title_template" mapstructure:"title_template"`
-	StatementTemplate      string                    `json:"statement_template" mapstructure:"statement_template"`
-	LikelihoodHintTemplate string                    `json:"likelihood_hint_template" mapstructure:"likelihood_hint_template"`
-	ImpactHintTemplate     string                    `json:"impact_hint_template" mapstructure:"impact_hint_template"`
-	DedupeLabelKeys        []string                  `json:"dedupe_label_keys" mapstructure:"dedupe_label_keys"`
-	LabelSchema            []RiskTemplateLabelSchema `json:"label_schema" mapstructure:"label_schema"`
+	DedupeLabelKeys []string                  `json:"dedupe_label_keys" mapstructure:"dedupe_label_keys"`
+	LabelSchema     []RiskTemplateLabelSchema `json:"label_schema" mapstructure:"label_schema"`
 }
 
 type Result struct {
