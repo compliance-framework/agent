@@ -186,6 +186,56 @@ violation[{"title": "this should not be evaluated"}] if {
 		}
 	})
 
+	t.Run("Policy Manager propagates templated risk template fields", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents := []byte(`package compliance_framework.templateable_risk_templates
+
+risk_templates := [{
+	"name": "templated_password_auth_enabled",
+	"title": "Password authentication enabled",
+	"statement": "SSH password authentication is enabled.",
+	"likelihood_hint": "medium",
+	"impact_hint": "high",
+	"title_template": "Password authentication enabled on {{ .subject }}",
+	"statement_template": "SSH password authentication is enabled on {{ .subject }}.",
+	"likelihood_hint_template": "{{ .likelihood }}",
+	"impact_hint_template": "{{ .impact }}",
+	"dedupe_label_keys": ["cluster", "hostname"],
+	"label_schema": [
+		{
+			"key": "cluster",
+			"description": "Cluster name"
+		},
+		{
+			"key": "hostname",
+			"description": "Host name"
+		}
+	]
+}]
+`)
+
+		templates, err := buildPolicyManager(regoContents).GetRiskTemplates(ctx)
+
+		assert.NoError(t, err)
+		policyTemplates := templates["compliance_framework.templateable_risk_templates"]
+		if assert.Len(t, policyTemplates, 1) {
+			template := policyTemplates[0]
+			assert.Equal(t, "templated_password_auth_enabled", template.Name)
+			assert.Equal(t, "Password authentication enabled on {{ .subject }}", template.TitleTemplate)
+			assert.Equal(t, "SSH password authentication is enabled on {{ .subject }}.", template.StatementTemplate)
+			assert.Equal(t, "{{ .likelihood }}", template.LikelihoodHintTemplate)
+			assert.Equal(t, "{{ .impact }}", template.ImpactHintTemplate)
+			assert.Equal(t, []string{"cluster", "hostname"}, template.DedupeLabelKeys)
+			if assert.Len(t, template.LabelSchema, 2) {
+				assert.Equal(t, "cluster", template.LabelSchema[0].Key)
+				assert.Equal(t, "Cluster name", template.LabelSchema[0].Description)
+				assert.Equal(t, "hostname", template.LabelSchema[1].Key)
+				assert.Equal(t, "Host name", template.LabelSchema[1].Description)
+			}
+		}
+	})
+
 	t.Run("Policy Manager skips modules without static risk templates", func(t *testing.T) {
 		ctx := context.Background()
 
