@@ -3,8 +3,11 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/compliance-framework/agent/internal"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/spf13/cobra"
 )
@@ -56,7 +59,10 @@ func (d *DownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		d.logger.Debug("Received source", "source", source)
 
 		if internal.IsOCI(source) {
-			location, err := internal.Download(cmd.Context(), source, pluginPath, "plugin", d.logger)
+			location, err := internal.Download(cmd.Context(), source, pluginPath, "plugin", d.logger, remote.WithPlatform(v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			}))
 			if err != nil {
 				return err
 			}
