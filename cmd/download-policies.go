@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 
@@ -54,7 +53,7 @@ func (d *PolicyDownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		d.logger.Debug("Received source", "source", source)
 
 		if internal.IsOCI(source) {
-			location, err := internal.Download(context.Background(), source, policyPath, "policies", d.logger)
+			location, err := internal.Download(cmd.Context(), source, policyPath, "policies", d.logger)
 			if err != nil {
 				return err
 			}

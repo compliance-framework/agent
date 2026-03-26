@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 
@@ -57,7 +56,7 @@ func (d *DownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		d.logger.Debug("Received source", "source", source)
 
 		if internal.IsOCI(source) {
-			location, err := internal.Download(context.Background(), source, pluginPath, "plugin", d.logger)
+			location, err := internal.Download(cmd.Context(), source, pluginPath, "plugin", d.logger)
 			if err != nil {
 				return err
 			}

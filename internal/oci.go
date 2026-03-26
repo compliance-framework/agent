@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -100,6 +100,8 @@ func shouldSkipOCIDownload(outDir string, localPath string, binaryPath string) (
 		if !localPathInfo.IsDir() {
 			return false, fmt.Errorf("expected extracted policies at %q to be a directory", localPath)
 		}
+	default:
+		return false, fmt.Errorf("unsupported extracted artifact %q", binaryPath)
 	}
 
 	return true, nil
@@ -114,7 +116,7 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 
 	if err == nil {
 		if sourceInfo.IsDir() {
-			localPath := path.Join(source, binaryPath)
+			localPath := filepath.Join(source, binaryPath)
 			useNestedPath, err := shouldSkipOCIDownload(source, localPath, binaryPath)
 			if err != nil {
 				return "", err
@@ -148,8 +150,8 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
-		outDir := path.Join(outputDir, tag.RepositoryStr(), tag.Identifier())
-		localPath := path.Join(outDir, binaryPath)
+		outDir := filepath.Join(outputDir, tag.RepositoryStr(), tag.Identifier())
+		localPath := filepath.Join(outDir, binaryPath)
 
 		skipDownload, err := shouldSkipOCIDownload(outDir, localPath, binaryPath)
 		if err != nil {
