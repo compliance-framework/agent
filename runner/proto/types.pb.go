@@ -1506,25 +1506,83 @@ func (x *Remediation) GetTasks() []*RemediationTask {
 	return nil
 }
 
+type RiskTemplateLabelSchema struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=Key,proto3" json:"Key,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=Description,proto3" json:"Description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RiskTemplateLabelSchema) Reset() {
+	*x = RiskTemplateLabelSchema{}
+	mi := &file_runner_proto_types_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RiskTemplateLabelSchema) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RiskTemplateLabelSchema) ProtoMessage() {}
+
+func (x *RiskTemplateLabelSchema) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_types_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RiskTemplateLabelSchema.ProtoReflect.Descriptor instead.
+func (*RiskTemplateLabelSchema) Descriptor() ([]byte, []int) {
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RiskTemplateLabelSchema) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *RiskTemplateLabelSchema) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 type RiskTemplate struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	UUID           string                 `protobuf:"bytes,1,opt,name=UUID,proto3" json:"UUID,omitempty"`
-	PolicyPackage  string                 `protobuf:"bytes,2,opt,name=PolicyPackage,proto3" json:"PolicyPackage,omitempty"`
-	Name           string                 `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
-	Title          string                 `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
-	Statement      string                 `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
-	LikelihoodHint string                 `protobuf:"bytes,6,opt,name=LikelihoodHint,proto3" json:"LikelihoodHint,omitempty"`
-	ImpactHint     string                 `protobuf:"bytes,7,opt,name=ImpactHint,proto3" json:"ImpactHint,omitempty"`
-	ViolationIds   []string               `protobuf:"bytes,8,rep,name=ViolationIds,proto3" json:"ViolationIds,omitempty"`
-	ThreatRefs     []*ThreatRef           `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
-	Remediation    *Remediation           `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                  protoimpl.MessageState     `protogen:"open.v1"`
+	UUID                   string                     `protobuf:"bytes,1,opt,name=UUID,proto3" json:"UUID,omitempty"`
+	PolicyPackage          string                     `protobuf:"bytes,2,opt,name=PolicyPackage,proto3" json:"PolicyPackage,omitempty"`
+	Name                   string                     `protobuf:"bytes,3,opt,name=Name,proto3" json:"Name,omitempty"`
+	Title                  string                     `protobuf:"bytes,4,opt,name=Title,proto3" json:"Title,omitempty"`
+	Statement              string                     `protobuf:"bytes,5,opt,name=Statement,proto3" json:"Statement,omitempty"`
+	LikelihoodHint         string                     `protobuf:"bytes,6,opt,name=LikelihoodHint,proto3" json:"LikelihoodHint,omitempty"`
+	ImpactHint             string                     `protobuf:"bytes,7,opt,name=ImpactHint,proto3" json:"ImpactHint,omitempty"`
+	ViolationIds           []string                   `protobuf:"bytes,8,rep,name=ViolationIds,proto3" json:"ViolationIds,omitempty"`
+	ThreatRefs             []*ThreatRef               `protobuf:"bytes,9,rep,name=ThreatRefs,proto3" json:"ThreatRefs,omitempty"`
+	Remediation            *Remediation               `protobuf:"bytes,10,opt,name=Remediation,proto3" json:"Remediation,omitempty"`
+	TitleTemplate          string                     `protobuf:"bytes,11,opt,name=TitleTemplate,proto3" json:"TitleTemplate,omitempty"`
+	StatementTemplate      string                     `protobuf:"bytes,12,opt,name=StatementTemplate,proto3" json:"StatementTemplate,omitempty"`
+	LikelihoodHintTemplate string                     `protobuf:"bytes,13,opt,name=LikelihoodHintTemplate,proto3" json:"LikelihoodHintTemplate,omitempty"`
+	ImpactHintTemplate     string                     `protobuf:"bytes,14,opt,name=ImpactHintTemplate,proto3" json:"ImpactHintTemplate,omitempty"`
+	DedupeLabelKeys        []string                   `protobuf:"bytes,15,rep,name=DedupeLabelKeys,proto3" json:"DedupeLabelKeys,omitempty"`
+	LabelSchema            []*RiskTemplateLabelSchema `protobuf:"bytes,16,rep,name=LabelSchema,proto3" json:"LabelSchema,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *RiskTemplate) Reset() {
 	*x = RiskTemplate{}
-	mi := &file_runner_proto_types_proto_msgTypes[17]
+	mi := &file_runner_proto_types_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1536,7 +1594,7 @@ func (x *RiskTemplate) String() string {
 func (*RiskTemplate) ProtoMessage() {}
 
 func (x *RiskTemplate) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[17]
+	mi := &file_runner_proto_types_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1549,7 +1607,7 @@ func (x *RiskTemplate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RiskTemplate.ProtoReflect.Descriptor instead.
 func (*RiskTemplate) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{17}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RiskTemplate) GetUUID() string {
@@ -1622,6 +1680,48 @@ func (x *RiskTemplate) GetRemediation() *Remediation {
 	return nil
 }
 
+func (x *RiskTemplate) GetTitleTemplate() string {
+	if x != nil {
+		return x.TitleTemplate
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetStatementTemplate() string {
+	if x != nil {
+		return x.StatementTemplate
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetLikelihoodHintTemplate() string {
+	if x != nil {
+		return x.LikelihoodHintTemplate
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetImpactHintTemplate() string {
+	if x != nil {
+		return x.ImpactHintTemplate
+	}
+	return ""
+}
+
+func (x *RiskTemplate) GetDedupeLabelKeys() []string {
+	if x != nil {
+		return x.DedupeLabelKeys
+	}
+	return nil
+}
+
+func (x *RiskTemplate) GetLabelSchema() []*RiskTemplateLabelSchema {
+	if x != nil {
+		return x.LabelSchema
+	}
+	return nil
+}
+
 type SubjectProp struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=Name,proto3" json:"Name,omitempty"`
@@ -1632,7 +1732,7 @@ type SubjectProp struct {
 
 func (x *SubjectProp) Reset() {
 	*x = SubjectProp{}
-	mi := &file_runner_proto_types_proto_msgTypes[18]
+	mi := &file_runner_proto_types_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1744,7 @@ func (x *SubjectProp) String() string {
 func (*SubjectProp) ProtoMessage() {}
 
 func (x *SubjectProp) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[18]
+	mi := &file_runner_proto_types_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1757,7 @@ func (x *SubjectProp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectProp.ProtoReflect.Descriptor instead.
 func (*SubjectProp) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{18}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SubjectProp) GetName() string {
@@ -1683,7 +1783,7 @@ type SubjectLink struct {
 
 func (x *SubjectLink) Reset() {
 	*x = SubjectLink{}
-	mi := &file_runner_proto_types_proto_msgTypes[19]
+	mi := &file_runner_proto_types_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1695,7 +1795,7 @@ func (x *SubjectLink) String() string {
 func (*SubjectLink) ProtoMessage() {}
 
 func (x *SubjectLink) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[19]
+	mi := &file_runner_proto_types_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1708,7 +1808,7 @@ func (x *SubjectLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectLink.ProtoReflect.Descriptor instead.
 func (*SubjectLink) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{19}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SubjectLink) GetHref() string {
@@ -1728,7 +1828,7 @@ type SubjectLabelSelector struct {
 
 func (x *SubjectLabelSelector) Reset() {
 	*x = SubjectLabelSelector{}
-	mi := &file_runner_proto_types_proto_msgTypes[20]
+	mi := &file_runner_proto_types_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1740,7 +1840,7 @@ func (x *SubjectLabelSelector) String() string {
 func (*SubjectLabelSelector) ProtoMessage() {}
 
 func (x *SubjectLabelSelector) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[20]
+	mi := &file_runner_proto_types_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1753,7 +1853,7 @@ func (x *SubjectLabelSelector) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectLabelSelector.ProtoReflect.Descriptor instead.
 func (*SubjectLabelSelector) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{20}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SubjectLabelSelector) GetKey() string {
@@ -1780,7 +1880,7 @@ type SubjectLabelSchema struct {
 
 func (x *SubjectLabelSchema) Reset() {
 	*x = SubjectLabelSchema{}
-	mi := &file_runner_proto_types_proto_msgTypes[21]
+	mi := &file_runner_proto_types_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1792,7 +1892,7 @@ func (x *SubjectLabelSchema) String() string {
 func (*SubjectLabelSchema) ProtoMessage() {}
 
 func (x *SubjectLabelSchema) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[21]
+	mi := &file_runner_proto_types_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1805,7 +1905,7 @@ func (x *SubjectLabelSchema) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectLabelSchema.ProtoReflect.Descriptor instead.
 func (*SubjectLabelSchema) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{21}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SubjectLabelSchema) GetKey() string {
@@ -1841,7 +1941,7 @@ type SubjectTemplate struct {
 
 func (x *SubjectTemplate) Reset() {
 	*x = SubjectTemplate{}
-	mi := &file_runner_proto_types_proto_msgTypes[22]
+	mi := &file_runner_proto_types_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1853,7 +1953,7 @@ func (x *SubjectTemplate) String() string {
 func (*SubjectTemplate) ProtoMessage() {}
 
 func (x *SubjectTemplate) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_types_proto_msgTypes[22]
+	mi := &file_runner_proto_types_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1866,7 +1966,7 @@ func (x *SubjectTemplate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubjectTemplate.ProtoReflect.Descriptor instead.
 func (*SubjectTemplate) Descriptor() ([]byte, []int) {
-	return file_runner_proto_types_proto_rawDescGZIP(), []int{22}
+	return file_runner_proto_types_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SubjectTemplate) GetName() string {
@@ -2102,7 +2202,10 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\vRemediation\x12\x14\n" +
 	"\x05Title\x18\x01 \x01(\tR\x05Title\x12 \n" +
 	"\vDescription\x18\x02 \x01(\tR\vDescription\x12,\n" +
-	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"\xe4\x02\n" +
+	"\x05Tasks\x18\x03 \x03(\v2\x16.proto.RemediationTaskR\x05Tasks\"M\n" +
+	"\x17RiskTemplateLabelSchema\x12\x10\n" +
+	"\x03Key\x18\x01 \x01(\tR\x03Key\x12 \n" +
+	"\vDescription\x18\x02 \x01(\tR\vDescription\"\x8c\x05\n" +
 	"\fRiskTemplate\x12\x12\n" +
 	"\x04UUID\x18\x01 \x01(\tR\x04UUID\x12$\n" +
 	"\rPolicyPackage\x18\x02 \x01(\tR\rPolicyPackage\x12\x12\n" +
@@ -2118,7 +2221,13 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"ThreatRefs\x18\t \x03(\v2\x10.proto.ThreatRefR\n" +
 	"ThreatRefs\x124\n" +
 	"\vRemediation\x18\n" +
-	" \x01(\v2\x12.proto.RemediationR\vRemediation\"7\n" +
+	" \x01(\v2\x12.proto.RemediationR\vRemediation\x12$\n" +
+	"\rTitleTemplate\x18\v \x01(\tR\rTitleTemplate\x12,\n" +
+	"\x11StatementTemplate\x18\f \x01(\tR\x11StatementTemplate\x126\n" +
+	"\x16LikelihoodHintTemplate\x18\r \x01(\tR\x16LikelihoodHintTemplate\x12.\n" +
+	"\x12ImpactHintTemplate\x18\x0e \x01(\tR\x12ImpactHintTemplate\x12(\n" +
+	"\x0fDedupeLabelKeys\x18\x0f \x03(\tR\x0fDedupeLabelKeys\x12@\n" +
+	"\vLabelSchema\x18\x10 \x03(\v2\x1e.proto.RiskTemplateLabelSchemaR\vLabelSchema\"7\n" +
 	"\vSubjectProp\x12\x12\n" +
 	"\x04Name\x18\x01 \x01(\tR\x04Name\x12\x14\n" +
 	"\x05Value\x18\x02 \x01(\tR\x05Value\"!\n" +
@@ -2167,7 +2276,7 @@ func file_runner_proto_types_proto_rawDescGZIP() []byte {
 }
 
 var file_runner_proto_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_runner_proto_types_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_runner_proto_types_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_runner_proto_types_proto_goTypes = []any{
 	(EvidenceStatusState)(0),                  // 0: proto.EvidenceStatusState
 	(SubjectType)(0),                          // 1: proto.SubjectType
@@ -2188,14 +2297,15 @@ var file_runner_proto_types_proto_goTypes = []any{
 	(*ThreatRef)(nil),                         // 16: proto.ThreatRef
 	(*RemediationTask)(nil),                   // 17: proto.RemediationTask
 	(*Remediation)(nil),                       // 18: proto.Remediation
-	(*RiskTemplate)(nil),                      // 19: proto.RiskTemplate
-	(*SubjectProp)(nil),                       // 20: proto.SubjectProp
-	(*SubjectLink)(nil),                       // 21: proto.SubjectLink
-	(*SubjectLabelSelector)(nil),              // 22: proto.SubjectLabelSelector
-	(*SubjectLabelSchema)(nil),                // 23: proto.SubjectLabelSchema
-	(*SubjectTemplate)(nil),                   // 24: proto.SubjectTemplate
-	nil,                                       // 25: proto.Evidence.LabelsEntry
-	(*timestamppb.Timestamp)(nil),             // 26: google.protobuf.Timestamp
+	(*RiskTemplateLabelSchema)(nil),           // 19: proto.RiskTemplateLabelSchema
+	(*RiskTemplate)(nil),                      // 20: proto.RiskTemplate
+	(*SubjectProp)(nil),                       // 21: proto.SubjectProp
+	(*SubjectLink)(nil),                       // 22: proto.SubjectLink
+	(*SubjectLabelSelector)(nil),              // 23: proto.SubjectLabelSelector
+	(*SubjectLabelSchema)(nil),                // 24: proto.SubjectLabelSchema
+	(*SubjectTemplate)(nil),                   // 25: proto.SubjectTemplate
+	nil,                                       // 26: proto.Evidence.LabelsEntry
+	(*timestamppb.Timestamp)(nil),             // 27: google.protobuf.Timestamp
 }
 var file_runner_proto_types_proto_depIdxs = []int32{
 	3,  // 0: proto.OriginActor.Links:type_name -> proto.Link
@@ -2217,10 +2327,10 @@ var file_runner_proto_types_proto_depIdxs = []int32{
 	1,  // 16: proto.Subject.Type:type_name -> proto.SubjectType
 	3,  // 17: proto.Subject.Links:type_name -> proto.Link
 	2,  // 18: proto.Subject.Props:type_name -> proto.Property
-	25, // 19: proto.Evidence.Labels:type_name -> proto.Evidence.LabelsEntry
-	26, // 20: proto.Evidence.Start:type_name -> google.protobuf.Timestamp
-	26, // 21: proto.Evidence.End:type_name -> google.protobuf.Timestamp
-	26, // 22: proto.Evidence.Expires:type_name -> google.protobuf.Timestamp
+	26, // 19: proto.Evidence.Labels:type_name -> proto.Evidence.LabelsEntry
+	27, // 20: proto.Evidence.Start:type_name -> google.protobuf.Timestamp
+	27, // 21: proto.Evidence.End:type_name -> google.protobuf.Timestamp
+	27, // 22: proto.Evidence.Expires:type_name -> google.protobuf.Timestamp
 	3,  // 23: proto.Evidence.Links:type_name -> proto.Link
 	2,  // 24: proto.Evidence.Props:type_name -> proto.Property
 	5,  // 25: proto.Evidence.Origins:type_name -> proto.Origin
@@ -2232,16 +2342,17 @@ var file_runner_proto_types_proto_depIdxs = []int32{
 	17, // 31: proto.Remediation.Tasks:type_name -> proto.RemediationTask
 	16, // 32: proto.RiskTemplate.ThreatRefs:type_name -> proto.ThreatRef
 	18, // 33: proto.RiskTemplate.Remediation:type_name -> proto.Remediation
-	1,  // 34: proto.SubjectTemplate.Type:type_name -> proto.SubjectType
-	20, // 35: proto.SubjectTemplate.Props:type_name -> proto.SubjectProp
-	21, // 36: proto.SubjectTemplate.Links:type_name -> proto.SubjectLink
-	22, // 37: proto.SubjectTemplate.SelectorLabels:type_name -> proto.SubjectLabelSelector
-	23, // 38: proto.SubjectTemplate.LabelSchema:type_name -> proto.SubjectLabelSchema
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	19, // 34: proto.RiskTemplate.LabelSchema:type_name -> proto.RiskTemplateLabelSchema
+	1,  // 35: proto.SubjectTemplate.Type:type_name -> proto.SubjectType
+	21, // 36: proto.SubjectTemplate.Props:type_name -> proto.SubjectProp
+	22, // 37: proto.SubjectTemplate.Links:type_name -> proto.SubjectLink
+	23, // 38: proto.SubjectTemplate.SelectorLabels:type_name -> proto.SubjectLabelSelector
+	24, // 39: proto.SubjectTemplate.LabelSchema:type_name -> proto.SubjectLabelSchema
+	40, // [40:40] is the sub-list for method output_type
+	40, // [40:40] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_types_proto_init() }
@@ -2260,7 +2371,7 @@ func file_runner_proto_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_types_proto_rawDesc), len(file_runner_proto_types_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
