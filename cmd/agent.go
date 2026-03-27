@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -26,10 +25,8 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/sdk"
-	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/fsnotify/fsnotify"
-	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
@@ -843,88 +840,6 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Checks each item specified and retrieves the source.
-// It checks if the source is a path that exists on the filesystem first, if it is then it just
-// uses that, if it isn't it will attempt to download the plugin to the filesystem.
-//
-// We also update the map of plugin sources, this could be an identity map if it's a local
-// file or maps from the URL to the local file if we downloaded a remote file.
-//
-// We return the following:
-// * A map of the source to the local file path
-// * Errors that occurred during the download process. TODO: What is the right error handling here?
-func (ar *AgentRunner) downloadItem(
-	type_ string,
-	source string,
-	outDirPrefix string,
-	isArchDependent bool,
-) (string, error) {
-	location := ""
-
-	ar.logger.Trace("Checking for source", "type", type_, "source", source)
-
-	// First we check if the source is a path that exists on the fs, if so we just use that.
-	_, err := os.ReadFile(source)
-
-	if err == nil {
-		// The file exists. Just return it.
-		ar.logger.Debug("Found source locally, using local file", "type", type_, "File", source)
-
-		// The file exists locally, so we use the local path.
-		return source, nil
-	}
-
-	// The error we've received is something other than not exists.
-	// Exit early with the error
-	if !os.IsNotExist(err) {
-		return location, err
-	}
-
-	if internal.IsOCI(source) {
-		ar.logger.Debug("Source looks like an OCI endpoint, attempting to download", "type", type_, "Source", source)
-		tag, err := name.NewTag(source)
-		if err != nil {
-			return location, err
-		}
-
-		outDir := path.Join(outDirPrefix, tag.RepositoryStr(), tag.Identifier())
-
-		downloaderImpl, err := oci.NewDownloader(
-			tag,
-			outDir,
-		)
-		if err != nil {
-			return location, err
-		}
-		if isArchDependent {
-			err = downloaderImpl.Download(remote.WithPlatform(v1.Platform{
-				Architecture: runtime.GOARCH,
-				OS:           runtime.GOOS,
-			}))
-		} else {
-			err = downloaderImpl.Download()
-		}
-		if err != nil {
-			return location, err
-		}
-
-		location := outDir
-		if type_ == "plugins" {
-			location = path.Join(outDir, "plugin")
-		} else if type_ == "policies" {
-			location = path.Join(outDir, "policies")
-		}
-
-		ar.logger.Debug("Source downloaded successfully", "type", type_, "Destination", outDir)
-		// Update the source in the agent configuration to the new path
-		return location, nil
-	} else {
-		ar.logger.Debug("Attempting to download artifact (TODO)", "Source", source)
-
-		return location, errors.New("Downloading artifacts is not yet implemented")
-	}
 }
 
 func (ar *AgentRunner) closePluginClients() {

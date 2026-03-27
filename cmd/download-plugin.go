@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"os"
-	"path"
+	"path/filepath"
+	"runtime"
 
 	"github.com/compliance-framework/agent/internal"
-	"github.com/compliance-framework/gooci/pkg/oci"
-	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,7 @@ func (d *DownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		return loopErr
 	}
 
-	pluginPath := path.Join(basePath, AgentPluginDir)
+	pluginPath := filepath.Join(basePath, AgentPluginDir)
 
 	// At some point, we will wrap this in go routine to download concurrently.
 	// For the moment, we've left it without for the sake of simplicity and easy amendments.
@@ -58,24 +59,15 @@ func (d *DownloadRunner) Run(cmd *cobra.Command, args []string) error {
 		d.logger.Debug("Received source", "source", source)
 
 		if internal.IsOCI(source) {
-			tag, err := name.NewTag(source)
-			if err != nil {
-				return err
-			}
-			destination := path.Join(pluginPath, tag.RepositoryStr(), tag.Identifier())
-			downloaderImpl, err := oci.NewDownloader(
-				tag,
-				destination,
-			)
-			if err != nil {
-				return err
-			}
-			err = downloaderImpl.Download()
+			location, err := internal.Download(cmd.Context(), source, pluginPath, "plugin", d.logger, remote.WithPlatform(v1.Platform{
+				Architecture: runtime.GOARCH,
+				OS:           runtime.GOOS,
+			}))
 			if err != nil {
 				return err
 			}
 
-			d.logger.Debug("Downloaded plugin", "path", destination)
+			d.logger.Debug("Plugin available locally", "path", location)
 		}
 	}
 

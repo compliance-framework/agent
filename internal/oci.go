@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -70,16 +71,67 @@ func copyAnnotations(in map[string]string) map[string]string {
 	return out
 }
 
+func shouldSkipOCIDownload(outDir string, localPath string, binaryPath string) (bool, error) {
+	outDirInfo, err := os.Stat(outDir)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !outDirInfo.IsDir() {
+		return false, fmt.Errorf("OCI extraction path %q exists but is not a directory", outDir)
+	}
+
+	localPathInfo, err := os.Stat(localPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	switch binaryPath {
+	case "plugin":
+		if localPathInfo.IsDir() {
+			return false, fmt.Errorf("expected extracted plugin at %q to be a file", localPath)
+		}
+	case "policies":
+		if !localPathInfo.IsDir() {
+			return false, fmt.Errorf("expected extracted policies at %q to be a directory", localPath)
+		}
+	default:
+		return false, fmt.Errorf("unsupported extracted artifact %q", binaryPath)
+	}
+
+	return true, nil
+}
+
 func Download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
 	// Add a task to indicate we've downloaded the items
 	logger.Trace("Checking for source", "source", source)
 
 	// First we check if the source is a path that exists on the fs, if so we just use that.
-	_, err := os.ReadFile(source)
+	sourceInfo, err := os.Stat(source)
 
 	if err == nil {
+		if sourceInfo.IsDir() {
+			localPath := filepath.Join(source, binaryPath)
+			useNestedPath, err := shouldSkipOCIDownload(source, localPath, binaryPath)
+			if err != nil {
+				return "", err
+			}
+			if useNestedPath {
+				logger.Debug("Found source locally, using extracted artifact path", "Path", localPath)
+				return localPath, nil
+			}
+			if binaryPath == "plugin" {
+				return "", fmt.Errorf("expected plugin executable at %q", localPath)
+			}
+		}
+
 		// The file exists. Just return it.
-		logger.Debug("Found source locally, using local file", "File", source)
+		logger.Debug("Found source locally, using local path", "Path", source)
 
 		// The file exists locally, so we use the local path.
 		return source, nil
@@ -98,7 +150,17 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
-		outDir := path.Join(outputDir, tag.RepositoryStr(), tag.Identifier())
+		outDir := filepath.Join(outputDir, tag.RepositoryStr(), tag.Identifier())
+		localPath := filepath.Join(outDir, binaryPath)
+
+		skipDownload, err := shouldSkipOCIDownload(outDir, localPath, binaryPath)
+		if err != nil {
+			return "", err
+		}
+		if skipDownload {
+			logger.Debug("OCI extraction path already exists, skipping download", "Source", source, "Path", outDir)
+			return localPath, nil
+		}
 
 		downloaderImpl, err := oci.NewDownloader(
 			tag,
@@ -112,7 +174,7 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
-		return path.Join(outDir, binaryPath), nil
+		return localPath, nil
 	}
 
 	return "", errors.New("downloadable item source cannot be found locally and does not look like OCI")
