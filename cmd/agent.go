@@ -442,7 +442,7 @@ func (ar *AgentRunner) buildAPIClient(config *agentConfig, logger hclog.Logger) 
 	}
 
 	clientConfig := &sdk.Config{
-		BaseURL: config.ApiConfig.Url,
+		BaseURL: strings.TrimSpace(config.ApiConfig.Url),
 	}
 	if config.ApiConfig.hasAuth() {
 		clientConfig.AgentAuth = &sdk.AgentAuthConfig{
@@ -526,7 +526,7 @@ func apiBaseURL(config *agentConfig) string {
 		return ""
 	}
 
-	return config.ApiConfig.Url
+	return strings.TrimSpace(config.ApiConfig.Url)
 }
 
 func hasAPIAuth(config *agentConfig) bool {
@@ -558,7 +558,7 @@ func apiAuthClientID(config *apiConfig) string {
 		return ""
 	}
 
-	return strings.TrimSpace(config.Auth.ClientID)
+	return maskClientID(config.Auth.ClientID)
 }
 
 func apiAuthClientSecretSet(config *apiConfig) bool {
@@ -567,6 +567,20 @@ func apiAuthClientSecretSet(config *apiConfig) bool {
 	}
 
 	return strings.TrimSpace(config.Auth.ClientSecret) != ""
+}
+
+func maskClientID(clientID string) string {
+	trimmed := strings.TrimSpace(clientID)
+	if trimmed == "" {
+		return ""
+	}
+
+	firstBlock, _, found := strings.Cut(trimmed, "-")
+	if !found {
+		return firstBlock
+	}
+
+	return firstBlock + "-..."
 }
 
 func (ar *AgentRunner) Run(ctx context.Context) error {

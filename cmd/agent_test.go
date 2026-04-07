@@ -254,6 +254,48 @@ plugins:
 	}
 }
 
+func TestMaskClientID(t *testing.T) {
+	tests := []struct {
+		name     string
+		clientID string
+		want     string
+	}{
+		{
+			name:     "empty",
+			clientID: "",
+			want:     "",
+		},
+		{
+			name:     "uuid",
+			clientID: "123e4567-e89b-12d3-a456-426614174000",
+			want:     "123e4567-...",
+		},
+		{
+			name:     "trims whitespace",
+			clientID: " 123e4567-e89b-12d3-a456-426614174000 ",
+			want:     "123e4567-...",
+		},
+		{
+			name:     "non uuid",
+			clientID: "client-id",
+			want:     "client-...",
+		},
+		{
+			name:     "no hyphen",
+			clientID: "clientid",
+			want:     "clientid",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := maskClientID(test.clientID); got != test.want {
+				t.Fatalf("expected masked client id %q, got %q", test.want, got)
+			}
+		})
+	}
+}
+
 func TestMergeConfig_DefaultsPluginProtocolVersion(t *testing.T) {
 	v := viper.New()
 	v.SetConfigType("yaml")
@@ -704,6 +746,29 @@ func TestAgentRunnerBuildsUnauthenticatedSDKClientWhenAuthOmitted(t *testing.T) 
 	}
 	if authHeader != "" {
 		t.Fatalf("expected no authorization header, got %q", authHeader)
+	}
+}
+
+func TestAgentRunnerBuildsSDKClientWithTrimmedBaseURL(t *testing.T) {
+	var requestPath string
+
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		requestPath = r.URL.Path
+		return jsonResponse(http.StatusOK, ""), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(newTestAgentConfig("  http://example.test  ", nil))
+
+	resp, err := agentRunner.getAPIClient().NewRequest(context.Background(), http.MethodPost, "/api/test", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request with trimmed base url: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if requestPath != "/api/test" {
+		t.Fatalf("expected request path %q, got %q", "/api/test", requestPath)
 	}
 }
 
