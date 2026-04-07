@@ -159,10 +159,6 @@ with plugins to ensure continuous compliance.`,
 }
 
 func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, error) {
-	if err := bindAgentEnv(fileConfig); err != nil {
-		return nil, err
-	}
-
 	// For now, we are reading from a file. This will probably be updated to a remote source soon.
 
 	// Daemon has a default false value, which will override all values passed through Viper.
@@ -349,6 +345,9 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	v.SetEnvPrefix("CCF")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	if err := bindAgentEnv(v); err != nil {
+		return err
+	}
 
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent",
@@ -453,7 +452,7 @@ func (ar *AgentRunner) buildAPIClient(config *agentConfig, logger hclog.Logger) 
 
 	if logger != nil {
 		logger.Debug("Building shared API SDK client",
-			"base_url", config.ApiConfig.Url,
+			"base_url", clientConfig.BaseURL,
 			"auth_enabled", config.ApiConfig.hasAuth(),
 			"auth_partial", config.ApiConfig.hasPartialAuth(),
 			"client_id", apiAuthClientID(config.ApiConfig),

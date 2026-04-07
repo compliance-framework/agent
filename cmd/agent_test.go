@@ -225,6 +225,9 @@ func TestMergeConfig_LoadsAPIAuthFromEnvironment(t *testing.T) {
 	v.SetEnvPrefix("CCF")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	if err := bindAgentEnv(v); err != nil {
+		t.Fatalf("bind env: %v", err)
+	}
 
 	err := v.ReadConfig(bytes.NewBufferString(`
 api:
