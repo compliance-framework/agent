@@ -13,9 +13,6 @@ The configuration file must have the following fields:
 ```yaml
 api:
   url: http://localhost:8080
-  auth:
-    client_id: ""
-    client_secret: ""
 
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
@@ -91,6 +88,11 @@ plugins:
 
 The following fields are optional:
 ```yaml
+api:
+  auth:
+    client_id: ""
+    client_secret: ""
+
 plugins:
   <plugin_identifier>:
     schedule: <cron_expression>

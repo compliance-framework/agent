@@ -81,6 +81,20 @@ plugins:
 			valid: false,
 		},
 		{
+			name: "Rejects Missing API URL",
+			configYamlContent: `
+api:
+  auth:
+    client_id: test-client
+    client_secret: test-secret
+
+plugins:
+  test-plugin:
+    source: ghcr.io/some-plugin:v1
+`,
+			valid: false,
+		},
+		{
 			name: "Rejects Partial API Auth",
 			configYamlContent: `
 api:

@@ -85,6 +85,10 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
+	if strings.TrimSpace(ac.ApiConfig.Url) == "" {
+		return fmt.Errorf("api url must be configured")
+	}
+
 	if ac.ApiConfig.hasPartialAuth() {
 		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
 	}
