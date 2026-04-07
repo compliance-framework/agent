@@ -62,7 +62,7 @@ plugins:
 api:
   url: http://localhost:8080
   auth:
-    client_id: test-client
+    client_id: 123e4567-e89b-12d3-a456-426614174000
     client_secret: test-secret
 
 plugins:
@@ -85,7 +85,7 @@ plugins:
 			configYamlContent: `
 api:
   auth:
-    client_id: test-client
+    client_id: 123e4567-e89b-12d3-a456-426614174000
     client_secret: test-secret
 
 plugins:
@@ -100,7 +100,22 @@ plugins:
 api:
   url: http://localhost:8080
   auth:
-    client_id: test-client
+    client_id: 123e4567-e89b-12d3-a456-426614174000
+
+plugins:
+  test-plugin:
+    source: ghcr.io/some-plugin:v1
+`,
+			valid: false,
+		},
+		{
+			name: "Rejects Invalid API Auth Client ID",
+			configYamlContent: `
+api:
+  url: http://localhost:8080
+  auth:
+    client_id: not-a-uuid
+    client_secret: test-secret
 
 plugins:
   test-plugin:
@@ -217,7 +232,7 @@ func TestAgentCmd_ConfigurationMerging(t *testing.T) {
 }
 
 func TestMergeConfig_LoadsAPIAuthFromEnvironment(t *testing.T) {
-	t.Setenv("CCF_API_AUTH_CLIENT_ID", "env-client-id")
+	t.Setenv("CCF_API_AUTH_CLIENT_ID", "123e4567-e89b-12d3-a456-426614174000")
 	t.Setenv("CCF_API_AUTH_CLIENT_SECRET", "env-client-secret")
 
 	v := viper.New()
@@ -249,11 +264,73 @@ plugins:
 	if config.ApiConfig == nil || config.ApiConfig.Auth == nil {
 		t.Fatalf("expected api auth config to be populated, got %#v", config.ApiConfig)
 	}
-	if got := config.ApiConfig.Auth.ClientID; got != "env-client-id" {
+	if got := config.ApiConfig.Auth.ClientID; got != "123e4567-e89b-12d3-a456-426614174000" {
 		t.Fatalf("expected client id from env, got %q", got)
 	}
 	if got := config.ApiConfig.Auth.ClientSecret; got != "env-client-secret" {
 		t.Fatalf("expected client secret from env, got %q", got)
+	}
+}
+
+func TestMergeConfig_ValidateFailsWhenAPIAuthEnvironmentIsPartial(t *testing.T) {
+	tests := []struct {
+		name         string
+		clientID     string
+		clientSecret string
+	}{
+		{
+			name:     "client id only",
+			clientID: "123e4567-e89b-12d3-a456-426614174000",
+		},
+		{
+			name:         "client secret only",
+			clientSecret: "env-client-secret",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.clientID != "" {
+				t.Setenv("CCF_API_AUTH_CLIENT_ID", test.clientID)
+			}
+			if test.clientSecret != "" {
+				t.Setenv("CCF_API_AUTH_CLIENT_SECRET", test.clientSecret)
+			}
+
+			v := viper.New()
+			v.SetConfigType("yaml")
+			v.SetEnvPrefix("CCF")
+			v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+			v.AutomaticEnv()
+			if err := bindAgentEnv(v); err != nil {
+				t.Fatalf("bind env: %v", err)
+			}
+
+			err := v.ReadConfig(bytes.NewBufferString(`
+api:
+  url: http://localhost:8080
+
+plugins:
+  test-plugin:
+    source: ghcr.io/some-plugin:v1
+`))
+			if err != nil {
+				t.Fatalf("Error reading config: %v", err)
+			}
+
+			config, err := mergeConfig(AgentCmd(), v)
+			if err != nil {
+				t.Fatalf("Error merging config: %v", err)
+			}
+
+			err = config.validate()
+			if err == nil {
+				t.Fatal("expected validate to fail when only one api auth env var is set")
+			}
+			if err.Error() != "api auth requires both client_id and client_secret when configured" {
+				t.Fatalf("expected validate error %q, got %q", "api auth requires both client_id and client_secret when configured", err.Error())
+			}
+		})
 	}
 }
 
@@ -277,16 +354,6 @@ func TestMaskClientID(t *testing.T) {
 			name:     "trims whitespace",
 			clientID: " 123e4567-e89b-12d3-a456-426614174000 ",
 			want:     "123e4567-...",
-		},
-		{
-			name:     "non uuid",
-			clientID: "client-id",
-			want:     "client-...",
-		},
-		{
-			name:     "no hyphen",
-			clientID: "clientid",
-			want:     "clientid",
 		},
 	}
 
@@ -692,7 +759,7 @@ func TestAgentRunnerBuildsAuthenticatedSDKClient(t *testing.T) {
 	agentRunner := NewAgentRunner()
 	agentRunner.httpClient = client
 	agentRunner.UpdateConfig(newTestAgentConfig("http://example.test", &apiAuthConfig{
-		ClientID:     "client-id",
+		ClientID:     "123e4567-e89b-12d3-a456-426614174000",
 		ClientSecret: "client-secret",
 	}))
 
@@ -781,7 +848,7 @@ func TestAgentRunnerUpdateConfigRebuildsSDKClient(t *testing.T) {
 	firstClient := agentRunner.apiClient
 
 	agentRunner.UpdateConfig(newTestAgentConfig("http://second.example", &apiAuthConfig{
-		ClientID:     "client-id",
+		ClientID:     "123e4567-e89b-12d3-a456-426614174000",
 		ClientSecret: "client-secret",
 	}))
 	secondClient := agentRunner.apiClient
@@ -819,7 +886,7 @@ func TestSendHeartbeatUsesSDKHeartbeatClient(t *testing.T) {
 	agentRunner := NewAgentRunner()
 	agentRunner.httpClient = client
 	agentRunner.UpdateConfig(newTestAgentConfig("http://example.test", &apiAuthConfig{
-		ClientID:     "client-id",
+		ClientID:     "123e4567-e89b-12d3-a456-426614174000",
 		ClientSecret: "client-secret",
 	}))
 
@@ -871,7 +938,7 @@ func TestApiHelperUsesSharedSDKClientForProtectedWrites(t *testing.T) {
 	agentRunner := NewAgentRunner()
 	agentRunner.httpClient = client
 	agentRunner.UpdateConfig(newTestAgentConfig("http://example.test", &apiAuthConfig{
-		ClientID:     "client-id",
+		ClientID:     "123e4567-e89b-12d3-a456-426614174000",
 		ClientSecret: "client-secret",
 	}))
 

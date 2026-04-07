@@ -93,6 +93,12 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
 	}
 
+	if ac.ApiConfig.hasAuth() {
+		if _, err := uuid.Parse(strings.TrimSpace(ac.ApiConfig.Auth.ClientID)); err != nil {
+			return fmt.Errorf("api auth client_id must be a valid UUID")
+		}
+	}
+
 	for name, pluginConfig := range ac.Plugins {
 		if pluginConfig == nil {
 			return fmt.Errorf("plugin %s has null configuration", name)

@@ -51,7 +51,7 @@ As an example, a configuration file might look like this:
 api:
   url: http://localhost:8080
   auth:
-    client_id: "agent-client-id"
+    client_id: "123e4567-e89b-12d3-a456-426614174000"
     client_secret: "agent-client-secret"
 
 plugins:
@@ -103,7 +103,8 @@ verbose: <log_level>
 The `schedule` field is a cron expression that specifies when the plugin should run. If this field is not present the
 plugin will run on a default `* * * * *`. The schedule is in the format `minute hour day month day_of_week`.
 
-The `api.auth` fields are optional. If you set either `client_id` or `client_secret`, you must set both.
+The `api.auth` fields are optional. If you set either `client_id` or `client_secret`, you must set both. The
+`client_id` must be a valid UUID.
 
 The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO

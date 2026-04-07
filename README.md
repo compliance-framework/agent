@@ -73,7 +73,7 @@ plugins:
 
 The API auth settings follow the same rule, so `api.auth.client_id` and `api.auth.client_secret` can be provided with
 `CCF_API_AUTH_CLIENT_ID` and `CCF_API_AUTH_CLIENT_SECRET`. These values must be configured together; setting only one
-will fail agent startup validation.
+will fail agent startup validation. The `client_id` value must be a valid UUID.
 
 ## Usage
 
