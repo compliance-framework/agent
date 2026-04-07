@@ -707,18 +707,20 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	)))
 	config := ar.getConfig()
 	for pluginName, pluginConfig := range config.Plugins {
+		currentPluginName := pluginName
+		currentPluginConfig := pluginConfig
 		var schedule string
-		if pluginConfig.Schedule == nil {
+		if currentPluginConfig.Schedule == nil {
 			schedule = "* * * * *"
 		} else {
-			schedule = *pluginConfig.Schedule
+			schedule = *currentPluginConfig.Schedule
 		}
 
 		_, err := c.AddFunc(schedule, func() {
-			err := ar.runPlugin(ctx, pluginName, pluginConfig)
+			err := ar.runPlugin(ctx, currentPluginName, currentPluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
-				logger.Error("Error running plugin", "error", err, "protocol_version", pluginConfig.ProtocolVersion)
+				logger.Error("Error running plugin", "plugin", currentPluginName, "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
 			}
 		})
 
@@ -1006,10 +1008,11 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, proto
 // error handling here?
 func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 	logger := ar.getLogger()
+	config := ar.getConfig()
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
-	for _, pluginConfig := range ar.config.Plugins {
+	for _, pluginConfig := range config.Plugins {
 		pluginSources[pluginConfig.Source] = struct{}{}
 	}
 
@@ -1031,10 +1034,11 @@ func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 
 func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	logger := ar.getLogger()
+	config := ar.getConfig()
 	// Build a set of unique policy sources
 	policySources := map[string]struct{}{}
 
-	for _, pluginConfig := range ar.config.Plugins {
+	for _, pluginConfig := range config.Plugins {
 		for _, policy := range pluginConfig.Policies {
 			policySources[string(policy)] = struct{}{}
 		}
