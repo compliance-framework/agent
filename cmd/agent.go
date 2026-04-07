@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -25,6 +23,7 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/sdk"
+	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/fsnotify/fsnotify"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -38,8 +37,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type apiAuthConfig struct {
+	ClientID     string `json:"client_id" mapstructure:"client_id"`
+	ClientSecret string `json:"client_secret" mapstructure:"client_secret"`
+}
+
 type apiConfig struct {
-	Url string `json:"url"`
+	Url  string         `json:"url" mapstructure:"url"`
+	Auth *apiAuthConfig `json:"auth,omitempty" mapstructure:"auth"`
 }
 
 type agentPolicy string
@@ -80,6 +85,20 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
+	if strings.TrimSpace(ac.ApiConfig.Url) == "" {
+		return fmt.Errorf("api url must be configured")
+	}
+
+	if ac.ApiConfig.hasPartialAuth() {
+		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
+	}
+
+	if ac.ApiConfig.hasAuth() {
+		if _, err := uuid.Parse(strings.TrimSpace(ac.ApiConfig.Auth.ClientID)); err != nil {
+			return fmt.Errorf("api auth client_id must be a valid UUID")
+		}
+	}
+
 	for name, pluginConfig := range ac.Plugins {
 		if pluginConfig == nil {
 			return fmt.Errorf("plugin %s has null configuration", name)
@@ -99,6 +118,23 @@ func (ac *agentConfig) validate() error {
 	}
 
 	return nil
+}
+
+func (ac *apiConfig) hasAuth() bool {
+	return ac != nil &&
+		ac.Auth != nil &&
+		strings.TrimSpace(ac.Auth.ClientID) != "" &&
+		strings.TrimSpace(ac.Auth.ClientSecret) != ""
+}
+
+func (ac *apiConfig) hasPartialAuth() bool {
+	if ac == nil || ac.Auth == nil {
+		return false
+	}
+
+	clientID := strings.TrimSpace(ac.Auth.ClientID)
+	clientSecret := strings.TrimSpace(ac.Auth.ClientSecret)
+	return (clientID == "") != (clientSecret == "")
 }
 
 const AgentPluginDir = ".compliance-framework/plugins"
@@ -171,6 +207,19 @@ func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, err
 	updateAllPluginProtocols(config)
 
 	return config, nil
+}
+
+func bindAgentEnv(config *viper.Viper) error {
+	for key, envVar := range map[string]string{
+		"api.auth.client_id":     "CCF_API_AUTH_CLIENT_ID",
+		"api.auth.client_secret": "CCF_API_AUTH_CLIENT_SECRET",
+	} {
+		if err := config.BindEnv(key, envVar); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
@@ -302,6 +351,9 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	v.SetEnvPrefix("CCF")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	if err := bindAgentEnv(v); err != nil {
+		return err
+	}
 
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent",
@@ -349,9 +401,12 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 }
 
 type AgentRunner struct {
-	logger hclog.Logger
-	mu     sync.Mutex
-	config *agentConfig
+	logger     hclog.Logger
+	mu         sync.Mutex
+	stateMu    sync.RWMutex
+	config     *agentConfig
+	apiClient  *sdk.Client
+	httpClient *http.Client
 
 	pluginLocations  map[string]string
 	policyLocations  map[string]string
@@ -365,25 +420,183 @@ func NewAgentRunner() *AgentRunner {
 		pluginLocations:  map[string]string{},
 		policyLocations:  map[string]string{},
 		fetchAnnotations: internal.GetAnnotations,
+		httpClient:       http.DefaultClient,
 	}
 }
 
 func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
-	ar.config = config
-	ar.logger = hclog.New(&hclog.LoggerOptions{
+	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent-runner",
 		Output: os.Stdout,
 		Level:  hclog.Level(config.logVerbosity()),
 	})
+	client := ar.buildAPIClient(config, logger)
+
+	ar.stateMu.Lock()
+	ar.config = config
+	ar.logger = logger
+	ar.apiClient = client
+	ar.stateMu.Unlock()
+
+	ar.logAPIClientConfig("config updated")
+}
+
+func (ar *AgentRunner) buildAPIClient(config *agentConfig, logger hclog.Logger) *sdk.Client {
+	if config == nil || config.ApiConfig == nil {
+		return nil
+	}
+
+	clientConfig := &sdk.Config{
+		BaseURL: strings.TrimSpace(config.ApiConfig.Url),
+	}
+	if config.ApiConfig.hasAuth() {
+		clientConfig.AgentAuth = &sdk.AgentAuthConfig{
+			ClientID:     strings.TrimSpace(config.ApiConfig.Auth.ClientID),
+			ClientSecret: strings.TrimSpace(config.ApiConfig.Auth.ClientSecret),
+		}
+	}
+
+	if logger != nil {
+		logger.Debug("Building shared API SDK client",
+			"base_url", clientConfig.BaseURL,
+			"auth_enabled", config.ApiConfig.hasAuth(),
+			"auth_partial", config.ApiConfig.hasPartialAuth(),
+			"client_id", apiAuthClientID(config.ApiConfig),
+			"client_secret_set", apiAuthClientSecretSet(config.ApiConfig),
+		)
+	}
+
+	return sdk.NewClient(ar.httpClient, clientConfig)
+}
+
+func (ar *AgentRunner) getAPIClient() *sdk.Client {
+	ar.stateMu.RLock()
+	client := ar.apiClient
+	logger := ar.logger
+	ar.stateMu.RUnlock()
+
+	if client != nil {
+		return client
+	}
+
+	if logger != nil {
+		logger.Debug("Shared API SDK client missing; rebuilding from current config")
+	}
+
+	ar.stateMu.Lock()
+	defer ar.stateMu.Unlock()
+
+	if ar.apiClient == nil {
+		ar.apiClient = ar.buildAPIClient(ar.config, ar.logger)
+	}
+	return ar.apiClient
+}
+
+func (ar *AgentRunner) getConfig() *agentConfig {
+	ar.stateMu.RLock()
+	defer ar.stateMu.RUnlock()
+
+	return ar.config
+}
+
+func (ar *AgentRunner) getLogger() hclog.Logger {
+	ar.stateMu.RLock()
+	defer ar.stateMu.RUnlock()
+
+	return ar.logger
+}
+
+func (ar *AgentRunner) logAPIClientConfig(event string) {
+	ar.stateMu.RLock()
+	logger := ar.logger
+	config := ar.config
+	ar.stateMu.RUnlock()
+
+	if logger == nil {
+		return
+	}
+
+	logger.Debug("Agent API client configuration",
+		"event", event,
+		"base_url", apiBaseURL(config),
+		"auth_enabled", hasAPIAuth(config),
+		"auth_partial", hasPartialAPIAuth(config),
+		"client_id", apiClientID(config),
+		"client_secret_set", apiClientSecretSet(config),
+	)
+}
+
+func apiBaseURL(config *agentConfig) string {
+	if config == nil || config.ApiConfig == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(config.ApiConfig.Url)
+}
+
+func hasAPIAuth(config *agentConfig) bool {
+	return config != nil && config.ApiConfig != nil && config.ApiConfig.hasAuth()
+}
+
+func hasPartialAPIAuth(config *agentConfig) bool {
+	return config != nil && config.ApiConfig != nil && config.ApiConfig.hasPartialAuth()
+}
+
+func apiClientID(config *agentConfig) string {
+	if config == nil || config.ApiConfig == nil {
+		return ""
+	}
+
+	return apiAuthClientID(config.ApiConfig)
+}
+
+func apiClientSecretSet(config *agentConfig) bool {
+	if config == nil || config.ApiConfig == nil {
+		return false
+	}
+
+	return apiAuthClientSecretSet(config.ApiConfig)
+}
+
+func apiAuthClientID(config *apiConfig) string {
+	if config == nil || config.Auth == nil {
+		return ""
+	}
+
+	return maskClientID(config.Auth.ClientID)
+}
+
+func apiAuthClientSecretSet(config *apiConfig) bool {
+	if config == nil || config.Auth == nil {
+		return false
+	}
+
+	return strings.TrimSpace(config.Auth.ClientSecret) != ""
+}
+
+func maskClientID(clientID string) string {
+	trimmed := strings.TrimSpace(clientID)
+	if trimmed == "" {
+		return ""
+	}
+
+	firstBlock, _, found := strings.Cut(trimmed, "-")
+	if !found {
+		return firstBlock
+	}
+
+	return firstBlock + "-..."
 }
 
 func (ar *AgentRunner) Run(ctx context.Context) error {
-	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon)
+	config := ar.getConfig()
+	logger := ar.getLogger()
+	logger.Info("Starting agent", "daemon", config.Daemon)
 
-	ar.logger.Debug("Pessimistically downloading plugins and policies to fail early in case daemon runs later.")
+	logger.Debug("Pessimistically downloading plugins and policies to fail early in case daemon runs later.")
 	err := ar.DownloadPlugins(ctx)
 	if err != nil {
-		ar.logger.Error("Error downloading plugins", "error", err)
+		logger.Error("Error downloading plugins", "error", err)
 		return err
 	}
 
@@ -391,12 +604,12 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 
 	err = ar.DownloadPolicies(ctx)
 	if err != nil {
-		ar.logger.Error("Error downloading policies", "error", err)
+		logger.Error("Error downloading policies", "error", err)
 		return err
 	}
-	ar.logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
+	logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
 
-	if ar.config.Daemon == true {
+	if config.Daemon == true {
 		ar.runDaemon(ctx)
 		return nil
 	}
@@ -409,7 +622,9 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 		ctx = context.Background()
 	}
 
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	config := ar.getConfig()
+	logger := ar.getLogger()
+	for pluginName, pluginConfig := range config.Plugins {
 		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
 			continue
 		}
@@ -420,7 +635,7 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 
 			annotations, err := ar.fetchAnnotations(annotationCtx, pluginConfig.Source)
 			if err != nil {
-				ar.logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
+				logger.Warn("Failed to fetch plugin annotations, using configured/default protocol version", "plugin", pluginName, "source", pluginConfig.Source, "protocol_version", pluginConfig.ProtocolVersion, "error", err)
 				return
 			}
 
@@ -431,7 +646,7 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 
 			protocolVersion, ok := protocolVersionFromAnnotations(annotations)
 			if !ok {
-				ar.logger.Warn("Ignoring unsupported plugin protocol version annotation", "plugin", pluginName, "source", pluginConfig.Source, "value", value, "protocol_version", pluginConfig.ProtocolVersion)
+				logger.Warn("Ignoring unsupported plugin protocol version annotation", "plugin", pluginName, "source", pluginConfig.Source, "value", value, "protocol_version", pluginConfig.ProtocolVersion)
 				return
 			}
 
@@ -442,18 +657,19 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 
 // Should never return, either handles any error or panics.
 func (ar *AgentRunner) runDaemon(ctx context.Context) {
+	logger := ar.getLogger()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	agentCron, err := ar.setupCron(ctx)
 	if err != nil {
-		ar.logger.Error("Error setting up agent cron", "error", err)
+		logger.Error("Error setting up agent cron", "error", err)
 		os.Exit(1)
 	}
 
 	heartbeatCron, err := ar.setupHeartbeatCron(ctx)
 	if err != nil {
-		ar.logger.Error("Error setting up heartbeat", "error", err)
+		logger.Error("Error setting up heartbeat", "error", err)
 		os.Exit(1)
 	}
 
@@ -464,19 +680,19 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 
 	select {
 	case sig := <-sigs:
-		ar.logger.Info("received signal to terminate plugins and exit", "signal", sig)
-		ar.logger.Debug("Shutting down plugins")
+		logger.Info("received signal to terminate plugins and exit", "signal", sig)
+		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
-		ar.logger.Debug("Stopping crons")
+		logger.Debug("Stopping crons")
 		agentCron.Stop()
 		heartbeatCron.Stop()
-		ar.logger.Debug("Exiting")
+		logger.Debug("Exiting")
 		os.Exit(0)
 	case <-ctx.Done():
-		ar.logger.Debug("received cancel signal to return from daemon")
-		ar.logger.Debug("Shutting down plugins")
+		logger.Debug("received cancel signal to return from daemon")
+		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
-		ar.logger.Debug("Stopping crons")
+		logger.Debug("Stopping crons")
 		agentCron.Stop()
 		heartbeatCron.Stop()
 		return
@@ -484,6 +700,7 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 }
 
 func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, error) {
+	logger := ar.getLogger()
 
 	// staggeredSeconds is used to offset the heartbeat by x seconds to prevent a massive influx of heartbeats on
 	// the beginning of each minute to the API.
@@ -497,37 +714,41 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 	_, err := c.AddFunc(fmt.Sprintf("%d * * * * *", staggeredSeconds), func() {
 		err := ar.SendHeartbeat(ctx, staticAgentUUID)
 		if err != nil {
-			ar.logger.Error("Failed to send heartbeat", "error", err, "uuid", staticAgentUUID.String())
+			logger.Error("Failed to send heartbeat", "error", err, "uuid", staticAgentUUID.String())
 		}
 	})
 	if err != nil {
-		ar.logger.Error("Error adding heartbeat schedule", "error", err, "uuid", staticAgentUUID.String())
+		logger.Error("Error adding heartbeat schedule", "error", err, "uuid", staticAgentUUID.String())
 	}
 	return c, nil
 }
 
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
+	logger := ar.getLogger()
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	config := ar.getConfig()
+	for pluginName, pluginConfig := range config.Plugins {
+		currentPluginName := pluginName
+		currentPluginConfig := pluginConfig
 		var schedule string
-		if pluginConfig.Schedule == nil {
+		if currentPluginConfig.Schedule == nil {
 			schedule = "* * * * *"
 		} else {
-			schedule = *pluginConfig.Schedule
+			schedule = *currentPluginConfig.Schedule
 		}
 
 		_, err := c.AddFunc(schedule, func() {
-			err := ar.runPlugin(ctx, pluginName, pluginConfig)
+			err := ar.runPlugin(ctx, currentPluginName, currentPluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
-				ar.logger.Error("Error running plugin", "error", err, "protocol_version", pluginConfig.ProtocolVersion)
+				logger.Error("Error running plugin", "plugin", currentPluginName, "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
 			}
 		})
 
 		if err != nil {
-			ar.logger.Error("Error adding plugin schedule", "schedule", schedule, "error", err)
+			logger.Error("Error adding plugin schedule", "schedule", schedule, "error", err)
 			// TODO We should figure out how to handle this, especially in the context of automatically configured
 			// agents. We should probably send a health status to the API with errors.
 		}
@@ -541,17 +762,21 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	config := ar.getConfig()
+	client := ar.getAPIClient()
+	logger := ar.getLogger()
+	logger.Debug("Running all plugins with shared API SDK client",
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
+	)
 
 	defer ar.closePluginClients()
 
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	for pluginName, pluginConfig := range config.Plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
 			Name:   fmt.Sprintf("runner.%s", pluginName),
 			Output: os.Stdout,
-			Level:  hclog.Level(ar.config.logVerbosity()),
+			Level:  hclog.Level(config.logVerbosity()),
 		})
 
 		labels := map[string]string{
@@ -601,6 +826,11 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		}
 
 		// Create a new results helper for the plugin to send results back to
+		logger.Debug("Creating plugin API helper",
+			"plugin", pluginName,
+			"auth_enabled", hasAPIAuth(config),
+			"client_id", apiClientID(config),
+		)
 		resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
 		if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
@@ -637,9 +867,14 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agentPlugin) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	config := ar.getConfig()
+	client := ar.getAPIClient()
+	logger := ar.getLogger()
+	logger.Debug("Running single plugin with shared API SDK client",
+		"plugin", name,
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
+	)
 
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
@@ -647,14 +882,14 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 
 	policyPaths := make([]string, 0)
 	for _, inputBundle := range plugin.Policies {
-		policyLocation, err := internal.Download(ctx, string(inputBundle), AgentPolicyDir, "policies", ar.logger)
+		policyLocation, err := internal.Download(ctx, string(inputBundle), AgentPolicyDir, "policies", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
 	}
 
-	pluginExecutable, err := internal.Download(ctx, plugin.Source, AgentPluginDir, "plugin", ar.logger, remote.WithPlatform(v1.Platform{
+	pluginExecutable, err := internal.Download(ctx, plugin.Source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
 		Architecture: runtime.GOARCH,
 		OS:           runtime.GOOS,
 	}))
@@ -663,13 +898,13 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		return err
 	}
 
-	ar.logger.Info("Running plugin", "source", plugin.Source, "protocol_version", plugin.ProtocolVersion)
-	ar.logger.Info("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
+	logger.Info("Running plugin", "source", plugin.Source, "protocol_version", plugin.ProtocolVersion)
+	logger.Info("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
-	logger := hclog.New(&hclog.LoggerOptions{
+	pluginLogger := hclog.New(&hclog.LoggerOptions{
 		Name:   fmt.Sprintf("runner.%s", name),
 		Output: os.Stdout,
-		Level:  hclog.Level(ar.config.logVerbosity()),
+		Level:  hclog.Level(config.logVerbosity()),
 	})
 
 	labels := map[string]string{
@@ -680,13 +915,13 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		labels[k] = v
 	}
 
-	logger.Debug("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
+	pluginLogger.Debug("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
 	if _, err := os.ReadFile(pluginExecutable); err != nil {
 		return err
 	}
 
-	runnerInstance, err := ar.getRunnerInstance(logger, pluginExecutable, plugin.ProtocolVersion)
+	runnerInstance, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion)
 
 	if err != nil {
 		return err
@@ -700,7 +935,12 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 
 	// Create a new results helper for the plugin to send results back to
-	resultsHelper := runner.NewApiHelper(logger, client, labels, name)
+	pluginLogger.Debug("Creating plugin API helper",
+		"plugin", name,
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
+	)
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name)
 
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
 		return err
@@ -719,32 +959,26 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 }
 
 func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.UUID) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	config := ar.getConfig()
+	client := ar.getAPIClient()
+	logger := ar.getLogger()
+	logger.Debug("Sending heartbeat via shared API SDK client",
+		"uuid", staticAgentUUID.String(),
+		"base_url", apiBaseURL(config),
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
+	)
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
-	heartbeatJson, err := json.Marshal(map[string]interface{}{
-		"uuid":       staticAgentUUID,
-		"created_at": time.Now(),
+	err := client.Heartbeat.Create(heartbeatCtx, sdktypes.Heartbeat{
+		UUID:      staticAgentUUID,
+		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		// TODO What to do here ?
-		ar.logger.Error("Error marshaling heartbeat", "error", err, "uuid", staticAgentUUID.String())
+		logger.Error("Error sending heartbeat via SDK", "error", err, "uuid", staticAgentUUID.String())
 		return err
 	}
-	response, err := client.NewRequest(heartbeatCtx, "POST", "/api/agent/heartbeat/", bytes.NewReader(heartbeatJson))
-	if err != nil {
-		// TODO What to do here ?
-		ar.logger.Error("Error sending heartbeat", "error", err, "uuid", staticAgentUUID.String())
-		return err
-	}
-	if response.StatusCode != http.StatusCreated {
-		// TODO What to do here ?
-		ar.logger.Error("Error heartbeat from server", "code", response.StatusCode, "uuid", staticAgentUUID.String())
-		return err
-	}
-	ar.logger.Info("Successfully heartbeat from server", "uuid", staticAgentUUID.String())
+	logger.Info("Successfully sent heartbeat to server", "uuid", staticAgentUUID.String())
 	return nil
 }
 
@@ -796,15 +1030,17 @@ func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, proto
 // We return any errors that occurred during the download process. TODO: What is the right
 // error handling here?
 func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
+	logger := ar.getLogger()
+	config := ar.getConfig()
 	// Build a set of unique plugin sources
 	pluginSources := map[string]struct{}{}
 
-	for _, pluginConfig := range ar.config.Plugins {
+	for _, pluginConfig := range config.Plugins {
 		pluginSources[pluginConfig.Source] = struct{}{}
 	}
 
 	for source := range pluginSources {
-		out, err := internal.Download(ctx, source, AgentPluginDir, "plugin", ar.logger, remote.WithPlatform(v1.Platform{
+		out, err := internal.Download(ctx, source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
 			Architecture: runtime.GOARCH,
 			OS:           runtime.GOOS,
 		}))
@@ -820,17 +1056,19 @@ func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 }
 
 func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
+	logger := ar.getLogger()
+	config := ar.getConfig()
 	// Build a set of unique policy sources
 	policySources := map[string]struct{}{}
 
-	for _, pluginConfig := range ar.config.Plugins {
+	for _, pluginConfig := range config.Plugins {
 		for _, policy := range pluginConfig.Policies {
 			policySources[string(policy)] = struct{}{}
 		}
 	}
 
 	for source := range policySources {
-		out, err := internal.Download(ctx, source, AgentPolicyDir, "policies", ar.logger)
+		out, err := internal.Download(ctx, source, AgentPolicyDir, "policies", logger)
 
 		if err != nil {
 			return err
@@ -843,7 +1081,8 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 }
 
 func (ar *AgentRunner) closePluginClients() {
-	ar.logger.Debug("Cleaning up plugin instances")
+	logger := ar.getLogger()
+	logger.Debug("Cleaning up plugin instances")
 	plugin.CleanupClients()
-	ar.logger.Debug("Completed plugin cleanup")
+	logger.Debug("Completed plugin cleanup")
 }
