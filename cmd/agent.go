@@ -394,6 +394,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 type AgentRunner struct {
 	logger     hclog.Logger
 	mu         sync.Mutex
+	stateMu    sync.RWMutex
 	config     *agentConfig
 	apiClient  *sdk.Client
 	httpClient *http.Client
@@ -415,17 +416,23 @@ func NewAgentRunner() *AgentRunner {
 }
 
 func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
-	ar.config = config
-	ar.logger = hclog.New(&hclog.LoggerOptions{
+	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent-runner",
 		Output: os.Stdout,
 		Level:  hclog.Level(config.logVerbosity()),
 	})
-	ar.apiClient = ar.buildAPIClient(config)
+	client := ar.buildAPIClient(config, logger)
+
+	ar.stateMu.Lock()
+	ar.config = config
+	ar.logger = logger
+	ar.apiClient = client
+	ar.stateMu.Unlock()
+
 	ar.logAPIClientConfig("config updated")
 }
 
-func (ar *AgentRunner) buildAPIClient(config *agentConfig) *sdk.Client {
+func (ar *AgentRunner) buildAPIClient(config *agentConfig, logger hclog.Logger) *sdk.Client {
 	if config == nil || config.ApiConfig == nil {
 		return nil
 	}
@@ -440,8 +447,8 @@ func (ar *AgentRunner) buildAPIClient(config *agentConfig) *sdk.Client {
 		}
 	}
 
-	if ar.logger != nil {
-		ar.logger.Debug("Building shared API SDK client",
+	if logger != nil {
+		logger.Debug("Building shared API SDK client",
 			"base_url", config.ApiConfig.Url,
 			"auth_enabled", config.ApiConfig.hasAuth(),
 			"auth_partial", config.ApiConfig.hasPartialAuth(),
@@ -454,29 +461,52 @@ func (ar *AgentRunner) buildAPIClient(config *agentConfig) *sdk.Client {
 }
 
 func (ar *AgentRunner) getAPIClient() *sdk.Client {
-	if ar.apiClient == nil {
-		if ar.logger != nil {
-			ar.logger.Debug("Shared API SDK client missing; rebuilding from current config")
-		}
-		ar.apiClient = ar.buildAPIClient(ar.config)
-		ar.logAPIClientConfig("client rebuilt lazily")
+	ar.stateMu.RLock()
+	client := ar.apiClient
+	logger := ar.logger
+	ar.stateMu.RUnlock()
+
+	if client != nil {
+		return client
 	}
 
+	if logger != nil {
+		logger.Debug("Shared API SDK client missing; rebuilding from current config")
+	}
+
+	ar.stateMu.Lock()
+	defer ar.stateMu.Unlock()
+
+	if ar.apiClient == nil {
+		ar.apiClient = ar.buildAPIClient(ar.config, ar.logger)
+	}
 	return ar.apiClient
 }
 
+func (ar *AgentRunner) getConfig() *agentConfig {
+	ar.stateMu.RLock()
+	defer ar.stateMu.RUnlock()
+
+	return ar.config
+}
+
 func (ar *AgentRunner) logAPIClientConfig(event string) {
-	if ar.logger == nil {
+	ar.stateMu.RLock()
+	logger := ar.logger
+	config := ar.config
+	ar.stateMu.RUnlock()
+
+	if logger == nil {
 		return
 	}
 
-	ar.logger.Debug("Agent API client configuration",
+	logger.Debug("Agent API client configuration",
 		"event", event,
-		"base_url", apiBaseURL(ar.config),
-		"auth_enabled", hasAPIAuth(ar.config),
-		"auth_partial", hasPartialAPIAuth(ar.config),
-		"client_id", apiClientID(ar.config),
-		"client_secret_set", apiClientSecretSet(ar.config),
+		"base_url", apiBaseURL(config),
+		"auth_enabled", hasAPIAuth(config),
+		"auth_partial", hasPartialAPIAuth(config),
+		"client_id", apiClientID(config),
+		"client_secret_set", apiClientSecretSet(config),
 	)
 }
 
@@ -529,7 +559,8 @@ func apiAuthClientSecretSet(config *apiConfig) bool {
 }
 
 func (ar *AgentRunner) Run(ctx context.Context) error {
-	ar.logger.Info("Starting agent", "daemon", ar.config.Daemon)
+	config := ar.getConfig()
+	ar.logger.Info("Starting agent", "daemon", config.Daemon)
 
 	ar.logger.Debug("Pessimistically downloading plugins and policies to fail early in case daemon runs later.")
 	err := ar.DownloadPlugins(ctx)
@@ -547,7 +578,7 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	}
 	ar.logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
 
-	if ar.config.Daemon == true {
+	if config.Daemon == true {
 		ar.runDaemon(ctx)
 		return nil
 	}
@@ -560,7 +591,8 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 		ctx = context.Background()
 	}
 
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	config := ar.getConfig()
+	for pluginName, pluginConfig := range config.Plugins {
 		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
 			continue
 		}
@@ -661,7 +693,8 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	config := ar.getConfig()
+	for pluginName, pluginConfig := range config.Plugins {
 		var schedule string
 		if pluginConfig.Schedule == nil {
 			schedule = "* * * * *"
@@ -692,19 +725,20 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
+	config := ar.getConfig()
 	client := ar.getAPIClient()
 	ar.logger.Debug("Running all plugins with shared API SDK client",
-		"auth_enabled", hasAPIAuth(ar.config),
-		"client_id", apiClientID(ar.config),
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
 	)
 
 	defer ar.closePluginClients()
 
-	for pluginName, pluginConfig := range ar.config.Plugins {
+	for pluginName, pluginConfig := range config.Plugins {
 		logger := hclog.New(&hclog.LoggerOptions{
 			Name:   fmt.Sprintf("runner.%s", pluginName),
 			Output: os.Stdout,
-			Level:  hclog.Level(ar.config.logVerbosity()),
+			Level:  hclog.Level(config.logVerbosity()),
 		})
 
 		labels := map[string]string{
@@ -756,8 +790,8 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		// Create a new results helper for the plugin to send results back to
 		logger.Debug("Creating plugin API helper",
 			"plugin", pluginName,
-			"auth_enabled", hasAPIAuth(ar.config),
-			"client_id", apiClientID(ar.config),
+			"auth_enabled", hasAPIAuth(config),
+			"client_id", apiClientID(config),
 		)
 		resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
@@ -795,11 +829,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agentPlugin) error {
+	config := ar.getConfig()
 	client := ar.getAPIClient()
 	ar.logger.Debug("Running single plugin with shared API SDK client",
 		"plugin", name,
-		"auth_enabled", hasAPIAuth(ar.config),
-		"client_id", apiClientID(ar.config),
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
 	)
 
 	ar.mu.Lock()
@@ -830,7 +865,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   fmt.Sprintf("runner.%s", name),
 		Output: os.Stdout,
-		Level:  hclog.Level(ar.config.logVerbosity()),
+		Level:  hclog.Level(config.logVerbosity()),
 	})
 
 	labels := map[string]string{
@@ -863,8 +898,8 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	// Create a new results helper for the plugin to send results back to
 	logger.Debug("Creating plugin API helper",
 		"plugin", name,
-		"auth_enabled", hasAPIAuth(ar.config),
-		"client_id", apiClientID(ar.config),
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
 	)
 	resultsHelper := runner.NewApiHelper(logger, client, labels, name)
 
@@ -885,12 +920,13 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 }
 
 func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.UUID) error {
+	config := ar.getConfig()
 	client := ar.getAPIClient()
 	ar.logger.Debug("Sending heartbeat via shared API SDK client",
 		"uuid", staticAgentUUID.String(),
-		"base_url", apiBaseURL(ar.config),
-		"auth_enabled", hasAPIAuth(ar.config),
-		"client_id", apiClientID(ar.config),
+		"base_url", apiBaseURL(config),
+		"auth_enabled", hasAPIAuth(config),
+		"client_id", apiClientID(config),
 	)
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
