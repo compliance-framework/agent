@@ -204,11 +204,11 @@ func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, err
 }
 
 func bindAgentEnv(config *viper.Viper) error {
-	for _, key := range []string{
-		"api.auth.client_id",
-		"api.auth.client_secret",
+	for key, envVar := range map[string]string{
+		"api.auth.client_id":     "CCF_API_AUTH_CLIENT_ID",
+		"api.auth.client_secret": "CCF_API_AUTH_CLIENT_SECRET",
 	} {
-		if err := config.BindEnv(key); err != nil {
+		if err := config.BindEnv(key, envVar); err != nil {
 			return err
 		}
 	}
