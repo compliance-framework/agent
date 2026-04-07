@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -25,6 +23,7 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/sdk"
+	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/fsnotify/fsnotify"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -38,8 +37,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type apiAuthConfig struct {
+	ClientID     string `json:"client_id" mapstructure:"client_id"`
+	ClientSecret string `json:"client_secret" mapstructure:"client_secret"`
+}
+
 type apiConfig struct {
-	Url string `json:"url"`
+	Url  string         `json:"url" mapstructure:"url"`
+	Auth *apiAuthConfig `json:"auth,omitempty" mapstructure:"auth"`
 }
 
 type agentPolicy string
@@ -80,6 +85,10 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no api config specified in config")
 	}
 
+	if ac.ApiConfig.hasPartialAuth() {
+		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
+	}
+
 	for name, pluginConfig := range ac.Plugins {
 		if pluginConfig == nil {
 			return fmt.Errorf("plugin %s has null configuration", name)
@@ -99,6 +108,23 @@ func (ac *agentConfig) validate() error {
 	}
 
 	return nil
+}
+
+func (ac *apiConfig) hasAuth() bool {
+	return ac != nil &&
+		ac.Auth != nil &&
+		strings.TrimSpace(ac.Auth.ClientID) != "" &&
+		strings.TrimSpace(ac.Auth.ClientSecret) != ""
+}
+
+func (ac *apiConfig) hasPartialAuth() bool {
+	if ac == nil || ac.Auth == nil {
+		return false
+	}
+
+	clientID := strings.TrimSpace(ac.Auth.ClientID)
+	clientSecret := strings.TrimSpace(ac.Auth.ClientSecret)
+	return (clientID == "") != (clientSecret == "")
 }
 
 const AgentPluginDir = ".compliance-framework/plugins"
@@ -129,6 +155,10 @@ with plugins to ensure continuous compliance.`,
 }
 
 func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, error) {
+	if err := bindAgentEnv(fileConfig); err != nil {
+		return nil, err
+	}
+
 	// For now, we are reading from a file. This will probably be updated to a remote source soon.
 
 	// Daemon has a default false value, which will override all values passed through Viper.
@@ -171,6 +201,19 @@ func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, err
 	updateAllPluginProtocols(config)
 
 	return config, nil
+}
+
+func bindAgentEnv(config *viper.Viper) error {
+	for _, key := range []string{
+		"api.auth.client_id",
+		"api.auth.client_secret",
+	} {
+		if err := config.BindEnv(key); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
@@ -349,9 +392,11 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 }
 
 type AgentRunner struct {
-	logger hclog.Logger
-	mu     sync.Mutex
-	config *agentConfig
+	logger     hclog.Logger
+	mu         sync.Mutex
+	config     *agentConfig
+	apiClient  *sdk.Client
+	httpClient *http.Client
 
 	pluginLocations  map[string]string
 	policyLocations  map[string]string
@@ -365,6 +410,7 @@ func NewAgentRunner() *AgentRunner {
 		pluginLocations:  map[string]string{},
 		policyLocations:  map[string]string{},
 		fetchAnnotations: internal.GetAnnotations,
+		httpClient:       http.DefaultClient,
 	}
 }
 
@@ -375,6 +421,111 @@ func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 		Output: os.Stdout,
 		Level:  hclog.Level(config.logVerbosity()),
 	})
+	ar.apiClient = ar.buildAPIClient(config)
+	ar.logAPIClientConfig("config updated")
+}
+
+func (ar *AgentRunner) buildAPIClient(config *agentConfig) *sdk.Client {
+	if config == nil || config.ApiConfig == nil {
+		return nil
+	}
+
+	clientConfig := &sdk.Config{
+		BaseURL: config.ApiConfig.Url,
+	}
+	if config.ApiConfig.hasAuth() {
+		clientConfig.AgentAuth = &sdk.AgentAuthConfig{
+			ClientID:     strings.TrimSpace(config.ApiConfig.Auth.ClientID),
+			ClientSecret: strings.TrimSpace(config.ApiConfig.Auth.ClientSecret),
+		}
+	}
+
+	if ar.logger != nil {
+		ar.logger.Debug("Building shared API SDK client",
+			"base_url", config.ApiConfig.Url,
+			"auth_enabled", config.ApiConfig.hasAuth(),
+			"auth_partial", config.ApiConfig.hasPartialAuth(),
+			"client_id", apiAuthClientID(config.ApiConfig),
+			"client_secret_set", apiAuthClientSecretSet(config.ApiConfig),
+		)
+	}
+
+	return sdk.NewClient(ar.httpClient, clientConfig)
+}
+
+func (ar *AgentRunner) getAPIClient() *sdk.Client {
+	if ar.apiClient == nil {
+		if ar.logger != nil {
+			ar.logger.Debug("Shared API SDK client missing; rebuilding from current config")
+		}
+		ar.apiClient = ar.buildAPIClient(ar.config)
+		ar.logAPIClientConfig("client rebuilt lazily")
+	}
+
+	return ar.apiClient
+}
+
+func (ar *AgentRunner) logAPIClientConfig(event string) {
+	if ar.logger == nil {
+		return
+	}
+
+	ar.logger.Debug("Agent API client configuration",
+		"event", event,
+		"base_url", apiBaseURL(ar.config),
+		"auth_enabled", hasAPIAuth(ar.config),
+		"auth_partial", hasPartialAPIAuth(ar.config),
+		"client_id", apiClientID(ar.config),
+		"client_secret_set", apiClientSecretSet(ar.config),
+	)
+}
+
+func apiBaseURL(config *agentConfig) string {
+	if config == nil || config.ApiConfig == nil {
+		return ""
+	}
+
+	return config.ApiConfig.Url
+}
+
+func hasAPIAuth(config *agentConfig) bool {
+	return config != nil && config.ApiConfig != nil && config.ApiConfig.hasAuth()
+}
+
+func hasPartialAPIAuth(config *agentConfig) bool {
+	return config != nil && config.ApiConfig != nil && config.ApiConfig.hasPartialAuth()
+}
+
+func apiClientID(config *agentConfig) string {
+	if config == nil || config.ApiConfig == nil {
+		return ""
+	}
+
+	return apiAuthClientID(config.ApiConfig)
+}
+
+func apiClientSecretSet(config *agentConfig) bool {
+	if config == nil || config.ApiConfig == nil {
+		return false
+	}
+
+	return apiAuthClientSecretSet(config.ApiConfig)
+}
+
+func apiAuthClientID(config *apiConfig) string {
+	if config == nil || config.Auth == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(config.Auth.ClientID)
+}
+
+func apiAuthClientSecretSet(config *apiConfig) bool {
+	if config == nil || config.Auth == nil {
+		return false
+	}
+
+	return strings.TrimSpace(config.Auth.ClientSecret) != ""
 }
 
 func (ar *AgentRunner) Run(ctx context.Context) error {
@@ -541,9 +692,11 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	client := ar.getAPIClient()
+	ar.logger.Debug("Running all plugins with shared API SDK client",
+		"auth_enabled", hasAPIAuth(ar.config),
+		"client_id", apiClientID(ar.config),
+	)
 
 	defer ar.closePluginClients()
 
@@ -601,6 +754,11 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		}
 
 		// Create a new results helper for the plugin to send results back to
+		logger.Debug("Creating plugin API helper",
+			"plugin", pluginName,
+			"auth_enabled", hasAPIAuth(ar.config),
+			"client_id", apiClientID(ar.config),
+		)
 		resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
 		if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
@@ -637,9 +795,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 // Returns:
 // - error: any error that occurred during the run
 func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agentPlugin) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	client := ar.getAPIClient()
+	ar.logger.Debug("Running single plugin with shared API SDK client",
+		"plugin", name,
+		"auth_enabled", hasAPIAuth(ar.config),
+		"client_id", apiClientID(ar.config),
+	)
 
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
@@ -700,6 +861,11 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 
 	// Create a new results helper for the plugin to send results back to
+	logger.Debug("Creating plugin API helper",
+		"plugin", name,
+		"auth_enabled", hasAPIAuth(ar.config),
+		"client_id", apiClientID(ar.config),
+	)
 	resultsHelper := runner.NewApiHelper(logger, client, labels, name)
 
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
@@ -719,32 +885,24 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 }
 
 func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.UUID) error {
-	client := sdk.NewClient(http.DefaultClient, &sdk.Config{
-		BaseURL: ar.config.ApiConfig.Url,
-	})
+	client := ar.getAPIClient()
+	ar.logger.Debug("Sending heartbeat via shared API SDK client",
+		"uuid", staticAgentUUID.String(),
+		"base_url", apiBaseURL(ar.config),
+		"auth_enabled", hasAPIAuth(ar.config),
+		"client_id", apiClientID(ar.config),
+	)
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
-	heartbeatJson, err := json.Marshal(map[string]interface{}{
-		"uuid":       staticAgentUUID,
-		"created_at": time.Now(),
+	err := client.Heartbeat.Create(heartbeatCtx, sdktypes.Heartbeat{
+		UUID:      staticAgentUUID,
+		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		// TODO What to do here ?
-		ar.logger.Error("Error marshaling heartbeat", "error", err, "uuid", staticAgentUUID.String())
+		ar.logger.Error("Error sending heartbeat via SDK", "error", err, "uuid", staticAgentUUID.String())
 		return err
 	}
-	response, err := client.NewRequest(heartbeatCtx, "POST", "/api/agent/heartbeat/", bytes.NewReader(heartbeatJson))
-	if err != nil {
-		// TODO What to do here ?
-		ar.logger.Error("Error sending heartbeat", "error", err, "uuid", staticAgentUUID.String())
-		return err
-	}
-	if response.StatusCode != http.StatusCreated {
-		// TODO What to do here ?
-		ar.logger.Error("Error heartbeat from server", "code", response.StatusCode, "uuid", staticAgentUUID.String())
-		return err
-	}
-	ar.logger.Info("Successfully heartbeat from server", "uuid", staticAgentUUID.String())
+	ar.logger.Info("Successfully sent heartbeat to server", "uuid", staticAgentUUID.String())
 	return nil
 }
 
