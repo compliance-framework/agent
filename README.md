@@ -91,6 +91,30 @@ or even simpler:
 go run main.go agent --config PATH_TO_CONFIG_FILE
 ```
 
+### Submit evidence
+
+For CI systems that already know the evidence they want to report, use `submit-evidence` to send a single evidence
+record without running plugins or policies.
+
+```shell
+./concom submit-evidence "Pipeline ran successfully" \
+  --api-url https://your-compliance-framework.url.com \
+  --status satisfied \
+  --label provider=gitlab \
+  --label evidence-kind=pipeline-artifact \
+  --link "Pipeline=https://gitlab.example.com/group/project/-/pipelines/123"
+```
+
+The command also accepts a YAML or JSON evidence file:
+
+```shell
+./concom submit-evidence -f evidence.yaml --label provider=gitlab
+```
+
+Labels are mandatory and are used to derive the evidence UUID. Do not provide a UUID in the evidence file.
+`--api-url` can also be provided by `CCF_API_URL` or `INPUT_API_URL`. API authentication uses
+`CCF_API_AUTH_CLIENT_ID` and `CCF_API_AUTH_CLIENT_SECRET`.
+
 # Development
 
 ## Generating Protobufs
