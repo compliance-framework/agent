@@ -18,6 +18,7 @@ func main() {
 
 	rootCmd.AddCommand(cmd.AgentCmd())
 	rootCmd.AddCommand(cmd.DownloadPluginCmd())
+	rootCmd.AddCommand(cmd.SubmitEvidenceCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
