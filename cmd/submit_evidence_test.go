@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -45,7 +47,7 @@ func TestSubmitEvidenceValidation(t *testing.T) {
 		{
 			name:    "malformed link fails",
 			args:    []string{"Evidence", "--status", "satisfied", "--label", "provider=gitlab", "--link", "Pipeline", "--dry-run"},
-			wantErr: "link must be in key=value form",
+			wantErr: "link must be in text=href form",
 		},
 	}
 
@@ -322,7 +324,36 @@ func TestSubmitEvidenceReturnsNonCreatedResponseError(t *testing.T) {
 	}
 }
 
+func TestSubmitEvidenceUsesCommandContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if err := r.Context().Err(); err != nil {
+			return nil, err
+		}
+		t.Fatalf("expected request to use canceled command context")
+		return nil, nil
+	})
+
+	_, err := executeSubmitEvidenceCommandWithContext(t, ctx, []string{
+		"Evidence",
+		"--api-url", "http://example.test",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+	}, client)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled error, got %v", err)
+	}
+}
+
 func executeSubmitEvidenceCommand(t *testing.T, args []string, client *http.Client) (string, error) {
+	t.Helper()
+
+	return executeSubmitEvidenceCommandWithContext(t, context.Background(), args, client)
+}
+
+func executeSubmitEvidenceCommandWithContext(t *testing.T, ctx context.Context, args []string, client *http.Client) (string, error) {
 	t.Helper()
 
 	now := func() time.Time {
@@ -333,6 +364,7 @@ func executeSubmitEvidenceCommand(t *testing.T, args []string, client *http.Clie
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
+	cmd.SetContext(ctx)
 
 	err := cmd.Execute()
 	return out.String(), err

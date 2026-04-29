@@ -81,22 +81,8 @@ func (ac *agentConfig) validate() error {
 		return fmt.Errorf("no plugins specified in config")
 	}
 
-	if ac.ApiConfig == nil {
-		return fmt.Errorf("no api config specified in config")
-	}
-
-	if strings.TrimSpace(ac.ApiConfig.Url) == "" {
-		return fmt.Errorf("api url must be configured")
-	}
-
-	if ac.ApiConfig.hasPartialAuth() {
-		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
-	}
-
-	if ac.ApiConfig.hasAuth() {
-		if _, err := uuid.Parse(strings.TrimSpace(ac.ApiConfig.Auth.ClientID)); err != nil {
-			return fmt.Errorf("api auth client_id must be a valid UUID")
-		}
+	if err := ac.ApiConfig.validate(); err != nil {
+		return err
 	}
 
 	for name, pluginConfig := range ac.Plugins {
@@ -114,6 +100,28 @@ func (ac *agentConfig) validate() error {
 
 		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
 			return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
+		}
+	}
+
+	return nil
+}
+
+func (ac *apiConfig) validate() error {
+	if ac == nil {
+		return fmt.Errorf("no api config specified in config")
+	}
+
+	if strings.TrimSpace(ac.Url) == "" {
+		return fmt.Errorf("api url must be configured")
+	}
+
+	if ac.hasPartialAuth() {
+		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
+	}
+
+	if ac.hasAuth() {
+		if _, err := uuid.Parse(strings.TrimSpace(ac.Auth.ClientID)); err != nil {
+			return fmt.Errorf("api auth client_id must be a valid UUID")
 		}
 	}
 

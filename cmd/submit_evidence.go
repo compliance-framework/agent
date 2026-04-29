@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -80,15 +79,12 @@ func runSubmitEvidence(cmd *cobra.Command, args []string, opts *submitEvidenceOp
 		return err
 	}
 
-	config, err := submitEvidenceConfig(opts.apiURL)
+	apiClient, err := submitEvidenceAPIClient(opts.apiURL, opts.httpClient)
 	if err != nil {
 		return err
 	}
-	agentRunner := NewAgentRunner()
-	agentRunner.httpClient = opts.httpClient
-	agentRunner.UpdateConfig(config)
 
-	return agentRunner.getAPIClient().Evidence.Create(context.Background(), evidence)
+	return apiClient.Evidence.Create(cmd.Context(), evidence)
 }
 
 func buildEvidence(cmd *cobra.Command, args []string, opts *submitEvidenceOptions) (sdktypes.Evidence, error) {
@@ -208,7 +204,7 @@ func loadEvidenceFile(path string) (sdktypes.Evidence, error) {
 func parseLabels(values []string) (map[string]string, error) {
 	labels := map[string]string{}
 	for _, value := range values {
-		key, labelValue, err := splitKeyValue(value, "label")
+		key, labelValue, err := splitKeyValue(value, "label", "key=value")
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +216,7 @@ func parseLabels(values []string) (map[string]string, error) {
 func parseLinks(values []string) ([]sdktypes.Link, error) {
 	links := make([]sdktypes.Link, 0, len(values))
 	for _, value := range values {
-		text, href, err := splitKeyValue(value, "link")
+		text, href, err := splitKeyValue(value, "link", "text=href")
 		if err != nil {
 			return nil, err
 		}
@@ -232,10 +228,10 @@ func parseLinks(values []string) ([]sdktypes.Link, error) {
 	return links, nil
 }
 
-func splitKeyValue(value string, fieldName string) (string, string, error) {
+func splitKeyValue(value string, fieldName string, format string) (string, string, error) {
 	key, fieldValue, ok := strings.Cut(value, "=")
 	if !ok || strings.TrimSpace(key) == "" || strings.TrimSpace(fieldValue) == "" {
-		return "", "", fmt.Errorf("%s must be in key=value form", fieldName)
+		return "", "", fmt.Errorf("%s must be in %s form", fieldName, format)
 	}
 	return strings.TrimSpace(key), strings.TrimSpace(fieldValue), nil
 }
@@ -259,23 +255,35 @@ func parseRFC3339Flag(name string, value string) (time.Time, error) {
 	return parsed.UTC(), nil
 }
 
-func submitEvidenceConfig(apiURLFlag string) (*agentConfig, error) {
-	config := &agentConfig{
-		ApiConfig: &apiConfig{
-			Url: firstNonEmpty(apiURLFlag, os.Getenv("CCF_API_URL"), os.Getenv("INPUT_API_URL")),
-			Auth: &apiAuthConfig{
-				ClientID:     os.Getenv("CCF_API_AUTH_CLIENT_ID"),
-				ClientSecret: os.Getenv("CCF_API_AUTH_CLIENT_SECRET"),
-			},
-		},
-		Plugins: map[string]*agentPlugin{
-			"submit-evidence": {
-				Source: "submit-evidence",
-			},
+func submitEvidenceAPIClient(apiURLFlag string, httpClient *http.Client) (*sdk.Client, error) {
+	config, err := submitEvidenceAPIConfig(apiURLFlag)
+	if err != nil {
+		return nil, err
+	}
+
+	clientConfig := &sdk.Config{
+		BaseURL: strings.TrimSpace(config.Url),
+	}
+	if config.hasAuth() {
+		clientConfig.AgentAuth = &sdk.AgentAuthConfig{
+			ClientID:     strings.TrimSpace(config.Auth.ClientID),
+			ClientSecret: strings.TrimSpace(config.Auth.ClientSecret),
+		}
+	}
+
+	return sdk.NewClient(httpClient, clientConfig), nil
+}
+
+func submitEvidenceAPIConfig(apiURLFlag string) (*apiConfig, error) {
+	config := &apiConfig{
+		Url: firstNonEmpty(apiURLFlag, os.Getenv("CCF_API_URL"), os.Getenv("INPUT_API_URL")),
+		Auth: &apiAuthConfig{
+			ClientID:     os.Getenv("CCF_API_AUTH_CLIENT_ID"),
+			ClientSecret: os.Getenv("CCF_API_AUTH_CLIENT_SECRET"),
 		},
 	}
-	if config.ApiConfig.Auth.ClientID == "" && config.ApiConfig.Auth.ClientSecret == "" {
-		config.ApiConfig.Auth = nil
+	if config.Auth.ClientID == "" && config.Auth.ClientSecret == "" {
+		config.Auth = nil
 	}
 	if err := config.validate(); err != nil {
 		return nil, err
