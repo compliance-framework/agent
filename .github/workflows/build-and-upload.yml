@@ -51,6 +51,22 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=sha
+      - name: CI meta
+        id: ci-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}-ci
+          flavor: |
+            latest=auto
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=schedule
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -74,4 +90,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.custodian-meta.outputs.tags }}
           labels: ${{ steps.custodian-meta.outputs.labels }}
+          push: true
+      - name: Build and push (ci)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile-ci
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.ci-meta.outputs.tags }}
+          labels: ${{ steps.ci-meta.outputs.labels }}
           push: true
