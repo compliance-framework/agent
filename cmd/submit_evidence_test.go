@@ -347,6 +347,207 @@ func TestSubmitEvidenceUsesCommandContext(t *testing.T) {
 	}
 }
 
+func TestSubmitEvidenceExpiresAtRFC3339(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "2027-04-29T12:00:00Z",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2027, 4, 29, 12, 0, 0, 0, time.UTC)
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterYear(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 1year",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2027, 4, 29, 12, 0, 0, 0, time.UTC) // 2026-04-29 + 1 year
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterYears(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 2years",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2028, 4, 29, 12, 0, 0, 0, time.UTC) // 2026-04-29 + 2 years
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterMonth(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 3months",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC) // 2026-04-29 + 3 months
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterDay(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 15days",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2026, 5, 14, 12, 0, 0, 0, time.UTC) // 2026-04-29 + 15 days
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterCombined(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 1year 2months 3days",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2027, 7, 2, 12, 0, 0, 0, time.UTC) // 2026-04-29 + 1 year + 2 months + 3 days
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 1YEAR 2MONTHS 3DAYS",
+		"--dry-run",
+	}, nil)
+	if err != nil {
+		t.Fatalf("execute command: %v", err)
+	}
+
+	evidence := decodeEvidenceOutput(t, out)
+	expected := time.Date(2027, 7, 2, 12, 0, 0, 0, time.UTC)
+	if !evidence.Expires.Equal(expected) {
+		t.Fatalf("expected expires %v, got %v", expected, evidence.Expires)
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterInvalidMissingDuration(t *testing.T) {
+	t.Parallel()
+
+	_, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after",
+		"--dry-run",
+	}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "@after requires a duration") {
+		t.Fatalf("expected @after requires duration error, got %q", err.Error())
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterInvalidUnknownUnit(t *testing.T) {
+	t.Parallel()
+
+	_, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after 5hours",
+		"--dry-run",
+	}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown unit") {
+		t.Fatalf("expected unknown unit error, got %q", err.Error())
+	}
+}
+
+func TestSubmitEvidenceExpiresAtAfterInvalidMissingNumber(t *testing.T) {
+	t.Parallel()
+
+	_, err := executeSubmitEvidenceCommand(t, []string{
+		"Evidence",
+		"--status", "satisfied",
+		"--label", "provider=gitlab",
+		"--expires-at", "@after years",
+		"--dry-run",
+	}, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "expected number") {
+		t.Fatalf("expected number parsing error, got %q", err.Error())
+	}
+}
+
 func executeSubmitEvidenceCommand(t *testing.T, args []string, client *http.Client) (string, error) {
 	t.Helper()
 

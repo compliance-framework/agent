@@ -56,7 +56,7 @@ func newSubmitEvidenceCmd(now func() time.Time, httpClient *http.Client) *cobra.
 	cmd.Flags().StringVar(&opts.status, "status", "", "Evidence status: satisfied or not-satisfied")
 	cmd.Flags().StringVar(&opts.reason, "reason", "", "Status reason")
 	cmd.Flags().StringVar(&opts.statusRemarks, "status-remarks", "", "Status remarks")
-	cmd.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Evidence expiry timestamp in RFC3339 format")
+	cmd.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Evidence expiry timestamp in RFC3339 format or @after syntax (e.g., @after 1year, @after 2months 3days)")
 	cmd.Flags().StringArrayVar(&opts.labels, "label", nil, "Evidence label in key=value form; may be repeated")
 	cmd.Flags().StringArrayVar(&opts.links, "link", nil, "Evidence link in text=href form; may be repeated")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Print the final evidence JSON without submitting")
@@ -123,7 +123,7 @@ func buildEvidence(cmd *cobra.Command, args []string, opts *submitEvidenceOption
 		evidence.Status.Remarks = opts.statusRemarks
 	}
 	if flags.Changed("expires-at") {
-		expiresAt, err := parseRFC3339Flag("expires-at", opts.expiresAt)
+		expiresAt, err := parseExpiresAt("expires-at", opts.expiresAt, opts.now)
 		if err != nil {
 			return evidence, err
 		}
@@ -247,12 +247,90 @@ func validateEvidenceStatus(status string) error {
 	}
 }
 
-func parseRFC3339Flag(name string, value string) (time.Time, error) {
+func parseExpiresAt(name string, value string, now func() time.Time) (time.Time, error) {
+	value = strings.TrimSpace(value)
+
+	// Check for @after syntax
+	if strings.HasPrefix(value, "@after") {
+		return parseAfterSyntax(name, value, now)
+	}
+
+	// Fall back to RFC3339 parsing
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%s must be an RFC3339 timestamp: %w", name, err)
+		return time.Time{}, fmt.Errorf("%s must be an RFC3339 timestamp or @after syntax (e.g., @after 1year, @after 2months 3days): %w", name, err)
 	}
 	return parsed.UTC(), nil
+}
+
+func parseAfterSyntax(name string, value string, now func() time.Time) (time.Time, error) {
+	// Remove @after prefix and trim
+	durationStr := strings.TrimSpace(strings.TrimPrefix(value, "@after"))
+	if durationStr == "" {
+		return time.Time{}, fmt.Errorf("%s: @after requires a duration (e.g., @after 1year, @after 2months 3days)", name)
+	}
+
+	// Parse the duration components
+	result := now().UTC()
+	remaining := durationStr
+
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+
+		// Try to parse a number followed by a unit
+		var num int
+		var unit string
+		charsParsed := 0
+
+		// Parse the number
+		for _, c := range remaining {
+			if c >= '0' && c <= '9' {
+				num = num*10 + int(c-'0')
+				charsParsed++
+			} else {
+				break
+			}
+		}
+
+		if charsParsed == 0 {
+			return time.Time{}, fmt.Errorf("%s: expected number in @after syntax, got: %s", name, remaining)
+		}
+
+		remaining = remaining[charsParsed:]
+
+		// Parse the unit (year, years, month, months, day, days)
+		for _, c := range remaining {
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+				unit += string(c)
+				charsParsed++
+			} else {
+				break
+			}
+		}
+
+		if unit == "" {
+			return time.Time{}, fmt.Errorf("%s: expected unit (year/years/month/months/day/days) in @after syntax", name)
+		}
+
+		remaining = remaining[len(unit):]
+
+		// Apply the duration
+		switch strings.ToLower(unit) {
+		case "year", "years":
+			result = result.AddDate(num, 0, 0)
+		case "month", "months":
+			result = result.AddDate(0, num, 0)
+		case "day", "days":
+			result = result.AddDate(0, 0, num)
+		default:
+			return time.Time{}, fmt.Errorf("%s: unknown unit %q, expected year/years/month/months/day/days", name, unit)
+		}
+	}
+
+	return result, nil
 }
 
 func submitEvidenceAPIClient(apiURLFlag string, httpClient *http.Client) (*sdk.Client, error) {
