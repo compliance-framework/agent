@@ -737,7 +737,7 @@ func TestSetupCronRunsDifferentPluginsIndependently(t *testing.T) {
 	agentCron.Start()
 	defer func() {
 		close(release)
-		waitForCronStop(t, agentCron.Stop())
+		waitForTestCronStop(t, agentCron.Stop())
 	}()
 
 	first := waitForPluginStart(t, started)
@@ -747,7 +747,7 @@ func TestSetupCronRunsDifferentPluginsIndependently(t *testing.T) {
 	}
 }
 
-func TestSetupCronQueuesRunsForSamePlugin(t *testing.T) {
+func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
 	schedule := "@every 1s"
 	ctx := context.Background()
 	started := make(chan int, 2)
@@ -791,9 +791,12 @@ func TestSetupCronQueuesRunsForSamePlugin(t *testing.T) {
 	}
 
 	agentCron.Start()
+	stopped := false
 	defer func() {
 		releaseFirstIfNeeded()
-		waitForCronStop(t, agentCron.Stop())
+		if !stopped {
+			waitForTestCronStop(t, agentCron.Stop())
+		}
 	}()
 
 	if got := waitForPluginRun(t, started); got != 1 {
@@ -803,13 +806,18 @@ func TestSetupCronQueuesRunsForSamePlugin(t *testing.T) {
 	select {
 	case got := <-started:
 		releaseFirstIfNeeded()
-		t.Fatalf("expected second run to queue behind the first, but run %d started before release", got)
+		t.Fatalf("expected second run to be skipped while the first was still running, but run %d started before release", got)
 	case <-time.After(1500 * time.Millisecond):
 	}
 
 	releaseFirstIfNeeded()
-	if got := waitForPluginRun(t, started); got != 2 {
-		t.Fatalf("expected queued second plugin run to start after first release, got run %d", got)
+	waitForTestCronStop(t, agentCron.Stop())
+	stopped = true
+
+	select {
+	case got := <-started:
+		t.Fatalf("expected no queued plugin run after first release, got run %d", got)
+	default:
 	}
 }
 
@@ -839,6 +847,25 @@ func TestAgentRunnerTracksPluginClientCleanupPerRun(t *testing.T) {
 	}
 }
 
+func TestWaitForCronStop(t *testing.T) {
+	t.Run("returns true when all stop contexts finish", func(t *testing.T) {
+		ctxA, cancelA := context.WithCancel(context.Background())
+		ctxB, cancelB := context.WithCancel(context.Background())
+		cancelA()
+		cancelB()
+
+		if !waitForCronStop(time.Second, ctxA, ctxB) {
+			t.Fatal("expected waitForCronStop to return true when all contexts are done")
+		}
+	})
+
+	t.Run("returns false on timeout", func(t *testing.T) {
+		if waitForCronStop(10*time.Millisecond, context.Background()) {
+			t.Fatal("expected waitForCronStop to return false when a context does not finish")
+		}
+	})
+}
+
 func waitForPluginStart(t *testing.T, started <-chan string) string {
 	t.Helper()
 
@@ -863,7 +890,7 @@ func waitForPluginRun(t *testing.T, started <-chan int) int {
 	}
 }
 
-func waitForCronStop(t *testing.T, stopCtx context.Context) {
+func waitForTestCronStop(t *testing.T, stopCtx context.Context) {
 	t.Helper()
 
 	select {

@@ -150,6 +150,7 @@ const AgentPolicyDir = ".compliance-framework/policies"
 const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
+const daemonCronStopTimeout = 30 * time.Second
 
 func AgentCmd() *cobra.Command {
 	var agentCmd = &cobra.Command{
@@ -693,8 +694,11 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	case sig := <-sigs:
 		logger.Info("received signal to terminate plugins and exit", "signal", sig)
 		logger.Debug("Stopping crons")
-		agentCron.Stop()
-		heartbeatCron.Stop()
+		agentCronStopCtx := agentCron.Stop()
+		heartbeatCronStopCtx := heartbeatCron.Stop()
+		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx) {
+			logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
+		}
 		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
 		logger.Debug("Exiting")
@@ -702,12 +706,30 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	case <-ctx.Done():
 		logger.Debug("received cancel signal to return from daemon")
 		logger.Debug("Stopping crons")
-		agentCron.Stop()
-		heartbeatCron.Stop()
+		agentCronStopCtx := agentCron.Stop()
+		heartbeatCronStopCtx := heartbeatCron.Stop()
+		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx) {
+			logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
+		}
 		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
 		return
 	}
+}
+
+func waitForCronStop(timeout time.Duration, stopContexts ...context.Context) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for _, stopCtx := range stopContexts {
+		select {
+		case <-stopCtx.Done():
+		case <-timer.C:
+			return false
+		}
+	}
+
+	return true
 }
 
 func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, error) {
@@ -738,7 +760,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow|cron.Descriptor,
-	)), cron.WithChain(cron.DelayIfStillRunning(cron.DefaultLogger)))
+	)), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
 	config := ar.getConfig()
 	runPlugin := ar.runPlugin
 	if ar.runPluginFunc != nil {
