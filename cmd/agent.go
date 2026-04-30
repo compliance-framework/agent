@@ -420,6 +420,7 @@ type AgentRunner struct {
 	policyLocations      map[string]string
 	activePluginClients  map[*plugin.Client]struct{}
 	activePluginClientMu sync.Mutex
+	downloadLocks        sync.Map
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
 
@@ -672,6 +673,7 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	logger := ar.getLogger()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigs)
 
 	agentCron, err := ar.setupCron(ctx)
 	if err != nil {
@@ -732,6 +734,17 @@ func waitForCronStop(timeout time.Duration, stopContexts ...context.Context) boo
 	return true
 }
 
+func (ar *AgentRunner) download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
+	lockKey := strings.Join([]string{outputDir, binaryPath, source}, "\x00")
+	lockValue, _ := ar.downloadLocks.LoadOrStore(lockKey, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+
+	lock.Lock()
+	defer lock.Unlock()
+
+	return internal.Download(ctx, source, outputDir, binaryPath, logger, option...)
+}
+
 func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
 
@@ -759,7 +772,12 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
 	c := cron.New(cron.WithParser(cron.NewParser(
-		cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow|cron.Descriptor,
+		cron.Minute|
+			cron.Hour|
+			cron.Dom|
+			cron.Month|
+			cron.Dow|
+			cron.Descriptor,
 	)), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
 	config := ar.getConfig()
 	runPlugin := ar.runPlugin
@@ -923,14 +941,14 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 
 	policyPaths := make([]string, 0)
 	for _, inputBundle := range plugin.Policies {
-		policyLocation, err := internal.Download(ctx, string(inputBundle), AgentPolicyDir, "policies", logger)
+		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
 	}
 
-	pluginExecutable, err := internal.Download(ctx, plugin.Source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
+	pluginExecutable, err := ar.download(ctx, plugin.Source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
 		Architecture: runtime.GOARCH,
 		OS:           runtime.GOOS,
 	}))
@@ -1086,7 +1104,7 @@ func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 	}
 
 	for source := range pluginSources {
-		out, err := internal.Download(ctx, source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
+		out, err := ar.download(ctx, source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
 			Architecture: runtime.GOARCH,
 			OS:           runtime.GOOS,
 		}))
@@ -1114,7 +1132,7 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	for source := range policySources {
-		out, err := internal.Download(ctx, source, AgentPolicyDir, "policies", logger)
+		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", logger)
 
 		if err != nil {
 			return err
