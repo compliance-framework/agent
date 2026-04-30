@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
+	hplugin "github.com/hashicorp/go-plugin"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -691,6 +693,242 @@ func TestRunnerDispenseName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetupCronRunsDifferentPluginsIndependently(t *testing.T) {
+	schedule := "@every 1s"
+	ctx := context.Background()
+	started := make(chan string, 2)
+	release := make(chan struct{})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		Plugins: map[string]*agentPlugin{
+			"plugin-a": {
+				Source:   "/tmp/plugin-a",
+				Schedule: &schedule,
+			},
+			"plugin-b": {
+				Source:   "/tmp/plugin-b",
+				Schedule: &schedule,
+			},
+		},
+	})
+	agentRunner.runPluginFunc = func(runCtx context.Context, name string, pluginConfig *agentPlugin) error {
+		select {
+		case started <- name:
+		case <-runCtx.Done():
+			return runCtx.Err()
+		}
+
+		select {
+		case <-release:
+			return nil
+		case <-runCtx.Done():
+			return runCtx.Err()
+		}
+	}
+
+	agentCron, err := agentRunner.setupCron(ctx)
+	if err != nil {
+		t.Fatalf("setupCron() error = %v, expected nil", err)
+	}
+
+	agentCron.Start()
+	defer func() {
+		close(release)
+		waitForTestCronStop(t, agentCron.Stop())
+	}()
+
+	first := waitForPluginStart(t, started)
+	second := waitForPluginStart(t, started)
+	if first == second {
+		t.Fatalf("expected different plugins to start independently, got %q twice", first)
+	}
+}
+
+func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
+	schedule := "@every 1s"
+	ctx := context.Background()
+	started := make(chan int, 2)
+	releaseFirst := make(chan struct{})
+	var logOutput bytes.Buffer
+	releaseFirstIfNeeded := func() {
+		select {
+		case <-releaseFirst:
+		default:
+			close(releaseFirst)
+		}
+	}
+
+	var runs int32
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		Plugins: map[string]*agentPlugin{
+			"plugin-a": {
+				Source:   "/tmp/plugin-a",
+				Schedule: &schedule,
+			},
+		},
+	})
+	agentRunner.stateMu.Lock()
+	agentRunner.logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "agent-runner",
+		Output: &logOutput,
+		Level:  hclog.Info,
+	})
+	agentRunner.stateMu.Unlock()
+	agentRunner.runPluginFunc = func(runCtx context.Context, name string, pluginConfig *agentPlugin) error {
+		currentRun := int(atomic.AddInt32(&runs, 1))
+		started <- currentRun
+
+		if currentRun == 1 {
+			select {
+			case <-releaseFirst:
+			case <-runCtx.Done():
+				return runCtx.Err()
+			}
+		}
+
+		return nil
+	}
+
+	agentCron, err := agentRunner.setupCron(ctx)
+	if err != nil {
+		t.Fatalf("setupCron() error = %v, expected nil", err)
+	}
+
+	agentCron.Start()
+	stopped := false
+	defer func() {
+		releaseFirstIfNeeded()
+		if !stopped {
+			waitForTestCronStop(t, agentCron.Stop())
+		}
+	}()
+
+	if got := waitForPluginRun(t, started); got != 1 {
+		t.Fatalf("expected first plugin run to start first, got run %d", got)
+	}
+
+	select {
+	case got := <-started:
+		releaseFirstIfNeeded()
+		t.Fatalf("expected second run to be skipped while the first was still running, but run %d started before release", got)
+	case <-time.After(1500 * time.Millisecond):
+	}
+
+	releaseFirstIfNeeded()
+	waitForTestCronStop(t, agentCron.Stop())
+	stopped = true
+
+	select {
+	case got := <-started:
+		t.Fatalf("expected no queued plugin run after first release, got run %d", got)
+	default:
+	}
+
+	gotLogs := logOutput.String()
+	if !strings.Contains(gotLogs, "skip") {
+		t.Fatalf("expected skip log, got %q", gotLogs)
+	}
+	if !strings.Contains(gotLogs, "plugin-a") {
+		t.Fatalf("expected skip log to include plugin name, got %q", gotLogs)
+	}
+}
+
+func TestAgentRunnerTracksPluginClientCleanupPerRun(t *testing.T) {
+	agentRunner := NewAgentRunner()
+	agentRunner.logger = hclog.NewNullLogger()
+	clientA := hplugin.NewClient(&hplugin.ClientConfig{})
+	clientB := hplugin.NewClient(&hplugin.ClientConfig{})
+
+	cleanupA := agentRunner.trackPluginClient(clientA)
+	cleanupB := agentRunner.trackPluginClient(clientB)
+
+	cleanupA()
+	if got := activePluginClientCount(agentRunner); got != 1 {
+		cleanupB()
+		t.Fatalf("expected one active plugin client after cleaning up one run, got %d", got)
+	}
+
+	cleanupA()
+	if got := activePluginClientCount(agentRunner); got != 1 {
+		cleanupB()
+		t.Fatalf("expected duplicate cleanup to be idempotent, got %d active clients", got)
+	}
+
+	cleanupB()
+	if got := activePluginClientCount(agentRunner); got != 0 {
+		t.Fatalf("expected all plugin clients to be cleaned up, got %d", got)
+	}
+
+	agentRunner.closePluginClients()
+	clientAfterClose := hplugin.NewClient(&hplugin.ClientConfig{})
+	cleanupAfterClose := agentRunner.trackPluginClient(clientAfterClose)
+	defer cleanupAfterClose()
+	if got := activePluginClientCount(agentRunner); got != 0 {
+		t.Fatalf("expected plugin client tracked during cleanup to be killed immediately, got %d active clients", got)
+	}
+}
+
+func TestWaitForCronStop(t *testing.T) {
+	t.Run("returns true when all stop contexts finish", func(t *testing.T) {
+		ctxA, cancelA := context.WithCancel(context.Background())
+		ctxB, cancelB := context.WithCancel(context.Background())
+		cancelA()
+		cancelB()
+
+		if !waitForCronStop(time.Second, ctxA, ctxB) {
+			t.Fatal("expected waitForCronStop to return true when all contexts are done")
+		}
+	})
+
+	t.Run("returns false on timeout", func(t *testing.T) {
+		if waitForCronStop(10*time.Millisecond, context.Background()) {
+			t.Fatal("expected waitForCronStop to return false when a context does not finish")
+		}
+	})
+}
+
+func waitForPluginStart(t *testing.T, started <-chan string) string {
+	t.Helper()
+
+	select {
+	case name := <-started:
+		return name
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for scheduled plugin to start")
+		return ""
+	}
+}
+
+func waitForPluginRun(t *testing.T, started <-chan int) int {
+	t.Helper()
+
+	select {
+	case run := <-started:
+		return run
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for scheduled plugin run to start")
+		return 0
+	}
+}
+
+func waitForTestCronStop(t *testing.T, stopCtx context.Context) {
+	t.Helper()
+
+	select {
+	case <-stopCtx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for cron jobs to stop")
+	}
+}
+
+func activePluginClientCount(agentRunner *AgentRunner) int {
+	agentRunner.activePluginClientMu.Lock()
+	defer agentRunner.activePluginClientMu.Unlock()
+	return len(agentRunner.activePluginClients)
 }
 
 func TestInitRunner(t *testing.T) {
