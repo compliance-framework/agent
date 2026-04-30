@@ -33,6 +33,7 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -420,7 +421,7 @@ type AgentRunner struct {
 	policyLocations      map[string]string
 	activePluginClients  map[*plugin.Client]struct{}
 	activePluginClientMu sync.Mutex
-	downloadLocks        sync.Map
+	downloadGroup        singleflight.Group
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
 
@@ -772,13 +773,14 @@ func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {
 
 func (ar *AgentRunner) download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
 	lockKey := strings.Join([]string{outputDir, binaryPath, source}, "\x00")
-	lockValue, _ := ar.downloadLocks.LoadOrStore(lockKey, &sync.Mutex{})
-	lock := lockValue.(*sync.Mutex)
+	result, err, _ := ar.downloadGroup.Do(lockKey, func() (interface{}, error) {
+		return internal.Download(ctx, source, outputDir, binaryPath, logger, option...)
+	})
+	if err != nil {
+		return "", err
+	}
 
-	lock.Lock()
-	defer lock.Unlock()
-
-	return internal.Download(ctx, source, outputDir, binaryPath, logger, option...)
+	return result.(string), nil
 }
 
 func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, error) {
@@ -1180,16 +1182,22 @@ func (ar *AgentRunner) closePluginClients() {
 	logger := ar.getLogger()
 	logger.Debug("Cleaning up plugin instances")
 
-	ar.activePluginClientMu.Lock()
-	clients := make([]*plugin.Client, 0, len(ar.activePluginClients))
-	for client := range ar.activePluginClients {
-		clients = append(clients, client)
-		delete(ar.activePluginClients, client)
-	}
-	ar.activePluginClientMu.Unlock()
+	for {
+		ar.activePluginClientMu.Lock()
+		clients := make([]*plugin.Client, 0, len(ar.activePluginClients))
+		for client := range ar.activePluginClients {
+			clients = append(clients, client)
+			delete(ar.activePluginClients, client)
+		}
+		ar.activePluginClientMu.Unlock()
 
-	for _, client := range clients {
-		client.Kill()
+		if len(clients) == 0 {
+			break
+		}
+
+		for _, client := range clients {
+			client.Kill()
+		}
 	}
 
 	logger.Debug("Completed plugin cleanup")
