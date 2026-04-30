@@ -812,7 +812,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	parserOptions := cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
 	c := cron.New(cron.WithParser(cron.NewParser(
 		parserOptions,
-	)), cron.WithChain(cron.SkipIfStillRunning(cronLogger{logger: logger})))
+	)))
 	config := ar.getConfig()
 	runPlugin := ar.runPlugin
 	if ar.runPluginFunc != nil {
@@ -829,13 +829,15 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 			schedule = *currentPluginConfig.Schedule
 		}
 
-		_, err := c.AddFunc(schedule, func() {
+		jobLogger := logger.With("plugin", currentPluginName, "schedule", schedule)
+		job := cron.NewChain(cron.SkipIfStillRunning(cronLogger{logger: jobLogger})).Then(cron.FuncJob(func() {
 			err := runPlugin(ctx, currentPluginName, currentPluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
 				logger.Error("Error running plugin", "plugin", currentPluginName, "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
 			}
-		})
+		}))
+		_, err := c.AddJob(schedule, job)
 
 		if err != nil {
 			logger.Error("Error adding plugin schedule", "schedule", schedule, "error", err)

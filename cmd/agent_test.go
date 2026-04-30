@@ -752,6 +752,7 @@ func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
 	ctx := context.Background()
 	started := make(chan int, 2)
 	releaseFirst := make(chan struct{})
+	var logOutput bytes.Buffer
 	releaseFirstIfNeeded := func() {
 		select {
 		case <-releaseFirst:
@@ -770,6 +771,13 @@ func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
 			},
 		},
 	})
+	agentRunner.stateMu.Lock()
+	agentRunner.logger = hclog.New(&hclog.LoggerOptions{
+		Name:   "agent-runner",
+		Output: &logOutput,
+		Level:  hclog.Info,
+	})
+	agentRunner.stateMu.Unlock()
 	agentRunner.runPluginFunc = func(runCtx context.Context, name string, pluginConfig *agentPlugin) error {
 		currentRun := int(atomic.AddInt32(&runs, 1))
 		started <- currentRun
@@ -818,6 +826,14 @@ func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
 	case got := <-started:
 		t.Fatalf("expected no queued plugin run after first release, got run %d", got)
 	default:
+	}
+
+	gotLogs := logOutput.String()
+	if !strings.Contains(gotLogs, "skip") {
+		t.Fatalf("expected skip log, got %q", gotLogs)
+	}
+	if !strings.Contains(gotLogs, "plugin-a") {
+		t.Fatalf("expected skip log to include plugin name, got %q", gotLogs)
 	}
 }
 
