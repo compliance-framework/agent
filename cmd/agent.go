@@ -771,8 +771,8 @@ func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {
 	l.logger.Error(msg, append([]interface{}{"error", err}, keysAndValues...)...)
 }
 
-func (ar *AgentRunner) download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
-	lockKey := strings.Join([]string{outputDir, binaryPath, source}, "\x00")
+func (ar *AgentRunner) download(ctx context.Context, source string, outputDir string, binaryPath string, optionKey string, logger hclog.Logger, option ...remote.Option) (string, error) {
+	lockKey := strings.Join([]string{outputDir, binaryPath, source, optionKey}, "\x00")
 	result, err, _ := ar.downloadGroup.Do(lockKey, func() (interface{}, error) {
 		return internal.Download(ctx, source, outputDir, binaryPath, logger, option...)
 	})
@@ -975,17 +975,18 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 
 	policyPaths := make([]string, 0)
 	for _, inputBundle := range plugin.Policies {
-		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", logger)
+		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
 	}
 
-	pluginExecutable, err := ar.download(ctx, plugin.Source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
+	platform := v1.Platform{
 		Architecture: runtime.GOARCH,
 		OS:           runtime.GOOS,
-	}))
+	}
+	pluginExecutable, err := ar.download(ctx, plugin.Source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform))
 
 	if err != nil {
 		return err
@@ -1138,10 +1139,11 @@ func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 	}
 
 	for source := range pluginSources {
-		out, err := ar.download(ctx, source, AgentPluginDir, "plugin", logger, remote.WithPlatform(v1.Platform{
+		platform := v1.Platform{
 			Architecture: runtime.GOARCH,
 			OS:           runtime.GOOS,
-		}))
+		}
+		out, err := ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform))
 
 		if err != nil {
 			return err
@@ -1166,7 +1168,7 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	for source := range policySources {
-		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", logger)
+		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
 
 		if err != nil {
 			return err
@@ -1176,6 +1178,10 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func platformDownloadKey(platform v1.Platform) string {
+	return strings.Join([]string{platform.OS, platform.Architecture, platform.Variant}, "/")
 }
 
 func (ar *AgentRunner) closePluginClients() {
