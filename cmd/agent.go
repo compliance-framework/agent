@@ -410,25 +410,28 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 
 type AgentRunner struct {
 	logger     hclog.Logger
-	mu         sync.Mutex
 	stateMu    sync.RWMutex
 	config     *agentConfig
 	apiClient  *sdk.Client
 	httpClient *http.Client
 
-	pluginLocations  map[string]string
-	policyLocations  map[string]string
-	fetchAnnotations func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
+	pluginLocations      map[string]string
+	policyLocations      map[string]string
+	activePluginClients  map[*plugin.Client]struct{}
+	activePluginClientMu sync.Mutex
+	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
+	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
 
 	queryBundles []*rego.Rego
 }
 
 func NewAgentRunner() *AgentRunner {
 	return &AgentRunner{
-		pluginLocations:  map[string]string{},
-		policyLocations:  map[string]string{},
-		fetchAnnotations: internal.GetAnnotations,
-		httpClient:       http.DefaultClient,
+		pluginLocations:     map[string]string{},
+		policyLocations:     map[string]string{},
+		activePluginClients: map[*plugin.Client]struct{}{},
+		fetchAnnotations:    internal.GetAnnotations,
+		httpClient:          http.DefaultClient,
 	}
 }
 
@@ -689,20 +692,20 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	select {
 	case sig := <-sigs:
 		logger.Info("received signal to terminate plugins and exit", "signal", sig)
-		logger.Debug("Shutting down plugins")
-		ar.closePluginClients()
 		logger.Debug("Stopping crons")
 		agentCron.Stop()
 		heartbeatCron.Stop()
+		logger.Debug("Shutting down plugins")
+		ar.closePluginClients()
 		logger.Debug("Exiting")
 		os.Exit(0)
 	case <-ctx.Done():
 		logger.Debug("received cancel signal to return from daemon")
-		logger.Debug("Shutting down plugins")
-		ar.closePluginClients()
 		logger.Debug("Stopping crons")
 		agentCron.Stop()
 		heartbeatCron.Stop()
+		logger.Debug("Shutting down plugins")
+		ar.closePluginClients()
 		return
 	}
 }
@@ -734,9 +737,14 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
 	c := cron.New(cron.WithParser(cron.NewParser(
-		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
-	)))
+		cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow|cron.Descriptor,
+	)), cron.WithChain(cron.DelayIfStillRunning(cron.DefaultLogger)))
 	config := ar.getConfig()
+	runPlugin := ar.runPlugin
+	if ar.runPluginFunc != nil {
+		runPlugin = ar.runPluginFunc
+	}
+
 	for pluginName, pluginConfig := range config.Plugins {
 		currentPluginName := pluginName
 		currentPluginConfig := pluginConfig
@@ -748,7 +756,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 		}
 
 		_, err := c.AddFunc(schedule, func() {
-			err := ar.runPlugin(ctx, currentPluginName, currentPluginConfig)
+			err := runPlugin(ctx, currentPluginName, currentPluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
 				logger.Error("Error running plugin", "plugin", currentPluginName, "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
@@ -803,65 +811,72 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			return err
 		}
 
-		runnerInstance, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
+		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
 
 		if err != nil {
 			return err
 		}
+		if err := func() error {
+			defer cleanupRunner()
 
-		_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-			Config: pluginConfig.Config,
-		})
-		if err != nil {
-			// What do we do here ?
-			//endTimer := time.Now()
-			//_, err = client.Results.Create(&sdk.Result{
-			//	StreamID:    streamId,
-			//	Labels:      resultLabels,
-			//	Title:       "Agent has failed to configure plugin.",
-			//	Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
-			//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
-			//	Start:       startTimer,
-			//	End:         &endTimer,
-			//})
-			return err
-		}
+			_, err = runnerInstance.Configure(&proto.ConfigureRequest{
+				Config: pluginConfig.Config,
+			})
+			if err != nil {
+				// What do we do here ?
+				//endTimer := time.Now()
+				//_, err = client.Results.Create(&sdk.Result{
+				//	StreamID:    streamId,
+				//	Labels:      resultLabels,
+				//	Title:       "Agent has failed to configure plugin.",
+				//	Remarks:     "Agent has failed to configure plugin. Fix agent to continue receiving results",
+				//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+				//	Start:       startTimer,
+				//	End:         &endTimer,
+				//})
+				return err
+			}
 
-		policyPaths := make([]string, 0, len(pluginConfig.Policies))
+			policyPaths := make([]string, 0, len(pluginConfig.Policies))
 
-		for _, inputBundle := range pluginConfig.Policies {
-			policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
-		}
+			for _, inputBundle := range pluginConfig.Policies {
+				policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
+			}
 
-		// Create a new results helper for the plugin to send results back to
-		logger.Debug("Creating plugin API helper",
-			"plugin", pluginName,
-			"auth_enabled", hasAPIAuth(config),
-			"client_id", apiClientID(config),
-		)
-		resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
+			// Create a new results helper for the plugin to send results back to
+			logger.Debug("Creating plugin API helper",
+				"plugin", pluginName,
+				"auth_enabled", hasAPIAuth(config),
+				"client_id", apiClientID(config),
+			)
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
-		if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
-			return err
-		}
+			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
+				return err
+			}
 
-		// TODO: Send failed results to the database?
-		_, err = runnerInstance.Eval(&proto.EvalRequest{
-			PolicyPaths: policyPaths,
-		}, resultsHelper)
+			// TODO: Send failed results to the database?
+			_, err = runnerInstance.Eval(&proto.EvalRequest{
+				PolicyPaths: policyPaths,
+			}, resultsHelper)
 
-		if err != nil {
-			// What do we do here ?
-			//endTimer := time.Now()
-			//_, err = client.Results.Create(&sdk.Result{
-			//	StreamID:    streamId,
-			//	Labels:      resultLabels,
-			//	Title:       "Agent has failed to execute policies.",
-			//	Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
-			//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
-			//	Start:       startTimer,
-			//	End:         &endTimer,
-			//})
+			if err != nil {
+				// What do we do here ?
+				//endTimer := time.Now()
+				//_, err = client.Results.Create(&sdk.Result{
+				//	StreamID:    streamId,
+				//	Labels:      resultLabels,
+				//	Title:       "Agent has failed to execute policies.",
+				//	Remarks:     "Agent has failed to execute policies. Fix agent to continue receiving results",
+				//	Description: fmt.Errorf("agent execution failed with error. %v", err).Error(),
+				//	Start:       startTimer,
+				//	End:         &endTimer,
+				//})
+				return err
+			}
+
+			return nil
+		}(); err != nil {
 			return err
 		}
 	}
@@ -883,10 +898,6 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-
-	ar.mu.Lock()
-	defer ar.mu.Unlock()
-	defer ar.closePluginClients()
 
 	policyPaths := make([]string, 0)
 	for _, inputBundle := range plugin.Policies {
@@ -929,11 +940,12 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		return err
 	}
 
-	runnerInstance, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion)
+	runnerInstance, cleanupRunner, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion)
 
 	if err != nil {
 		return err
 	}
+	defer cleanupRunner()
 
 	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
 		Config: plugin.Config,
@@ -990,42 +1002,46 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	return nil
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, error) {
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, func(), error) {
 	// We're a host! Start by launching the plugin process.
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
 		Plugins:          runner.PluginMap,
-		Managed:          true,
 		Cmd:              exec.Command(path),
 		Logger:           logger,
 		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 	})
+	cleanup := ar.trackPluginClient(client)
 
 	// Connect via RPC
 	rpcClient, err := client.Client()
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
 
 	dispenseName, err := runnerDispenseName(protocolVersion)
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
 
 	// Request the plugin
 	logger.Debug("Dispensing plugin", "dispense_name", dispenseName)
 	raw, err := rpcClient.Dispense(dispenseName)
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, nil, err
 	}
 
 	// We should have a Greeter now! This feels like a normal interface
 	// implementation but is in fact over an RPC connection.
 	runnerInstance, ok := raw.(runner.RunnerV2)
 	if !ok {
-		return nil, fmt.Errorf("dispensed plugin %q does not implement runner.RunnerV2", dispenseName)
+		cleanup()
+		return nil, nil, fmt.Errorf("dispensed plugin %q does not implement runner.RunnerV2", dispenseName)
 	}
-	return runnerInstance, nil
+	return runnerInstance, cleanup, nil
 }
 
 // DownloadPlugins checks each item in the config and retrieves the source of the plugin
@@ -1091,6 +1107,34 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 func (ar *AgentRunner) closePluginClients() {
 	logger := ar.getLogger()
 	logger.Debug("Cleaning up plugin instances")
-	plugin.CleanupClients()
+
+	ar.activePluginClientMu.Lock()
+	clients := make([]*plugin.Client, 0, len(ar.activePluginClients))
+	for client := range ar.activePluginClients {
+		clients = append(clients, client)
+		delete(ar.activePluginClients, client)
+	}
+	ar.activePluginClientMu.Unlock()
+
+	for _, client := range clients {
+		client.Kill()
+	}
+
 	logger.Debug("Completed plugin cleanup")
+}
+
+func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
+	ar.activePluginClientMu.Lock()
+	ar.activePluginClients[client] = struct{}{}
+	ar.activePluginClientMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			ar.activePluginClientMu.Lock()
+			delete(ar.activePluginClients, client)
+			ar.activePluginClientMu.Unlock()
+			client.Kill()
+		})
+	}
 }
