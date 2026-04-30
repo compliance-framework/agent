@@ -720,18 +720,54 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 }
 
 func waitForCronStop(timeout time.Duration, stopContexts ...context.Context) bool {
+	allDone := make(chan struct{})
+	waitCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(len(stopContexts))
+
+	for _, stopCtx := range stopContexts {
+		go func(stopCtx context.Context) {
+			defer wg.Done()
+			select {
+			case <-stopCtx.Done():
+			case <-waitCtx.Done():
+			}
+		}(stopCtx)
+	}
+
+	go func() {
+		wg.Wait()
+		close(allDone)
+	}()
+
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	for _, stopCtx := range stopContexts {
+	select {
+	case <-allDone:
+		return true
+	case <-timer.C:
 		select {
-		case <-stopCtx.Done():
-		case <-timer.C:
+		case <-allDone:
+			return true
+		default:
 			return false
 		}
 	}
+}
 
-	return true
+type cronLogger struct {
+	logger hclog.Logger
+}
+
+func (l cronLogger) Info(msg string, keysAndValues ...interface{}) {
+	l.logger.Info(msg, keysAndValues...)
+}
+
+func (l cronLogger) Error(err error, msg string, keysAndValues ...interface{}) {
+	l.logger.Error(msg, append([]interface{}{"error", err}, keysAndValues...)...)
 }
 
 func (ar *AgentRunner) download(ctx context.Context, source string, outputDir string, binaryPath string, logger hclog.Logger, option ...remote.Option) (string, error) {
@@ -771,14 +807,10 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
+	parserOptions := cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
 	c := cron.New(cron.WithParser(cron.NewParser(
-		cron.Minute|
-			cron.Hour|
-			cron.Dom|
-			cron.Month|
-			cron.Dow|
-			cron.Descriptor,
-	)), cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
+		parserOptions,
+	)), cron.WithChain(cron.SkipIfStillRunning(cronLogger{logger: logger})))
 	config := ar.getConfig()
 	runPlugin := ar.runPlugin
 	if ar.runPluginFunc != nil {
