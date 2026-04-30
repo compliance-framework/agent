@@ -421,6 +421,7 @@ type AgentRunner struct {
 	policyLocations      map[string]string
 	activePluginClients  map[*plugin.Client]struct{}
 	activePluginClientMu sync.Mutex
+	pluginClientsClosing bool
 	downloadGroup        singleflight.Group
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
@@ -606,6 +607,7 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	config := ar.getConfig()
 	logger := ar.getLogger()
 	logger.Info("Starting agent", "daemon", config.Daemon)
+	ar.allowPluginClientTracking()
 
 	logger.Debug("Pessimistically downloading plugins and policies to fail early in case daemon runs later.")
 	err := ar.DownloadPlugins(ctx)
@@ -834,7 +836,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 			err := runPlugin(ctx, currentPluginName, currentPluginConfig)
 			if err != nil {
 				// TODO how will we handle these errors ?
-				logger.Error("Error running plugin", "plugin", currentPluginName, "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
+				jobLogger.Error("Error running plugin", "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
 			}
 		}))
 		_, err := c.AddJob(schedule, job)
@@ -1190,6 +1192,10 @@ func (ar *AgentRunner) closePluginClients() {
 	logger := ar.getLogger()
 	logger.Debug("Cleaning up plugin instances")
 
+	ar.activePluginClientMu.Lock()
+	ar.pluginClientsClosing = true
+	ar.activePluginClientMu.Unlock()
+
 	for {
 		ar.activePluginClientMu.Lock()
 		clients := make([]*plugin.Client, 0, len(ar.activePluginClients))
@@ -1211,8 +1217,19 @@ func (ar *AgentRunner) closePluginClients() {
 	logger.Debug("Completed plugin cleanup")
 }
 
+func (ar *AgentRunner) allowPluginClientTracking() {
+	ar.activePluginClientMu.Lock()
+	defer ar.activePluginClientMu.Unlock()
+	ar.pluginClientsClosing = false
+}
+
 func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
 	ar.activePluginClientMu.Lock()
+	if ar.pluginClientsClosing {
+		ar.activePluginClientMu.Unlock()
+		client.Kill()
+		return func() {}
+	}
 	ar.activePluginClients[client] = struct{}{}
 	ar.activePluginClientMu.Unlock()
 

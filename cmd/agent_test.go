@@ -839,6 +839,7 @@ func TestSetupCronSkipsRunsForSamePlugin(t *testing.T) {
 
 func TestAgentRunnerTracksPluginClientCleanupPerRun(t *testing.T) {
 	agentRunner := NewAgentRunner()
+	agentRunner.logger = hclog.NewNullLogger()
 	clientA := hplugin.NewClient(&hplugin.ClientConfig{})
 	clientB := hplugin.NewClient(&hplugin.ClientConfig{})
 
@@ -860,6 +861,14 @@ func TestAgentRunnerTracksPluginClientCleanupPerRun(t *testing.T) {
 	cleanupB()
 	if got := activePluginClientCount(agentRunner); got != 0 {
 		t.Fatalf("expected all plugin clients to be cleaned up, got %d", got)
+	}
+
+	agentRunner.closePluginClients()
+	clientAfterClose := hplugin.NewClient(&hplugin.ClientConfig{})
+	cleanupAfterClose := agentRunner.trackPluginClient(clientAfterClose)
+	defer cleanupAfterClose()
+	if got := activePluginClientCount(agentRunner); got != 0 {
+		t.Fatalf("expected plugin client tracked during cleanup to be killed immediately, got %d active clients", got)
 	}
 }
 
