@@ -69,9 +69,9 @@ type agentPlugin struct {
 }
 
 type agentEvidenceConfig struct {
-	Enabled               *bool  `mapstructure:"enabled,omitempty"`
-	AfterFirstCompleteRun *bool  `mapstructure:"after_first_complete_run,omitempty"`
-	Interval              string `mapstructure:"interval,omitempty"`
+	Enabled             *bool  `mapstructure:"enabled,omitempty"`
+	EmitOnRunCompletion *bool  `mapstructure:"emit_on_run_completion,omitempty"`
+	Interval            string `mapstructure:"interval,omitempty"`
 }
 
 type agentConfig struct {
@@ -128,12 +128,12 @@ func (ac *agentConfig) agentEvidenceEnabled() bool {
 	return *ac.AgentEvidence.Enabled
 }
 
-func (ac *agentConfig) agentEvidenceAfterFirstCompleteRun() bool {
-	if ac == nil || ac.AgentEvidence == nil || ac.AgentEvidence.AfterFirstCompleteRun == nil {
+func (ac *agentConfig) agentEvidenceEmitOnRunCompletion() bool {
+	if ac == nil || ac.AgentEvidence == nil || ac.AgentEvidence.EmitOnRunCompletion == nil {
 		return true
 	}
 
-	return *ac.AgentEvidence.AfterFirstCompleteRun
+	return *ac.AgentEvidence.EmitOnRunCompletion
 }
 
 func (ac *agentConfig) agentEvidenceInterval() (time.Duration, error) {
@@ -722,7 +722,7 @@ func pluginRunErrorMessage(err error) string {
 
 func (ar *AgentRunner) reserveFirstAgentEvidenceSend() bool {
 	config := ar.getConfig()
-	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceEmitOnRunCompletion() {
 		return false
 	}
 
@@ -1303,7 +1303,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 
 func (ar *AgentRunner) sendAgentRunEvidenceAfterCompleteRun(ctx context.Context) error {
 	config := ar.getConfig()
-	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceEmitOnRunCompletion() {
 		return nil
 	}
 
@@ -1312,7 +1312,7 @@ func (ar *AgentRunner) sendAgentRunEvidenceAfterCompleteRun(ctx context.Context)
 
 func (ar *AgentRunner) sendAgentRunEvidenceOnStartupFailure(ctx context.Context) error {
 	config := ar.getConfig()
-	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceEmitOnRunCompletion() {
 		return nil
 	}
 

@@ -57,7 +57,7 @@ plugins:
 
 agent_evidence:
   enabled: true
-  after_first_complete_run: true
+  emit_on_run_completion: true
   interval: 1h
 ```
 

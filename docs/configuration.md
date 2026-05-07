@@ -32,7 +32,7 @@ plugins:
 
 agent_evidence:
   enabled: true
-  after_first_complete_run: true
+  emit_on_run_completion: true
   interval: 1h
 ```
 
@@ -55,7 +55,8 @@ You can specify as many plugins as you wish, as long as each identifier is uniqu
 multiple times with different configurations.
 
 The `agent_evidence` field configures evidence emitted by ccf-agent about its own plugin collection run. By default,
-ccf-agent emits this evidence after the first complete plugin run, and the daemon also emits evidence every `1h`
+ccf-agent emits this evidence when a run reaches a terminal point, such as after the first complete plugin run, after a
+non-daemon run completes, or when startup plugin or policy downloads fail. The daemon also emits evidence every `1h`
 whether or not every plugin has run yet. If any plugin has failed, the evidence status is `not-satisfied`; otherwise it
 is `satisfied`. A plugin remains in the `Plugins with errors` summary until it finishes a later run successfully.
 Plugins that have never run are listed as pending. Failed plugin errors are attached as back-matter resources and linked
@@ -121,7 +122,7 @@ plugins:
 
 agent_evidence:
   enabled: true|false
-  after_first_complete_run: true|false
+  emit_on_run_completion: true|false
   interval: <duration>
 
 verbosity: <log_level>
@@ -134,10 +135,11 @@ The `api.auth` fields are optional. If you set either `client_id` or `client_sec
 `client_id` must be a valid UUID.
 
 The `agent_evidence.interval` value is a Go-style duration such as `30m`, `1h`, or `2h45m`. Set it to `0s` to disable
-periodic agent evidence while keeping `after_first_complete_run` behavior enabled. Set `agent_evidence.enabled` to
+periodic agent evidence while keeping `emit_on_run_completion` behavior enabled. Set `agent_evidence.enabled` to
 `false` to disable all ccf-agent self-evidence. Agent evidence expires after five configured intervals, so the default
 `1h` interval produces a `5h` expiry. When `interval` is `0s`, periodic agent evidence is disabled and agent evidence has
-no expiry.
+no expiry. Set `agent_evidence.emit_on_run_completion` to `false` to disable immediate agent evidence on run completion
+and startup failures while leaving periodic daemon evidence controlled by `interval`.
 
 The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO

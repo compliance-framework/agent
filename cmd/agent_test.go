@@ -1481,20 +1481,20 @@ func TestAgentRunEvidenceUsesEmissionTimeForStartAndEnd(t *testing.T) {
 	}
 }
 
-func TestAgentRunEvidenceStartupFailureRespectsAfterFirstCompleteRunConfig(t *testing.T) {
+func TestAgentRunEvidenceStartupFailureRespectsRunCompletionConfig(t *testing.T) {
 	var requests int32
 	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
 		atomic.AddInt32(&requests, 1)
 		return jsonResponse(http.StatusCreated, ""), nil
 	})
 
-	afterFirstCompleteRun := false
+	emitOnRunCompletion := false
 	agentRunner := NewAgentRunner()
 	agentRunner.httpClient = client
 	agentRunner.UpdateConfig(&agentConfig{
 		ApiConfig: &apiConfig{Url: "http://example.test"},
 		AgentEvidence: &agentEvidenceConfig{
-			AfterFirstCompleteRun: &afterFirstCompleteRun,
+			EmitOnRunCompletion: &emitOnRunCompletion,
 		},
 	})
 
@@ -1505,11 +1505,11 @@ func TestAgentRunEvidenceStartupFailureRespectsAfterFirstCompleteRunConfig(t *te
 		t.Fatalf("expected startup failure evidence to be gated off, got %d requests", got)
 	}
 
-	afterFirstCompleteRun = true
+	emitOnRunCompletion = true
 	agentRunner.UpdateConfig(&agentConfig{
 		ApiConfig: &apiConfig{Url: "http://example.test"},
 		AgentEvidence: &agentEvidenceConfig{
-			AfterFirstCompleteRun: &afterFirstCompleteRun,
+			EmitOnRunCompletion: &emitOnRunCompletion,
 		},
 	})
 	if err := agentRunner.sendAgentRunEvidenceOnStartupFailure(context.Background()); err != nil {
@@ -1730,8 +1730,8 @@ func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
 	if !config.agentEvidenceEnabled() {
 		t.Fatalf("expected agent evidence to default enabled")
 	}
-	if !config.agentEvidenceAfterFirstCompleteRun() {
-		t.Fatalf("expected agent evidence to default after first complete run")
+	if !config.agentEvidenceEmitOnRunCompletion() {
+		t.Fatalf("expected agent evidence to default to emit on run completion")
 	}
 	interval, err := config.agentEvidenceInterval()
 	if err != nil {
