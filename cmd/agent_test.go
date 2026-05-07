@@ -1582,7 +1582,7 @@ func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected labels object, got %#v", submitted["labels"])
 	}
-	if labels["_agent"] != "concom" || labels["tool"] != "ccf" || labels["type"] != "operations" {
+	if labels["_agent"] != "ccf" || labels["tool"] != "ccf" || labels["type"] != "operations" {
 		t.Fatalf("unexpected foundational labels: %#v", labels)
 	}
 	if len(labels) != 3 {

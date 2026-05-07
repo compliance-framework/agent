@@ -834,7 +834,7 @@ func agentIdentityLabel(config *agentConfig) string {
 		}
 	}
 
-	return "concom"
+	return "ccf"
 }
 
 func agentFoundationalLabels(config *agentConfig) map[string]string {
@@ -1103,11 +1103,13 @@ func (ar *AgentRunner) setupAgentEvidenceCron(ctx context.Context) (*cron.Cron, 
 		return c, nil
 	}
 
-	_, err = c.AddFunc("@every "+interval.String(), func() {
+	jobLogger := logger.With("job", "agent_evidence", "schedule", "@every "+interval.String())
+	job := cron.NewChain(cron.SkipIfStillRunning(cronLogger{logger: jobLogger})).Then(cron.FuncJob(func() {
 		if err := ar.SendAgentRunEvidence(ctx); err != nil {
-			logger.Error("Failed to send agent run evidence", "error", err)
+			jobLogger.Error("Failed to send agent run evidence", "error", err)
 		}
-	})
+	}))
+	_, err = c.AddJob("@every "+interval.String(), job)
 	if err != nil {
 		logger.Error("Error adding agent evidence schedule", "error", err)
 	}
