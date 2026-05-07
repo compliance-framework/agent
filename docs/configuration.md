@@ -9,7 +9,7 @@ $ concom-agent -c /path/to/config.yaml
 ```
 
 The configuration file must include `api`. Configure `plugins` when the agent should collect plugin evidence; if no
-plugins are configured, the agent still emits its own passing run evidence on the configured interval.
+plugins are configured, daemon mode still emits its own passing run evidence on the configured interval.
 
 ```yaml
 api:
@@ -39,7 +39,9 @@ agent_evidence:
 The `plugin_identifier` is a unique identifier for the plugin, and is used to identify the plugin in the logs, you can
 name this whatever you like but it must be unique.
 
-The `labels` should uniquely identify this agent instance.
+The `labels` should uniquely identify this agent instance. The agent also sets the `_agent` label on plugin evidence
+using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally `concom`. Because
+evidence UUIDs are seeded from labels, changing that identity changes the evidence stream for plugin evidence.
 
 The `plugin_source` is the path to the plugin binary that the agent will run. This can be a relative or absolute path or
 even a URL to a remote plugin.
@@ -63,7 +65,8 @@ Agent evidence uses only these labels: `_agent`, `tool`, and `type`. The `_agent
 available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `concom`. The `tool` label is `ccf`;
 the `type` label is `operations`.
 
-If no plugins are configured, concom-agent still emits passing agent evidence on the configured interval.
+If no plugins are configured, concom-agent still emits passing agent evidence on the configured interval when running in
+daemon mode. In non-daemon mode, concom-agent can emit agent evidence only once per invocation.
 
 As an example, a configuration file might look like this:
 ```yaml
