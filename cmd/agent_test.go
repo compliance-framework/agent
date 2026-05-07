@@ -1481,6 +1481,45 @@ func TestAgentRunEvidenceUsesEmissionTimeForStartAndEnd(t *testing.T) {
 	}
 }
 
+func TestAgentRunEvidenceStartupFailureRespectsAfterFirstCompleteRunConfig(t *testing.T) {
+	var requests int32
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&requests, 1)
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+
+	afterFirstCompleteRun := false
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		AgentEvidence: &agentEvidenceConfig{
+			AfterFirstCompleteRun: &afterFirstCompleteRun,
+		},
+	})
+
+	if err := agentRunner.sendAgentRunEvidenceOnStartupFailure(context.Background()); err != nil {
+		t.Fatalf("send startup failure agent evidence: %v", err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Fatalf("expected startup failure evidence to be gated off, got %d requests", got)
+	}
+
+	afterFirstCompleteRun = true
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		AgentEvidence: &agentEvidenceConfig{
+			AfterFirstCompleteRun: &afterFirstCompleteRun,
+		},
+	})
+	if err := agentRunner.sendAgentRunEvidenceOnStartupFailure(context.Background()); err != nil {
+		t.Fatalf("send enabled startup failure agent evidence: %v", err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 1 {
+		t.Fatalf("expected startup failure evidence to send when enabled, got %d requests", got)
+	}
+}
+
 func TestReserveFirstAgentEvidenceRequiresConfiguredPluginRun(t *testing.T) {
 	agentRunner := NewAgentRunner()
 	agentRunner.UpdateConfig(&agentConfig{

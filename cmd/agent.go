@@ -869,7 +869,7 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	err := ar.DownloadPlugins(ctx)
 	if err != nil {
 		logger.Error("Error downloading plugins", "error", err)
-		if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+		if evidenceErr := ar.sendAgentRunEvidenceOnStartupFailure(ctx); evidenceErr != nil {
 			logger.Error("Error sending agent run evidence", "error", evidenceErr)
 		}
 		return err
@@ -880,7 +880,7 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	err = ar.DownloadPolicies(ctx)
 	if err != nil {
 		logger.Error("Error downloading policies", "error", err)
-		if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+		if evidenceErr := ar.sendAgentRunEvidenceOnStartupFailure(ctx); evidenceErr != nil {
 			logger.Error("Error sending agent run evidence", "error", evidenceErr)
 		}
 		return err
@@ -1302,6 +1302,15 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 }
 
 func (ar *AgentRunner) sendAgentRunEvidenceAfterCompleteRun(ctx context.Context) error {
+	config := ar.getConfig()
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+		return nil
+	}
+
+	return ar.SendAgentRunEvidence(ctx)
+}
+
+func (ar *AgentRunner) sendAgentRunEvidenceOnStartupFailure(ctx context.Context) error {
 	config := ar.getConfig()
 	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
 		return nil
