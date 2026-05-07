@@ -124,7 +124,7 @@ agent_evidence:
   after_first_complete_run: true|false
   interval: <duration>
 
-verbose: <log_level>
+verbosity: <log_level>
 ```
 
 The `schedule` field is a cron expression that specifies when the plugin should run. If this field is not present the

@@ -1449,6 +1449,38 @@ func TestAgentRunEvidenceKeepsPluginErrorWhilePluginRunsAgainUntilPassing(t *tes
 	}
 }
 
+func TestAgentRunEvidenceUsesEmissionTimeForStartAndEnd(t *testing.T) {
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins: map[string]*agentPlugin{
+			"plugin-x": {Source: "/tmp/plugin-x"},
+		},
+	})
+
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	agentRunner.pluginRunMu.Lock()
+	agentRunner.pluginRuns["plugin-x"] = pluginRunRecord{
+		Status:    pluginRunStatusRunning,
+		StartedAt: now.Add(time.Minute),
+	}
+	agentRunner.pluginRunMu.Unlock()
+
+	evidence, err := agentRunner.buildAgentRunEvidence(now)
+	if err != nil {
+		t.Fatalf("build agent run evidence: %v", err)
+	}
+	if !evidence.Start.Equal(now) {
+		t.Fatalf("expected start to use emission time %s, got %s", now, evidence.Start)
+	}
+	if !evidence.End.Equal(now) {
+		t.Fatalf("expected end to use emission time %s, got %s", now, evidence.End)
+	}
+	if evidence.Start.After(evidence.End) {
+		t.Fatalf("expected start not to be after end, got start=%s end=%s", evidence.Start, evidence.End)
+	}
+}
+
 func TestReserveFirstAgentEvidenceRequiresConfiguredPluginRun(t *testing.T) {
 	agentRunner := NewAgentRunner()
 	agentRunner.UpdateConfig(&agentConfig{

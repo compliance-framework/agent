@@ -1516,7 +1516,6 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 		return nil, err
 	}
 
-	start := ar.agentEvidenceStart(now)
 	var expires *time.Time
 	if interval > 0 {
 		expiry := now.Add(5 * interval)
@@ -1538,7 +1537,7 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 			Description: description,
 			Remarks:     &remarks,
 			Labels:      labels,
-			Start:       start,
+			Start:       now,
 			End:         now,
 			Expires:     expires,
 			Links:       links,
@@ -1552,25 +1551,6 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 	}
 
 	return evidence, nil
-}
-
-func (ar *AgentRunner) agentEvidenceStart(fallback time.Time) time.Time {
-	ar.pluginRunMu.RLock()
-	defer ar.pluginRunMu.RUnlock()
-
-	start := time.Time{}
-	for _, record := range ar.pluginRuns {
-		if record.StartedAt.IsZero() {
-			continue
-		}
-		if start.IsZero() || record.StartedAt.Before(start) {
-			start = record.StartedAt
-		}
-	}
-	if start.IsZero() {
-		return fallback
-	}
-	return start
 }
 
 func formatAgentEvidenceDescription(snapshot pluginRunSnapshot) string {
