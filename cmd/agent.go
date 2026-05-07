@@ -1577,10 +1577,13 @@ func agentEvidenceErrorArtifacts(errorsByPlugin map[string]string) ([]sdktypes.L
 	links := make([]sdktypes.Link, 0, len(pluginNames))
 	resources := make([]oscalTypes_1_1_3.Resource, 0, len(pluginNames))
 	for _, pluginName := range pluginNames {
-		resourceUUID, _ := sdk.SeededUUID(map[string]string{
+		resourceUUID, err := sdk.SeededUUID(map[string]string{
 			"type":   "ccf-agent-plugin-error",
 			"plugin": pluginName,
 		})
+		if err != nil {
+			resourceUUID = uuid.New()
+		}
 		title := fmt.Sprintf("%s plugin error", pluginName)
 		filename := safePluginErrorFilename(pluginName)
 		errorText := errorsByPlugin[pluginName]
@@ -1589,7 +1592,7 @@ func agentEvidenceErrorArtifacts(errorsByPlugin map[string]string) ([]sdktypes.L
 			Href:      "#" + resourceUUID.String(),
 			Rel:       "describedby",
 			MediaType: "text/plain",
-			Text:      fmt.Sprintf("Download %s error", pluginName),
+			Text:      fmt.Sprintf("Download %s plugin error details", pluginName),
 		})
 		resources = append(resources, oscalTypes_1_1_3.Resource{
 			UUID:        resourceUUID.String(),
