@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -131,7 +133,7 @@ plugins:
 api:
   url: http://localhost:8080
 `,
-			valid: false,
+			valid: true,
 		},
 		{
 			name: "Unsupported Explicit Protocol Version",
@@ -173,6 +175,8 @@ plugins:
 			if err != nil {
 				t.Fatalf("Error unmarshalling config: %v", err)
 			}
+			markExplicitPluginProtocols(v, config)
+			updateAllPluginProtocols(config)
 
 			if err = config.validate(); (err == nil) != test.valid {
 				t.Errorf("Expected validity of config to be %v, got %v", test.valid, err)
@@ -1240,6 +1244,309 @@ func TestApiHelperUsesSharedSDKClientForProtectedWrites(t *testing.T) {
 		if authHeaders[i] != "Bearer token-1" {
 			t.Fatalf("expected request %d to use bearer auth, got %q", i, authHeaders[i])
 		}
+	}
+}
+
+func TestAgentRunEvidenceIncludesPluginRunSummaryAndErrorArtifacts(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "")
+	t.Setenv("KUBERNETES_POD", "")
+
+	interval := "30m"
+	clientID := "123e4567-e89b-12d3-a456-426614174000"
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{
+			Url: "http://example.test",
+			Auth: &apiAuthConfig{
+				ClientID:     clientID,
+				ClientSecret: "client-secret",
+			},
+		},
+		AgentEvidence: &agentEvidenceConfig{
+			Interval: interval,
+		},
+		Plugins: map[string]*agentPlugin{
+			"plugin-a": {Source: "/tmp/plugin-a"},
+			"plugin-b": {Source: "/tmp/plugin-b"},
+			"plugin-c": {Source: "/tmp/plugin-c"},
+			"plugin-d": {Source: "/tmp/plugin-d"},
+		},
+	})
+
+	agentRunner.markPluginRunStarted("plugin-a")
+	agentRunner.markPluginRunFinished("plugin-a", nil)
+	agentRunner.markPluginRunStarted("plugin-b")
+	agentRunner.markPluginRunFinished("plugin-b", errors.New("collector failed"))
+	agentRunner.markPluginRunStarted("plugin-c")
+
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	evidence, err := agentRunner.buildAgentRunEvidence(now)
+	if err != nil {
+		t.Fatalf("build agent run evidence: %v", err)
+	}
+
+	if evidence.Status.State != "not-satisfied" {
+		t.Fatalf("expected not-satisfied status, got %q", evidence.Status.State)
+	}
+	if evidence.Title != "CCF Agent is correctly capturing evidence" {
+		t.Fatalf("expected self-evidence title, got %q", evidence.Title)
+	}
+	if evidence.Status.Reason != "CCF Agent could not collect evidence from one or more plugins." {
+		t.Fatalf("expected readable failure reason, got %q", evidence.Status.Reason)
+	}
+	expectedLabels := map[string]string{
+		"_agent": clientID,
+		"tool":   "ccf",
+		"type":   "operations",
+	}
+	for key, expected := range expectedLabels {
+		if evidence.Labels[key] != expected {
+			t.Fatalf("expected label %s=%q, got %q", key, expected, evidence.Labels[key])
+		}
+	}
+	if len(evidence.Labels) != len(expectedLabels) {
+		t.Fatalf("expected only foundational labels, got %#v", evidence.Labels)
+	}
+	if evidence.Expires == nil {
+		t.Fatalf("expected evidence expiry")
+	}
+	expectedExpiry := now.Add(5 * 30 * time.Minute)
+	if !evidence.Expires.Equal(expectedExpiry) {
+		t.Fatalf("expected expiry %s, got %s", expectedExpiry, *evidence.Expires)
+	}
+	for _, expected := range []string{
+		"Passing plugins: plugin-a",
+		"Plugins with errors: plugin-b",
+		"Pending plugins: plugin-d",
+	} {
+		if !strings.Contains(evidence.Description, expected) {
+			t.Fatalf("expected description to contain %q, got %q", expected, evidence.Description)
+		}
+		if evidence.Remarks == nil || !strings.Contains(*evidence.Remarks, expected) {
+			t.Fatalf("expected remarks to contain %q, got %v", expected, evidence.Remarks)
+		}
+	}
+	if strings.Contains(evidence.Description, "Currently running plugins") {
+		t.Fatalf("expected description to omit running plugins, got %q", evidence.Description)
+	}
+	if evidence.Remarks != nil && strings.Contains(*evidence.Remarks, "Currently running plugins") {
+		t.Fatalf("expected remarks to omit running plugins, got %q", *evidence.Remarks)
+	}
+	if len(evidence.Links) != 1 {
+		t.Fatalf("expected one error link, got %d", len(evidence.Links))
+	}
+	if evidence.Links[0].Href == "" || !strings.HasPrefix(evidence.Links[0].Href, "#") {
+		t.Fatalf("expected backmatter link href, got %#v", evidence.Links[0])
+	}
+	if evidence.BackMatter == nil || evidence.BackMatter.Resources == nil || len(*evidence.BackMatter.Resources) != 1 {
+		t.Fatalf("expected one backmatter resource, got %#v", evidence.BackMatter)
+	}
+	resource := (*evidence.BackMatter.Resources)[0]
+	if resource.Base64 == nil {
+		t.Fatalf("expected error resource base64 payload")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(resource.Base64.Value)
+	if err != nil {
+		t.Fatalf("decode error resource: %v", err)
+	}
+	if string(decoded) != "collector failed" {
+		t.Fatalf("expected plugin error in backmatter, got %q", string(decoded))
+	}
+}
+
+func TestAgentRunEvidenceKeepsPluginErrorWhilePluginRunsAgainUntilPassing(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "")
+	t.Setenv("KUBERNETES_POD", "")
+
+	var submittedDescription string
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/evidence" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+			return nil, nil
+		}
+		var submitted map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
+			t.Fatalf("decode evidence request: %v", err)
+		}
+		submittedDescription, _ = submitted["description"].(string)
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins: map[string]*agentPlugin{
+			"plugin-x": {Source: "/tmp/plugin-x"},
+		},
+	})
+
+	agentRunner.markPluginRunStarted("plugin-x")
+	agentRunner.markPluginRunFinished("plugin-x", errors.New("first run failed"))
+	agentRunner.markPluginRunStarted("plugin-x")
+
+	evidenceBeforeSend, err := agentRunner.buildAgentRunEvidence(time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("build agent run evidence before send: %v", err)
+	}
+	for _, expected := range []string{
+		"Plugins with errors: plugin-x",
+	} {
+		if !strings.Contains(evidenceBeforeSend.Description, expected) {
+			t.Fatalf("expected description to contain %q, got %q", expected, evidenceBeforeSend.Description)
+		}
+	}
+	if strings.Contains(evidenceBeforeSend.Description, "Currently running plugins") {
+		t.Fatalf("expected description to omit running plugins, got %q", evidenceBeforeSend.Description)
+	}
+	if evidenceBeforeSend.Status.State != "not-satisfied" {
+		t.Fatalf("expected plugin error to fail evidence while rerunning, got %q", evidenceBeforeSend.Status.State)
+	}
+	if evidenceBeforeSend.BackMatter == nil {
+		t.Fatalf("expected plugin error backmatter")
+	}
+
+	if err := agentRunner.SendAgentRunEvidence(context.Background()); err != nil {
+		t.Fatalf("send agent run evidence: %v", err)
+	}
+	if !strings.Contains(submittedDescription, "Plugins with errors: plugin-x") {
+		t.Fatalf("expected submitted evidence to include plugin error, got %q", submittedDescription)
+	}
+
+	evidenceAfterSend, err := agentRunner.buildAgentRunEvidence(time.Date(2026, 5, 7, 12, 1, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("build agent run evidence after send: %v", err)
+	}
+	if !strings.Contains(evidenceAfterSend.Description, "Plugins with errors: plugin-x") {
+		t.Fatalf("expected evidence submission not to clear plugin error, got %q", evidenceAfterSend.Description)
+	}
+	if evidenceAfterSend.Status.State != "not-satisfied" {
+		t.Fatalf("expected evidence to keep failing until plugin passes, got %q", evidenceAfterSend.Status.State)
+	}
+
+	agentRunner.markPluginRunFinished("plugin-x", nil)
+	evidenceAfterPass, err := agentRunner.buildAgentRunEvidence(time.Date(2026, 5, 7, 12, 2, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("build agent run evidence after pass: %v", err)
+	}
+	if !strings.Contains(evidenceAfterPass.Description, "Passing plugins: plugin-x") {
+		t.Fatalf("expected passing plugin after successful finish, got %q", evidenceAfterPass.Description)
+	}
+	if !strings.Contains(evidenceAfterPass.Description, "Plugins with errors: none") {
+		t.Fatalf("expected plugin error to clear after successful finish, got %q", evidenceAfterPass.Description)
+	}
+	if evidenceAfterPass.Status.State != "satisfied" {
+		t.Fatalf("expected evidence to pass after plugin passes, got %q", evidenceAfterPass.Status.State)
+	}
+	if evidenceAfterPass.BackMatter != nil {
+		t.Fatalf("expected no error backmatter after plugin passes, got %#v", evidenceAfterPass.BackMatter)
+	}
+}
+
+func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "")
+	t.Setenv("KUBERNETES_POD", "")
+
+	var submitted map[string]interface{}
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/evidence" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+			return nil, nil
+		}
+		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
+			t.Fatalf("decode evidence request: %v", err)
+		}
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins:   map[string]*agentPlugin{},
+	})
+
+	if err := agentRunner.SendAgentRunEvidence(context.Background()); err != nil {
+		t.Fatalf("send agent run evidence: %v", err)
+	}
+
+	status, ok := submitted["status"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected status object, got %#v", submitted["status"])
+	}
+	if status["state"] != "satisfied" {
+		t.Fatalf("expected satisfied status, got %#v", status)
+	}
+	if status["reason"] != "CCF Agent is capturing evidence correctly." {
+		t.Fatalf("expected readable passing reason, got %#v", status)
+	}
+	labels, ok := submitted["labels"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected labels object, got %#v", submitted["labels"])
+	}
+	if labels["_agent"] != "concom" || labels["tool"] != "ccf" || labels["type"] != "operations" {
+		t.Fatalf("unexpected foundational labels: %#v", labels)
+	}
+	if len(labels) != 3 {
+		t.Fatalf("expected only three foundational labels, got %#v", labels)
+	}
+	if _, ok := submitted["back-matter"]; ok {
+		t.Fatalf("expected no backmatter for passing no-plugin evidence, got %#v", submitted["back-matter"])
+	}
+	description, _ := submitted["description"].(string)
+	if !strings.Contains(description, "Passing plugins: none") {
+		t.Fatalf("expected no-plugin summary, got %q", description)
+	}
+}
+
+func TestAgentIdentityLabelFallsBackToKubernetesPodName(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "ccf-agent-7b6f")
+	t.Setenv("KUBERNETES_POD", "ignored")
+
+	got := agentIdentityLabel(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+	})
+	if got != "ccf-agent-7b6f" {
+		t.Fatalf("expected Kubernetes pod name identity, got %q", got)
+	}
+
+	got = agentIdentityLabel(&agentConfig{
+		ApiConfig: &apiConfig{
+			Url: "http://example.test",
+			Auth: &apiAuthConfig{
+				ClientID: "123e4567-e89b-12d3-a456-426614174000",
+			},
+		},
+	})
+	if got != "123e4567-e89b-12d3-a456-426614174000" {
+		t.Fatalf("expected API auth client id to take precedence, got %q", got)
+	}
+}
+
+func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
+	config := &agentConfig{
+		ApiConfig: &apiConfig{Url: "http://localhost:8080"},
+	}
+	if err := config.validate(); err != nil {
+		t.Fatalf("expected no-plugin config to be valid: %v", err)
+	}
+	if !config.agentEvidenceEnabled() {
+		t.Fatalf("expected agent evidence to default enabled")
+	}
+	if !config.agentEvidenceAfterFirstCompleteRun() {
+		t.Fatalf("expected agent evidence to default after first complete run")
+	}
+	interval, err := config.agentEvidenceInterval()
+	if err != nil {
+		t.Fatalf("default interval: %v", err)
+	}
+	if interval != time.Hour {
+		t.Fatalf("expected default interval to be 1h, got %s", interval)
+	}
+
+	config.AgentEvidence = &agentEvidenceConfig{Interval: "not-a-duration"}
+	if err := config.validate(); err == nil {
+		t.Fatalf("expected invalid interval to fail validation")
 	}
 }
 

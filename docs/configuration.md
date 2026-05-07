@@ -8,7 +8,8 @@ path to the agent when you run it as follows:
 $ concom-agent -c /path/to/config.yaml
 ```
 
-The configuration file must have the following fields:
+The configuration file must include `api`. Configure `plugins` when the agent should collect plugin evidence; if no
+plugins are configured, the agent still emits its own passing run evidence on the configured interval.
 
 ```yaml
 api:
@@ -28,6 +29,11 @@ plugins:
       <config1>: <value1>
       <config2>: <value2>
       ...
+
+agent_evidence:
+  enabled: true
+  after_first_complete_run: true
+  interval: 1h
 ```
 
 The `plugin_identifier` is a unique identifier for the plugin, and is used to identify the plugin in the logs, you can
@@ -45,6 +51,18 @@ will be passed to the plugin when it is run.
 
 You can specify as many plugins as you wish, as long as each identifier is unique. You can even reuse the same plugin
 multiple times with different configurations.
+
+The `agent_evidence` field configures evidence emitted by ccf-agent about its own plugin collection run. By default,
+ccf-agent emits this evidence after the first complete plugin run and every `1h` after that. If any plugin has failed,
+the evidence status is `not-satisfied`; otherwise it is `satisfied`. A plugin remains in the `Plugins with errors`
+summary until it finishes a later run successfully. Plugins that have never run are listed as pending. Failed plugin
+errors are attached as back-matter resources and linked from the evidence so they can be downloaded.
+
+Agent evidence uses only these labels: `_agent`, `tool`, and `type`. The `_agent` label uses `api.auth.client_id` when
+available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `concom`. The `tool` label is `ccf`;
+the `type` label is `operations`.
+
+If no plugins are configured, ccf-agent still emits passing agent evidence on the configured interval.
 
 As an example, a configuration file might look like this:
 ```yaml
@@ -97,6 +115,11 @@ plugins:
   <plugin_identifier>:
     schedule: <cron_expression>
 
+agent_evidence:
+  enabled: true|false
+  after_first_complete_run: true|false
+  interval: <duration>
+
 verbose: <log_level>
 ```
 
@@ -105,6 +128,11 @@ plugin will run on a default `* * * * *`. The schedule is in the format `minute 
 
 The `api.auth` fields are optional. If you set either `client_id` or `client_secret`, you must set both. The
 `client_id` must be a valid UUID.
+
+The `agent_evidence.interval` value is a Go-style duration such as `30m`, `1h`, or `2h45m`. Set it to `0s` to disable
+periodic agent evidence while keeping `after_first_complete_run` behavior enabled. Set `agent_evidence.enabled` to
+`false` to disable all ccf-agent self-evidence. Agent evidence expires after at least five configured intervals, so the
+default `1h` interval produces a `5h` expiry.
 
 The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO

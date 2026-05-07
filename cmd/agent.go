@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -10,6 +13,7 @@ import (
 	"os/signal"
 	"path"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +29,7 @@ import (
 	"github.com/compliance-framework/api/sdk"
 	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
+	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
 	"github.com/fsnotify/fsnotify"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -62,11 +67,18 @@ type agentPlugin struct {
 	protocolSet     bool
 }
 
+type agentEvidenceConfig struct {
+	Enabled               *bool  `mapstructure:"enabled,omitempty"`
+	AfterFirstCompleteRun *bool  `mapstructure:"after_first_complete_run,omitempty"`
+	Interval              string `mapstructure:"interval,omitempty"`
+}
+
 type agentConfig struct {
-	Daemon    bool                    `mapstructure:"daemon"`
-	Verbosity int32                   `mapstructure:"verbosity"`
-	ApiConfig *apiConfig              `mapstructure:"api"`
-	Plugins   map[string]*agentPlugin `mapstructure:"plugins"`
+	Daemon        bool                    `mapstructure:"daemon"`
+	Verbosity     int32                   `mapstructure:"verbosity"`
+	ApiConfig     *apiConfig              `mapstructure:"api"`
+	Plugins       map[string]*agentPlugin `mapstructure:"plugins"`
+	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 }
 
 // logVerbosity reverses our verbosity "increase" to hclog's reversed "decrease."
@@ -78,11 +90,11 @@ func (ac *agentConfig) logVerbosity() int32 {
 }
 
 func (ac *agentConfig) validate() error {
-	if len(ac.Plugins) == 0 {
-		return fmt.Errorf("no plugins specified in config")
+	if err := ac.ApiConfig.validate(); err != nil {
+		return err
 	}
 
-	if err := ac.ApiConfig.validate(); err != nil {
+	if _, err := ac.agentEvidenceInterval(); err != nil {
 		return err
 	}
 
@@ -105,6 +117,39 @@ func (ac *agentConfig) validate() error {
 	}
 
 	return nil
+}
+
+func (ac *agentConfig) agentEvidenceEnabled() bool {
+	if ac == nil || ac.AgentEvidence == nil || ac.AgentEvidence.Enabled == nil {
+		return true
+	}
+
+	return *ac.AgentEvidence.Enabled
+}
+
+func (ac *agentConfig) agentEvidenceAfterFirstCompleteRun() bool {
+	if ac == nil || ac.AgentEvidence == nil || ac.AgentEvidence.AfterFirstCompleteRun == nil {
+		return true
+	}
+
+	return *ac.AgentEvidence.AfterFirstCompleteRun
+}
+
+func (ac *agentConfig) agentEvidenceInterval() (time.Duration, error) {
+	if ac == nil || ac.AgentEvidence == nil || strings.TrimSpace(ac.AgentEvidence.Interval) == "" {
+		return time.Hour, nil
+	}
+
+	interval, err := time.ParseDuration(strings.TrimSpace(ac.AgentEvidence.Interval))
+	if err != nil {
+		return 0, fmt.Errorf("agent_evidence.interval must be a valid duration: %w", err)
+	}
+
+	if interval < 0 {
+		return 0, fmt.Errorf("agent_evidence.interval must not be negative")
+	}
+
+	return interval, nil
 }
 
 func (ac *apiConfig) validate() error {
@@ -152,6 +197,29 @@ const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
+
+type pluginRunStatus string
+
+const (
+	pluginRunStatusPending pluginRunStatus = "pending"
+	pluginRunStatusRunning pluginRunStatus = "running"
+	pluginRunStatusPassing pluginRunStatus = "passing"
+	pluginRunStatusFailed  pluginRunStatus = "failed"
+)
+
+type pluginRunRecord struct {
+	Status     pluginRunStatus
+	Error      string
+	StartedAt  time.Time
+	FinishedAt time.Time
+}
+
+type pluginRunSnapshot struct {
+	Passing []string
+	Failed  []string
+	Pending []string
+	Errors  map[string]string
+}
 
 func AgentCmd() *cobra.Command {
 	var agentCmd = &cobra.Command{
@@ -426,6 +494,10 @@ type AgentRunner struct {
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
 
+	pluginRunMu                   sync.RWMutex
+	pluginRuns                    map[string]pluginRunRecord
+	firstAgentEvidenceSendStarted bool
+
 	queryBundles []*rego.Rego
 }
 
@@ -434,6 +506,7 @@ func NewAgentRunner() *AgentRunner {
 		pluginLocations:     map[string]string{},
 		policyLocations:     map[string]string{},
 		activePluginClients: map[*plugin.Client]struct{}{},
+		pluginRuns:          map[string]pluginRunRecord{},
 		fetchAnnotations:    internal.GetAnnotations,
 		httpClient:          http.DefaultClient,
 	}
@@ -452,6 +525,7 @@ func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 	ar.logger = logger
 	ar.apiClient = client
 	ar.stateMu.Unlock()
+	ar.resetPluginRunState(config)
 
 	ar.logAPIClientConfig("config updated")
 }
@@ -519,6 +593,144 @@ func (ar *AgentRunner) getLogger() hclog.Logger {
 	defer ar.stateMu.RUnlock()
 
 	return ar.logger
+}
+
+func (ar *AgentRunner) resetPluginRunState(config *agentConfig) {
+	runs := map[string]pluginRunRecord{}
+	if config != nil {
+		for name := range config.Plugins {
+			runs[name] = pluginRunRecord{Status: pluginRunStatusPending}
+		}
+	}
+
+	ar.pluginRunMu.Lock()
+	ar.pluginRuns = runs
+	ar.firstAgentEvidenceSendStarted = false
+	ar.pluginRunMu.Unlock()
+}
+
+func (ar *AgentRunner) markPluginRunStarted(name string) {
+	now := time.Now().UTC()
+
+	ar.pluginRunMu.Lock()
+	defer ar.pluginRunMu.Unlock()
+
+	record := ar.pluginRuns[name]
+	record.Status = pluginRunStatusRunning
+	record.StartedAt = now
+	record.FinishedAt = time.Time{}
+	ar.pluginRuns[name] = record
+}
+
+func (ar *AgentRunner) markPluginRunFinished(name string, err error) {
+	now := time.Now().UTC()
+
+	ar.pluginRunMu.Lock()
+	defer ar.pluginRunMu.Unlock()
+
+	record := ar.pluginRuns[name]
+	if record.StartedAt.IsZero() {
+		record.StartedAt = now
+	}
+	record.FinishedAt = now
+	if err != nil {
+		record.Status = pluginRunStatusFailed
+		record.Error = err.Error()
+	} else {
+		record.Status = pluginRunStatusPassing
+		record.Error = ""
+	}
+	ar.pluginRuns[name] = record
+}
+
+func (ar *AgentRunner) markPluginsWithSourceFailed(source string, err error) {
+	config := ar.getConfig()
+	if config == nil || err == nil {
+		return
+	}
+
+	for name, pluginConfig := range config.Plugins {
+		if pluginConfig != nil && pluginConfig.Source == source {
+			ar.markPluginRunFinished(name, err)
+		}
+	}
+}
+
+func (ar *AgentRunner) markPluginsWithPolicyFailed(policy agentPolicy, err error) {
+	config := ar.getConfig()
+	if config == nil || err == nil {
+		return
+	}
+
+	for name, pluginConfig := range config.Plugins {
+		if pluginConfig == nil {
+			continue
+		}
+		for _, pluginPolicy := range pluginConfig.Policies {
+			if pluginPolicy == policy {
+				ar.markPluginRunFinished(name, err)
+				break
+			}
+		}
+	}
+}
+
+func (ar *AgentRunner) pluginRunSnapshot() pluginRunSnapshot {
+	ar.pluginRunMu.RLock()
+	defer ar.pluginRunMu.RUnlock()
+
+	snapshot := pluginRunSnapshot{
+		Errors: map[string]string{},
+	}
+	for name, record := range ar.pluginRuns {
+		if record.Error != "" {
+			snapshot.Failed = append(snapshot.Failed, name)
+			snapshot.Errors[name] = record.Error
+		}
+
+		switch record.Status {
+		case pluginRunStatusPassing:
+			snapshot.Passing = append(snapshot.Passing, name)
+		case pluginRunStatusFailed:
+		case pluginRunStatusRunning:
+		default:
+			snapshot.Pending = append(snapshot.Pending, name)
+		}
+	}
+
+	sort.Strings(snapshot.Passing)
+	sort.Strings(snapshot.Failed)
+	sort.Strings(snapshot.Pending)
+	return snapshot
+}
+
+func (ar *AgentRunner) reserveFirstAgentEvidenceSend() bool {
+	config := ar.getConfig()
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+		return false
+	}
+
+	ar.pluginRunMu.Lock()
+	defer ar.pluginRunMu.Unlock()
+
+	if ar.firstAgentEvidenceSendStarted {
+		return false
+	}
+
+	for _, record := range ar.pluginRuns {
+		if record.Status == pluginRunStatusPending || record.Status == pluginRunStatusRunning {
+			return false
+		}
+	}
+
+	ar.firstAgentEvidenceSendStarted = true
+	return true
+}
+
+func (ar *AgentRunner) releaseFirstAgentEvidenceSend() {
+	ar.pluginRunMu.Lock()
+	ar.firstAgentEvidenceSendStarted = false
+	ar.pluginRunMu.Unlock()
 }
 
 func (ar *AgentRunner) logAPIClientConfig(event string) {
@@ -589,6 +801,30 @@ func apiAuthClientSecretSet(config *apiConfig) bool {
 	return strings.TrimSpace(config.Auth.ClientSecret) != ""
 }
 
+func agentIdentityLabel(config *agentConfig) string {
+	if config != nil && config.ApiConfig != nil && config.ApiConfig.Auth != nil {
+		if clientID := strings.TrimSpace(config.ApiConfig.Auth.ClientID); clientID != "" {
+			return clientID
+		}
+	}
+
+	for _, envName := range []string{"KUBERNETES_POD_NAME", "KUBERNETES_POD"} {
+		if podName := strings.TrimSpace(os.Getenv(envName)); podName != "" {
+			return podName
+		}
+	}
+
+	return "concom"
+}
+
+func agentFoundationalLabels(config *agentConfig) map[string]string {
+	return map[string]string{
+		"_agent": agentIdentityLabel(config),
+		"tool":   "ccf",
+		"type":   "operations",
+	}
+}
+
 func maskClientID(clientID string) string {
 	trimmed := strings.TrimSpace(clientID)
 	if trimmed == "" {
@@ -613,6 +849,9 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	err := ar.DownloadPlugins(ctx)
 	if err != nil {
 		logger.Error("Error downloading plugins", "error", err)
+		if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+			logger.Error("Error sending agent run evidence", "error", evidenceErr)
+		}
 		return err
 	}
 
@@ -621,6 +860,9 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	err = ar.DownloadPolicies(ctx)
 	if err != nil {
 		logger.Error("Error downloading policies", "error", err)
+		if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+			logger.Error("Error sending agent run evidence", "error", evidenceErr)
+		}
 		return err
 	}
 	logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
@@ -689,10 +931,22 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		logger.Error("Error setting up heartbeat", "error", err)
 		os.Exit(1)
 	}
+	agentEvidenceCron, err := ar.setupAgentEvidenceCron(ctx)
+	if err != nil {
+		logger.Error("Error setting up agent evidence", "error", err)
+		os.Exit(1)
+	}
 
 	// Start the cron and notify readiness
 	agentCron.Start()
 	heartbeatCron.Start()
+	agentEvidenceCron.Start()
+	if ar.reserveFirstAgentEvidenceSend() {
+		if err := ar.SendAgentRunEvidence(ctx); err != nil {
+			ar.releaseFirstAgentEvidenceSend()
+			logger.Error("Failed to send agent run evidence", "error", err)
+		}
+	}
 	go daemon.SdNotify(false, "READY=1")
 
 	select {
@@ -701,7 +955,8 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		logger.Debug("Stopping crons")
 		agentCronStopCtx := agentCron.Stop()
 		heartbeatCronStopCtx := heartbeatCron.Stop()
-		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx) {
+		agentEvidenceCronStopCtx := agentEvidenceCron.Stop()
+		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
 			logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
 		}
 		logger.Debug("Shutting down plugins")
@@ -713,7 +968,8 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		logger.Debug("Stopping crons")
 		agentCronStopCtx := agentCron.Stop()
 		heartbeatCronStopCtx := heartbeatCron.Stop()
-		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx) {
+		agentEvidenceCronStopCtx := agentEvidenceCron.Stop()
+		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
 			logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
 		}
 		logger.Debug("Shutting down plugins")
@@ -809,6 +1065,35 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 	return c, nil
 }
 
+func (ar *AgentRunner) setupAgentEvidenceCron(ctx context.Context) (*cron.Cron, error) {
+	logger := ar.getLogger()
+	config := ar.getConfig()
+	c := cron.New(cron.WithParser(cron.NewParser(
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+	)))
+	if config == nil || !config.agentEvidenceEnabled() {
+		return c, nil
+	}
+
+	interval, err := config.agentEvidenceInterval()
+	if err != nil {
+		return nil, err
+	}
+	if interval <= 0 {
+		return c, nil
+	}
+
+	_, err = c.AddFunc("@every "+interval.String(), func() {
+		if err := ar.SendAgentRunEvidence(ctx); err != nil {
+			logger.Error("Failed to send agent run evidence", "error", err)
+		}
+	})
+	if err != nil {
+		logger.Error("Error adding agent evidence schedule", "error", err)
+	}
+	return c, nil
+}
+
 func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	logger := ar.getLogger()
 	parserOptions := cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
@@ -833,10 +1118,18 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 
 		jobLogger := logger.With("plugin", currentPluginName, "schedule", schedule)
 		job := cron.NewChain(cron.SkipIfStillRunning(cronLogger{logger: jobLogger})).Then(cron.FuncJob(func() {
+			ar.markPluginRunStarted(currentPluginName)
 			err := runPlugin(ctx, currentPluginName, currentPluginConfig)
+			ar.markPluginRunFinished(currentPluginName, err)
 			if err != nil {
 				// TODO how will we handle these errors ?
 				jobLogger.Error("Error running plugin", "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
+			}
+			if ar.reserveFirstAgentEvidenceSend() {
+				if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+					ar.releaseFirstAgentEvidenceSend()
+					jobLogger.Error("Failed to send agent run evidence", "error", evidenceErr)
+				}
 			}
 		}))
 		_, err := c.AddJob(schedule, job)
@@ -866,7 +1159,15 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 
 	defer ar.closePluginClients()
 
-	for pluginName, pluginConfig := range config.Plugins {
+	pluginNames := make([]string, 0, len(config.Plugins))
+	for pluginName := range config.Plugins {
+		pluginNames = append(pluginNames, pluginName)
+	}
+	sort.Strings(pluginNames)
+
+	for _, pluginName := range pluginNames {
+		pluginConfig := config.Plugins[pluginName]
+		ar.markPluginRunStarted(pluginName)
 		logger := hclog.New(&hclog.LoggerOptions{
 			Name:   fmt.Sprintf("runner.%s", pluginName),
 			Output: os.Stdout,
@@ -874,7 +1175,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		})
 
 		labels := map[string]string{
-			"_agent":  "concom",
+			"_agent":  agentIdentityLabel(config),
 			"_plugin": pluginName,
 		}
 		for k, v := range pluginConfig.Labels {
@@ -886,12 +1187,20 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		logger.Debug("Running plugin", "source", source, "protocol_version", pluginConfig.ProtocolVersion)
 
 		if _, err := os.ReadFile(source); err != nil {
+			ar.markPluginRunFinished(pluginName, err)
+			if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
+				logger.Error("Error sending agent run evidence", "error", evidenceErr)
+			}
 			return err
 		}
 
 		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
 
 		if err != nil {
+			ar.markPluginRunFinished(pluginName, err)
+			if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
+				logger.Error("Error sending agent run evidence", "error", evidenceErr)
+			}
 			return err
 		}
 		if err := func() error {
@@ -955,11 +1264,28 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 
 			return nil
 		}(); err != nil {
+			ar.markPluginRunFinished(pluginName, err)
+			if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
+				logger.Error("Error sending agent run evidence", "error", evidenceErr)
+			}
 			return err
 		}
+		ar.markPluginRunFinished(pluginName, nil)
 	}
 
+	if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
+		logger.Error("Error sending agent run evidence", "error", evidenceErr)
+	}
 	return nil
+}
+
+func (ar *AgentRunner) sendAgentRunEvidenceAfterCompleteRun(ctx context.Context) error {
+	config := ar.getConfig()
+	if config == nil || !config.agentEvidenceEnabled() || !config.agentEvidenceAfterFirstCompleteRun() {
+		return nil
+	}
+
+	return ar.SendAgentRunEvidence(ctx)
 }
 
 // Run the agent as an instance, this is a single run of the agent that will check the
@@ -1006,7 +1332,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	})
 
 	labels := map[string]string{
-		"_agent":  "concom",
+		"_agent":  agentIdentityLabel(config),
 		"_plugin": name,
 	}
 	for k, v := range plugin.Labels {
@@ -1081,6 +1407,227 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	return nil
 }
 
+type agentEvidenceCreateRequest struct {
+	sdktypes.Evidence
+	BackMatter *oscalTypes_1_1_3.BackMatter `json:"back-matter,omitempty"`
+}
+
+func (ar *AgentRunner) SendAgentRunEvidence(ctx context.Context) error {
+	config := ar.getConfig()
+	if config == nil || !config.agentEvidenceEnabled() {
+		return nil
+	}
+
+	logger := ar.getLogger()
+	evidence, err := ar.buildAgentRunEvidence(time.Now().UTC())
+	if err != nil {
+		return err
+	}
+
+	payload, err := json.Marshal(evidence)
+	if err != nil {
+		return err
+	}
+
+	evidenceCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	client := ar.getAPIClient()
+	if client == nil {
+		return fmt.Errorf("api client is not configured")
+	}
+
+	resp, err := client.NewRequest(evidenceCtx, http.MethodPost, "/api/evidence", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected api response status code: %d", resp.StatusCode)
+	}
+
+	logger.Info("Successfully sent agent run evidence", "uuid", evidence.UUID.String(), "status", evidence.Status.State)
+	return nil
+}
+
+func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreateRequest, error) {
+	config := ar.getConfig()
+	interval, err := config.agentEvidenceInterval()
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot := ar.pluginRunSnapshot()
+	description := formatAgentEvidenceDescription(snapshot)
+	remarks := formatAgentEvidenceRemarks(snapshot)
+	labels := agentFoundationalLabels(config)
+	evidenceUUID, err := sdk.SeededUUID(map[string]string{
+		"type":   labels["type"],
+		"_agent": labels["_agent"],
+		"tool":   labels["tool"],
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	start := ar.agentEvidenceStart(now)
+	var expires *time.Time
+	if interval > 0 {
+		expiry := now.Add(5 * interval)
+		expires = &expiry
+	}
+
+	state := "satisfied"
+	reason := "CCF Agent is capturing evidence correctly."
+	if len(snapshot.Failed) > 0 {
+		state = "not-satisfied"
+		reason = "CCF Agent could not collect evidence from one or more plugins."
+	}
+
+	links, backMatter := agentEvidenceErrorArtifacts(snapshot.Errors)
+	evidence := &agentEvidenceCreateRequest{
+		Evidence: sdktypes.Evidence{
+			UUID:        evidenceUUID,
+			Title:       "CCF Agent is correctly capturing evidence",
+			Description: description,
+			Remarks:     &remarks,
+			Labels:      labels,
+			Start:       start,
+			End:         now,
+			Expires:     expires,
+			Links:       links,
+			Status: sdktypes.ObjectiveStatus{
+				Reason:  reason,
+				Remarks: remarks,
+				State:   state,
+			},
+		},
+		BackMatter: backMatter,
+	}
+
+	return evidence, nil
+}
+
+func (ar *AgentRunner) agentEvidenceStart(fallback time.Time) time.Time {
+	ar.pluginRunMu.RLock()
+	defer ar.pluginRunMu.RUnlock()
+
+	start := time.Time{}
+	for _, record := range ar.pluginRuns {
+		if record.StartedAt.IsZero() {
+			continue
+		}
+		if start.IsZero() || record.StartedAt.Before(start) {
+			start = record.StartedAt
+		}
+	}
+	if start.IsZero() {
+		return fallback
+	}
+	return start
+}
+
+func formatAgentEvidenceDescription(snapshot pluginRunSnapshot) string {
+	if len(snapshot.Failed) > 0 {
+		return fmt.Sprintf(
+			"ccf-agent could not collect all configured plugin information. Passing plugins: %s. Plugins with errors: %s. Pending plugins: %s.",
+			formatPluginList(snapshot.Passing),
+			formatPluginList(snapshot.Failed),
+			formatPluginList(snapshot.Pending),
+		)
+	}
+
+	return fmt.Sprintf(
+		"ccf-agent plugin collection is healthy. Passing plugins: %s. Plugins with errors: %s. Pending plugins: %s.",
+		formatPluginList(snapshot.Passing),
+		formatPluginList(snapshot.Failed),
+		formatPluginList(snapshot.Pending),
+	)
+}
+
+func formatAgentEvidenceRemarks(snapshot pluginRunSnapshot) string {
+	return strings.Join([]string{
+		"Passing plugins: " + formatPluginList(snapshot.Passing),
+		"Plugins with errors: " + formatPluginList(snapshot.Failed),
+		"Pending plugins: " + formatPluginList(snapshot.Pending),
+	}, "\n")
+}
+
+func formatPluginList(plugins []string) string {
+	if len(plugins) == 0 {
+		return "none"
+	}
+
+	return strings.Join(plugins, ", ")
+}
+
+func agentEvidenceErrorArtifacts(errorsByPlugin map[string]string) ([]sdktypes.Link, *oscalTypes_1_1_3.BackMatter) {
+	if len(errorsByPlugin) == 0 {
+		return nil, nil
+	}
+
+	pluginNames := make([]string, 0, len(errorsByPlugin))
+	for pluginName := range errorsByPlugin {
+		pluginNames = append(pluginNames, pluginName)
+	}
+	sort.Strings(pluginNames)
+
+	links := make([]sdktypes.Link, 0, len(pluginNames))
+	resources := make([]oscalTypes_1_1_3.Resource, 0, len(pluginNames))
+	for _, pluginName := range pluginNames {
+		resourceUUID, _ := sdk.SeededUUID(map[string]string{
+			"type":   "ccf-agent-plugin-error",
+			"plugin": pluginName,
+		})
+		title := fmt.Sprintf("%s plugin error", pluginName)
+		filename := safePluginErrorFilename(pluginName)
+		errorText := errorsByPlugin[pluginName]
+
+		links = append(links, sdktypes.Link{
+			Href:      "#" + resourceUUID.String(),
+			Rel:       "describedby",
+			MediaType: "text/plain",
+			Text:      fmt.Sprintf("Download %s error", pluginName),
+		})
+		resources = append(resources, oscalTypes_1_1_3.Resource{
+			UUID:        resourceUUID.String(),
+			Title:       title,
+			Description: fmt.Sprintf("Error reported by ccf-agent while running plugin %s.", pluginName),
+			Base64: &oscalTypes_1_1_3.Base64{
+				Filename:  filename,
+				MediaType: "text/plain",
+				Value:     base64.StdEncoding.EncodeToString([]byte(errorText)),
+			},
+		})
+	}
+
+	return links, &oscalTypes_1_1_3.BackMatter{Resources: &resources}
+}
+
+func safePluginErrorFilename(pluginName string) string {
+	var b strings.Builder
+	for _, r := range pluginName {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "plugin-error.txt"
+	}
+	return b.String() + "-error.txt"
+}
+
 func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, func(), error) {
 	// We're a host! Start by launching the plugin process.
 	client := plugin.NewClient(&plugin.ClientConfig{
@@ -1150,6 +1697,7 @@ func (ar *AgentRunner) DownloadPlugins(ctx context.Context) error {
 		out, err := ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform))
 
 		if err != nil {
+			ar.markPluginsWithSourceFailed(source, err)
 			return err
 		}
 
@@ -1175,6 +1723,7 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
 
 		if err != nil {
+			ar.markPluginsWithPolicyFailed(agentPolicy(source), err)
 			return err
 		}
 

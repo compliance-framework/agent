@@ -54,6 +54,11 @@ plugins:
     config:
       <config1>: <value>
       <config2>: <value>
+
+agent_evidence:
+  enabled: true
+  after_first_complete_run: true
+  interval: 1h
 ```
 
 See [configuration](./docs/configuration.md) for more information.
