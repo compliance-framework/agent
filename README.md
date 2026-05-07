@@ -54,6 +54,11 @@ plugins:
     config:
       <config1>: <value>
       <config2>: <value>
+
+agent_evidence:
+  enabled: true
+  emit_on_run_completion: true
+  interval: 1h
 ```
 
 See [configuration](./docs/configuration.md) for more information.
@@ -83,8 +88,8 @@ particularly if you wish to run the agent as a daemon, that you copy it into the
 
 To run after checking out this repository you can run the following:
 ```shell
-go build -o concom main.go
-./concom agent --config PATH_TO_CONFIG_FILE
+go build -o ccf-agent main.go
+./ccf-agent agent --config PATH_TO_CONFIG_FILE
 ```
 or even simpler:
 ```shell
@@ -97,7 +102,7 @@ For CI systems that already know the evidence they want to report, use `submit-e
 record without running plugins or policies.
 
 ```shell
-./concom submit-evidence "Pipeline ran successfully" \
+./ccf-agent submit-evidence "Pipeline ran successfully" \
   --api-url https://your-compliance-framework.url.com \
   --status satisfied \
   --label provider=gitlab \
@@ -108,7 +113,7 @@ record without running plugins or policies.
 The command also accepts a YAML or JSON evidence file:
 
 ```shell
-./concom submit-evidence -f evidence.yaml --label provider=gitlab
+./ccf-agent submit-evidence -f evidence.yaml --label provider=gitlab
 ```
 
 Labels are mandatory and are used to derive the evidence UUID. Do not provide a UUID in the evidence file.

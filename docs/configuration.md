@@ -5,10 +5,11 @@
 In order to configure an agent you must make a YAML, JSON or TOML config file at a location of your choice and pass the
 path to the agent when you run it as follows:
 ```shell
-$ concom-agent -c /path/to/config.yaml
+$ ccf-agent -c /path/to/config.yaml
 ```
 
-The configuration file must have the following fields:
+The configuration file must include `api`. Configure `plugins` when the agent should collect plugin evidence; if no
+plugins are configured, daemon mode still emits its own passing run evidence on the configured interval.
 
 ```yaml
 api:
@@ -28,12 +29,19 @@ plugins:
       <config1>: <value1>
       <config2>: <value2>
       ...
+
+agent_evidence:
+  enabled: true
+  emit_on_run_completion: true
+  interval: 1h
 ```
 
 The `plugin_identifier` is a unique identifier for the plugin, and is used to identify the plugin in the logs, you can
 name this whatever you like but it must be unique.
 
-The `labels` should uniquely identify this agent instance.
+The `labels` should uniquely identify this agent instance. The agent also sets the `_agent` label on plugin evidence
+using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally `ccf`. Because
+evidence UUIDs are seeded from labels, changing that identity changes the evidence stream for plugin evidence.
 
 The `plugin_source` is the path to the plugin binary that the agent will run. This can be a relative or absolute path or
 even a URL to a remote plugin.
@@ -45,6 +53,21 @@ will be passed to the plugin when it is run.
 
 You can specify as many plugins as you wish, as long as each identifier is unique. You can even reuse the same plugin
 multiple times with different configurations.
+
+The `agent_evidence` field configures evidence emitted by ccf-agent about its own plugin collection run. By default,
+ccf-agent emits this evidence when a run reaches a terminal point, such as after the first complete plugin run, after a
+non-daemon run completes, or when startup plugin or policy downloads fail. The daemon also emits evidence every `1h`
+whether or not every plugin has run yet. If any plugin has failed, the evidence status is `not-satisfied`; otherwise it
+is `satisfied`. A plugin remains in the `Plugins with errors` summary until it finishes a later run successfully.
+Plugins that have never run are listed as pending. Failed plugin errors are attached as back-matter resources and linked
+from the evidence so they can be downloaded.
+
+Agent evidence uses only these labels: `_agent`, `tool`, and `type`. The `_agent` label uses `api.auth.client_id` when
+available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `ccf`. The `tool` label is `ccf`;
+the `type` label is `operations`.
+
+If no plugins are configured, ccf-agent still emits passing agent evidence on the configured interval when running in
+daemon mode. In non-daemon mode, ccf-agent can emit agent evidence only once per invocation.
 
 As an example, a configuration file might look like this:
 ```yaml
@@ -97,7 +120,12 @@ plugins:
   <plugin_identifier>:
     schedule: <cron_expression>
 
-verbose: <log_level>
+agent_evidence:
+  enabled: true|false
+  emit_on_run_completion: true|false
+  interval: <duration>
+
+verbosity: <log_level>
 ```
 
 The `schedule` field is a cron expression that specifies when the plugin should run. If this field is not present the
@@ -105,6 +133,13 @@ plugin will run on a default `* * * * *`. The schedule is in the format `minute 
 
 The `api.auth` fields are optional. If you set either `client_id` or `client_secret`, you must set both. The
 `client_id` must be a valid UUID.
+
+The `agent_evidence.interval` value is a Go-style duration such as `30m`, `1h`, or `2h45m`. Set it to `0s` to disable
+periodic agent evidence while keeping `emit_on_run_completion` behavior enabled. Set `agent_evidence.enabled` to
+`false` to disable all ccf-agent self-evidence. Agent evidence expires after five configured intervals, so the default
+`1h` interval produces a `5h` expiry. When `interval` is `0s`, periodic agent evidence is disabled and agent evidence has
+no expiry. Set `agent_evidence.emit_on_run_completion` to `false` to disable immediate agent evidence on run completion
+and startup failures while leaving periodic daemon evidence controlled by `interval`.
 
 The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO

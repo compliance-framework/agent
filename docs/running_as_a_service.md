@@ -1,11 +1,11 @@
-# Running ConCom as a Daemon/Service
+# Running ccf-agent as a Daemon/Service
 
-By default when you run the ConCom agent it will run as a one off process and
+By default when you run the ccf-agent agent it will run as a one off process and
 exit when it is done.
 
-You can also run the ConCom agent can run as a daemon or a service (same thing
+You can also run the ccf-agent agent can run as a daemon or a service (same thing
 for this document) on Linux through systemd, Mac through launchd or Windows
-through Windows services. It is recommended to run the ConCom agent as a service
+through Windows services. It is recommended to run the ccf-agent agent as a service
 for tasks such as:
 * Checking machine specific status such as SSH root login being enabled, etc.
   The specifics can be configured as per the documentation
@@ -20,7 +20,7 @@ The one-off process is more useful for things like:
 * Running in cron jobs to check the compliance at regular intervals.
 * Running in a container to check the compliance of the container image.
 
-This document details how to run the ConCom agent as a service, server or daemon
+This document details how to run the ccf-agent agent as a service, server or daemon
 on Linux, Mac and Windows. For details of how to run as a one-off process see
 [here](running_as_a_process.md).
 
@@ -30,7 +30,7 @@ the agent for your chosen architecture.
 
 ## Running as a daemon on Linux through `systemd`
 
-In this section we show how to run the ConCom agent as a daemon on Linux through
+In this section we show how to run the ccf-agent agent as a daemon on Linux through
 systemd. First let's make sure that your Linux distribution uses systemd. You
 can check this by running the following command:
 
@@ -45,18 +45,18 @@ lrwxrwxrwx. 1 root root 22 Oct 15 14:17 /sbin/init -> ../lib/systemd/systemd
 If you don't have systemd you can check out the section `Running as a daemon on
 non-systemd based Linux` below.
 
-### Step 1: Download the ConCom agent
+### Step 1: Download the ccf-agent agent
 
-Download the ConCom agent for your architecture from the [releases] page
+Download the ccf-agent agent for your architecture from the [releases] page
 [here](https://github.com/https://github.com/compliance-framework/agent/releases)
 and place it in a directory of your choice. For example, you can download the
 agent for Linux x86_64 as follows:
 
 ```bash
-CONCOM_RELEASE=0.1.0
+ccf-agent_RELEASE=0.1.0
 ARCH=x86_64
 OS=Linux
-curl -LOf https://github.com/compliance-framework/agent/releases/download/v${CONCOM_RELEASE}/agent_${OS}_${ARCH}.tar.gz
+curl -LOf https://github.com/compliance-framework/agent/releases/download/v${ccf-agent_RELEASE}/agent_${OS}_${ARCH}.tar.gz
 ```
 
 Then you need to extract the agent and copy it to a directory of your choice.
@@ -64,17 +64,17 @@ For example you can run the following commands:
 
 ```bash
 tar xvf agent_${OS}_${ARCH}.tar.gz
-sudo cp agent /usr/local/bin/concom-agent
+sudo cp agent /usr/local/bin/ccf-agent
 ```
 
 ### Step 2: Create a systemd service file
 
-Create a systemd service file for the ConCom agent. You can use the following:
+Create a systemd service file for the ccf-agent agent. You can use the following:
 
 ```bash
-sudo tee /etc/systemd/system/concom-agent.service <<EOF
+sudo tee /etc/systemd/system/ccf-agent.service <<EOF
 [Unit]
-Description=Continuous Compliance (ConCom) Agent
+Description=Continuous Compliance (ccf-agent) Agent
 Documentation=https://github.com/continuouscompliance/agent
 Wants=network-online.target
 After=network.target network-online.target local-fs.target
@@ -84,7 +84,7 @@ WantedBy=multi-user.target
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/concom-agent agent -d
+ExecStart=/usr/local/bin/ccf-agent agent -d
 KillMode=process
 Delegate=yes
 LimitNOFILE=1048576
@@ -101,23 +101,23 @@ Now run the following command to reload the systemd configuration:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable concom-agent
+sudo systemctl enable ccf-agent
 ```
 
-You should now be able to start the ConCom agent as a service by running the
+You should now be able to start the ccf-agent agent as a service by running the
 following:
 
 ```bash
-sudo systemctl start concom-agent
+sudo systemctl start ccf-agent
 ```
 
 ## Running as a daemon on non-systemd based Linux
 
-If you don't have a systemd based system you can still run the ConCom agent as a
+If you don't have a systemd based system you can still run the ccf-agent agent as a
 daemon by running the following command:
 
 ```bash
-nohup /path/to/concom-agent agent -d &
+nohup /path/to/ccf-agent agent -d &
 ```
 
 You can also lookup how to set this process to run on startup using whatever
