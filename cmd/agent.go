@@ -198,6 +198,7 @@ const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
+const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
 
 type pluginRunStatus string
 
@@ -729,6 +730,10 @@ func (ar *AgentRunner) reserveFirstAgentEvidenceSend() bool {
 	defer ar.pluginRunMu.Unlock()
 
 	if ar.firstAgentEvidenceSendStarted {
+		return false
+	}
+
+	if len(ar.pluginRuns) == 0 {
 		return false
 	}
 
@@ -1623,7 +1628,7 @@ func agentEvidenceErrorArtifacts(errorsByPlugin map[string]string) ([]sdktypes.L
 		}
 		title := fmt.Sprintf("%s plugin error", pluginName)
 		filename := safePluginErrorFilename(pluginName)
-		errorText := errorsByPlugin[pluginName]
+		errorText := truncateAgentEvidenceErrorArtifact(errorsByPlugin[pluginName])
 
 		links = append(links, sdktypes.Link{
 			Href:      "#" + resourceUUID.String(),
@@ -1644,6 +1649,19 @@ func agentEvidenceErrorArtifacts(errorsByPlugin map[string]string) ([]sdktypes.L
 	}
 
 	return links, &oscalTypes_1_1_3.BackMatter{Resources: &resources}
+}
+
+func truncateAgentEvidenceErrorArtifact(errorText string) string {
+	if len(errorText) <= agentEvidenceErrorArtifactMaxBytes {
+		return errorText
+	}
+
+	suffix := fmt.Sprintf("\n\n[truncated: plugin error exceeded %d bytes]", agentEvidenceErrorArtifactMaxBytes)
+	if len(suffix) >= agentEvidenceErrorArtifactMaxBytes {
+		return suffix[:agentEvidenceErrorArtifactMaxBytes]
+	}
+
+	return errorText[:agentEvidenceErrorArtifactMaxBytes-len(suffix)] + suffix
 }
 
 func safePluginErrorFilename(pluginName string) string {

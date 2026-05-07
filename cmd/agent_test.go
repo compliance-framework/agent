@@ -1449,6 +1449,34 @@ func TestAgentRunEvidenceKeepsPluginErrorWhilePluginRunsAgainUntilPassing(t *tes
 	}
 }
 
+func TestReserveFirstAgentEvidenceRequiresConfiguredPluginRun(t *testing.T) {
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins:   map[string]*agentPlugin{},
+	})
+
+	if agentRunner.reserveFirstAgentEvidenceSend() {
+		t.Fatalf("expected no-plugin config not to reserve first complete run evidence")
+	}
+
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins: map[string]*agentPlugin{
+			"plugin-x": {Source: "/tmp/plugin-x"},
+		},
+	})
+	if agentRunner.reserveFirstAgentEvidenceSend() {
+		t.Fatalf("expected pending plugin not to reserve first complete run evidence")
+	}
+
+	agentRunner.markPluginRunStarted("plugin-x")
+	agentRunner.markPluginRunFinished("plugin-x", nil)
+	if !agentRunner.reserveFirstAgentEvidenceSend() {
+		t.Fatalf("expected completed plugin run to reserve first complete run evidence")
+	}
+}
+
 func TestAgentRunEvidenceTreatsEmptyErrorMessageAsPluginError(t *testing.T) {
 	t.Setenv("KUBERNETES_POD_NAME", "")
 	t.Setenv("KUBERNETES_POD", "")
@@ -1484,6 +1512,32 @@ func TestAgentRunEvidenceTreatsEmptyErrorMessageAsPluginError(t *testing.T) {
 	}
 	if string(decoded) != "plugin run failed without an error message" {
 		t.Fatalf("expected fallback error message, got %q", string(decoded))
+	}
+}
+
+func TestAgentRunEvidenceTruncatesLargeErrorArtifacts(t *testing.T) {
+	largeError := strings.Repeat("x", agentEvidenceErrorArtifactMaxBytes+1024)
+	_, backMatter := agentEvidenceErrorArtifacts(map[string]string{
+		"plugin-x": largeError,
+	})
+
+	if backMatter == nil || backMatter.Resources == nil || len(*backMatter.Resources) != 1 {
+		t.Fatalf("expected one backmatter resource, got %#v", backMatter)
+	}
+	resource := (*backMatter.Resources)[0]
+	if resource.Base64 == nil {
+		t.Fatalf("expected base64 resource")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(resource.Base64.Value)
+	if err != nil {
+		t.Fatalf("decode truncated error resource: %v", err)
+	}
+	if len(decoded) > agentEvidenceErrorArtifactMaxBytes {
+		t.Fatalf("expected decoded error artifact to be at most %d bytes, got %d", agentEvidenceErrorArtifactMaxBytes, len(decoded))
+	}
+	if !strings.Contains(string(decoded), "[truncated: plugin error exceeded") {
+		t.Fatalf("expected truncation marker, got %q", string(decoded[len(decoded)-80:]))
 	}
 }
 
