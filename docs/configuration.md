@@ -5,7 +5,7 @@
 In order to configure an agent you must make a YAML, JSON or TOML config file at a location of your choice and pass the
 path to the agent when you run it as follows:
 ```shell
-$ concom-agent -c /path/to/config.yaml
+$ ccf-agent -c /path/to/config.yaml
 ```
 
 The configuration file must include `api`. Configure `plugins` when the agent should collect plugin evidence; if no
@@ -40,7 +40,7 @@ The `plugin_identifier` is a unique identifier for the plugin, and is used to id
 name this whatever you like but it must be unique.
 
 The `labels` should uniquely identify this agent instance. The agent also sets the `_agent` label on plugin evidence
-using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally `concom`. Because
+using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally `ccf`. Because
 evidence UUIDs are seeded from labels, changing that identity changes the evidence stream for plugin evidence.
 
 The `plugin_source` is the path to the plugin binary that the agent will run. This can be a relative or absolute path or
@@ -54,19 +54,19 @@ will be passed to the plugin when it is run.
 You can specify as many plugins as you wish, as long as each identifier is unique. You can even reuse the same plugin
 multiple times with different configurations.
 
-The `agent_evidence` field configures evidence emitted by concom-agent about its own plugin collection run. By default,
-concom-agent emits this evidence after the first complete plugin run, and the daemon also emits evidence every `1h`
+The `agent_evidence` field configures evidence emitted by ccf-agent about its own plugin collection run. By default,
+ccf-agent emits this evidence after the first complete plugin run, and the daemon also emits evidence every `1h`
 whether or not every plugin has run yet. If any plugin has failed, the evidence status is `not-satisfied`; otherwise it
 is `satisfied`. A plugin remains in the `Plugins with errors` summary until it finishes a later run successfully.
 Plugins that have never run are listed as pending. Failed plugin errors are attached as back-matter resources and linked
 from the evidence so they can be downloaded.
 
 Agent evidence uses only these labels: `_agent`, `tool`, and `type`. The `_agent` label uses `api.auth.client_id` when
-available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `concom`. The `tool` label is `ccf`;
+available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `ccf`. The `tool` label is `ccf`;
 the `type` label is `operations`.
 
-If no plugins are configured, concom-agent still emits passing agent evidence on the configured interval when running in
-daemon mode. In non-daemon mode, concom-agent can emit agent evidence only once per invocation.
+If no plugins are configured, ccf-agent still emits passing agent evidence on the configured interval when running in
+daemon mode. In non-daemon mode, ccf-agent can emit agent evidence only once per invocation.
 
 As an example, a configuration file might look like this:
 ```yaml
@@ -135,7 +135,7 @@ The `api.auth` fields are optional. If you set either `client_id` or `client_sec
 
 The `agent_evidence.interval` value is a Go-style duration such as `30m`, `1h`, or `2h45m`. Set it to `0s` to disable
 periodic agent evidence while keeping `after_first_complete_run` behavior enabled. Set `agent_evidence.enabled` to
-`false` to disable all concom-agent self-evidence. Agent evidence expires after five configured intervals, so the default
+`false` to disable all ccf-agent self-evidence. Agent evidence expires after five configured intervals, so the default
 `1h` interval produces a `5h` expiry. When `interval` is `0s`, periodic agent evidence is disabled and agent evidence has
 no expiry.
 
