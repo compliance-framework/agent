@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -635,7 +636,7 @@ func (ar *AgentRunner) markPluginRunFinished(name string, err error) {
 	record.FinishedAt = now
 	if err != nil {
 		record.Status = pluginRunStatusFailed
-		record.Error = err.Error()
+		record.Error = pluginRunErrorMessage(err)
 	} else {
 		record.Status = pluginRunStatusPassing
 		record.Error = ""
@@ -686,6 +687,9 @@ func (ar *AgentRunner) pluginRunSnapshot() pluginRunSnapshot {
 		if record.Error != "" {
 			snapshot.Failed = append(snapshot.Failed, name)
 			snapshot.Errors[name] = record.Error
+		} else if record.Status == pluginRunStatusFailed {
+			snapshot.Failed = append(snapshot.Failed, name)
+			snapshot.Errors[name] = pluginRunErrorMessage(nil)
 		}
 
 		switch record.Status {
@@ -702,6 +706,17 @@ func (ar *AgentRunner) pluginRunSnapshot() pluginRunSnapshot {
 	sort.Strings(snapshot.Failed)
 	sort.Strings(snapshot.Pending)
 	return snapshot
+}
+
+func pluginRunErrorMessage(err error) string {
+	if err != nil {
+		message := strings.TrimSpace(err.Error())
+		if message != "" {
+			return message
+		}
+	}
+
+	return "plugin run failed without an error message"
 }
 
 func (ar *AgentRunner) reserveFirstAgentEvidenceSend() bool {
@@ -1445,11 +1460,33 @@ func (ar *AgentRunner) SendAgentRunEvidence(ctx context.Context) error {
 		defer resp.Body.Close()
 	}
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected api response status code: %d", resp.StatusCode)
+		return unexpectedAPIResponseError(resp)
 	}
 
 	logger.Info("Successfully sent agent run evidence", "uuid", evidence.UUID.String(), "status", evidence.Status.State)
 	return nil
+}
+
+func unexpectedAPIResponseError(resp *http.Response) error {
+	if resp == nil {
+		return fmt.Errorf("unexpected nil api response")
+	}
+
+	if resp.Body == nil {
+		return fmt.Errorf("unexpected api response status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("unexpected api response status code: %d; failed to read response body: %w", resp.StatusCode, err)
+	}
+
+	bodyText := strings.TrimSpace(string(body))
+	if bodyText == "" {
+		return fmt.Errorf("unexpected api response status code: %d", resp.StatusCode)
+	}
+
+	return fmt.Errorf("unexpected api response status code: %d: %s", resp.StatusCode, bodyText)
 }
 
 func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreateRequest, error) {

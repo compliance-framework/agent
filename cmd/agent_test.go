@@ -30,6 +30,12 @@ type initTestRunner struct {
 	initErr error
 }
 
+type emptyError struct{}
+
+func (e emptyError) Error() string {
+	return ""
+}
+
 func (r *initTestRunner) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
 	return &proto.ConfigureResponse{}, nil
 }
@@ -1443,6 +1449,44 @@ func TestAgentRunEvidenceKeepsPluginErrorWhilePluginRunsAgainUntilPassing(t *tes
 	}
 }
 
+func TestAgentRunEvidenceTreatsEmptyErrorMessageAsPluginError(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "")
+	t.Setenv("KUBERNETES_POD", "")
+
+	agentRunner := NewAgentRunner()
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins: map[string]*agentPlugin{
+			"plugin-x": {Source: "/tmp/plugin-x"},
+		},
+	})
+
+	agentRunner.markPluginRunStarted("plugin-x")
+	agentRunner.markPluginRunFinished("plugin-x", emptyError{})
+
+	evidence, err := agentRunner.buildAgentRunEvidence(time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("build agent run evidence: %v", err)
+	}
+	if evidence.Status.State != "not-satisfied" {
+		t.Fatalf("expected empty error message to fail evidence, got %q", evidence.Status.State)
+	}
+	if !strings.Contains(evidence.Description, "Plugins with errors: plugin-x") {
+		t.Fatalf("expected plugin to be listed with errors, got %q", evidence.Description)
+	}
+	if evidence.BackMatter == nil || evidence.BackMatter.Resources == nil || len(*evidence.BackMatter.Resources) != 1 {
+		t.Fatalf("expected fallback error backmatter, got %#v", evidence.BackMatter)
+	}
+	resource := (*evidence.BackMatter.Resources)[0]
+	decoded, err := base64.StdEncoding.DecodeString(resource.Base64.Value)
+	if err != nil {
+		t.Fatalf("decode fallback error resource: %v", err)
+	}
+	if string(decoded) != "plugin run failed without an error message" {
+		t.Fatalf("expected fallback error message, got %q", string(decoded))
+	}
+}
+
 func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	t.Setenv("KUBERNETES_POD_NAME", "")
 	t.Setenv("KUBERNETES_POD", "")
@@ -1496,6 +1540,34 @@ func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	description, _ := submitted["description"].(string)
 	if !strings.Contains(description, "Passing plugins: none") {
 		t.Fatalf("expected no-plugin summary, got %q", description)
+	}
+}
+
+func TestSendAgentRunEvidenceIncludesAPIErrorBody(t *testing.T) {
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/evidence" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+			return nil, nil
+		}
+		return jsonResponse(http.StatusBadRequest, `{"error":"bad evidence"}`), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins:   map[string]*agentPlugin{},
+	})
+
+	err := agentRunner.SendAgentRunEvidence(context.Background())
+	if err == nil {
+		t.Fatalf("expected send agent run evidence to fail")
+	}
+	if !strings.Contains(err.Error(), "unexpected api response status code: 400") {
+		t.Fatalf("expected status code in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), `{"error":"bad evidence"}`) {
+		t.Fatalf("expected response body in error, got %q", err.Error())
 	}
 }
 

@@ -132,8 +132,9 @@ The `api.auth` fields are optional. If you set either `client_id` or `client_sec
 
 The `agent_evidence.interval` value is a Go-style duration such as `30m`, `1h`, or `2h45m`. Set it to `0s` to disable
 periodic agent evidence while keeping `after_first_complete_run` behavior enabled. Set `agent_evidence.enabled` to
-`false` to disable all concom-agent self-evidence. Agent evidence expires after at least five configured intervals, so the
-default `1h` interval produces a `5h` expiry.
+`false` to disable all concom-agent self-evidence. Agent evidence expires after five configured intervals, so the default
+`1h` interval produces a `5h` expiry. When `interval` is `0s`, periodic agent evidence is disabled and agent evidence has
+no expiry.
 
 The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO
