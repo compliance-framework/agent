@@ -39,11 +39,11 @@ agent_evidence:
 The `plugin_identifier` is a unique identifier for the plugin, and is used to identify the plugin in the logs, you can
 name this whatever you like but it must be unique.
 
-The `labels` should uniquely identify this agent instance. The agent also sets the `_agent` label on plugin evidence
-using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally `ccf`. The agent
-also sets `_agent_config_hash`, a deterministic hash of the runtime plugin and agent evidence configuration. Because
-evidence UUIDs are seeded from labels, changing either the agent identity or runtime configuration changes the evidence
-stream for plugin evidence.
+The `labels` should uniquely identify this agent instance. The agent sets the `_agent` label on plugin evidence using
+the following fallback chain: `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and
+finally a deterministic SHA-256 hash of the runtime plugin and agent evidence configuration. Because evidence UUIDs are
+seeded from labels, changing either the agent identity or runtime configuration changes the evidence stream for plugin
+evidence.
 
 The `plugin_source` is the path to the plugin binary that the agent will run. This can be a relative or absolute path or
 even a URL to a remote plugin.
@@ -64,11 +64,11 @@ is `satisfied`. A plugin remains in the `Plugins with errors` summary until it f
 Plugins that have never run are listed as pending. Failed plugin errors are attached as back-matter resources and linked
 from the evidence so they can be downloaded.
 
-Agent evidence uses these labels: `_agent`, `_agent_config_hash`, `tool`, and `type`. The `_agent` label uses
-`api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally defaults to `ccf`. The
-`_agent_config_hash` label is a SHA-256 hash of plugin names, sources, protocol versions, schedules, policies, plugin
-config, plugin labels, and `agent_evidence` settings. It does not include API URL, API auth, or verbosity. The `tool`
-label is `ccf`; the `type` label is `operations`.
+Agent evidence uses these labels: `_agent`, `tool`, and `type`. The `_agent` label uses the following fallback chain:
+`api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally a SHA-256 hash of
+plugin names, sources, protocol versions, schedules, policies, plugin config, plugin labels, and `agent_evidence`
+settings. The hash does not include API URL, API auth, or verbosity. The `tool` label is `ccf`; the `type` label is
+`operations`.
 
 If no plugins are configured, ccf-agent still emits passing agent evidence on the configured interval when running in
 daemon mode. In non-daemon mode, ccf-agent can emit agent evidence only once per invocation.
