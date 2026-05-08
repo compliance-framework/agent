@@ -40,6 +40,11 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 			labels[k] = v
 		}
 		evid.Labels = labels
+		evidenceUUID, err := sdk.SeededUUID(labels)
+		if err != nil {
+			return err
+		}
+		evid.UUID = evidenceUUID
 
 		labelled = append(labelled, *evid)
 	}
