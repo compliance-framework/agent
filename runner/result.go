@@ -38,11 +38,12 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 		for k, v := range h.agentLabels {
 			labels[k] = v
 		}
+		if _, ok := labels["_plugin"]; !ok && h.pluginName != "" {
+			labels["_plugin"] = h.pluginName
+		}
 		for k, v := range evid.Labels {
 			if isReservedEvidenceLabel(k) {
-				if _, ok := h.agentLabels[k]; ok {
-					continue
-				}
+				continue
 			}
 			labels[k] = v
 		}

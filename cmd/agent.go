@@ -970,6 +970,10 @@ func sortedUniqueStrings(input []string) []string {
 }
 
 func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *agentPlugin) map[string]string {
+	return pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, agentConfigurationHash(config))
+}
+
+func pluginEvidenceLabelsWithHash(config *agentConfig, pluginName string, pluginConfig *agentPlugin, configHash string) map[string]string {
 	labels := map[string]string{
 		"_agent":  agentIdentityLabel(config),
 		"_plugin": pluginName,
@@ -979,7 +983,7 @@ func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *
 			labels[k] = v
 		}
 	}
-	labels[agentConfigHashLabel] = agentConfigurationHash(config)
+	labels[agentConfigHashLabel] = configHash
 	return labels
 }
 
@@ -1334,6 +1338,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		pluginNames = append(pluginNames, pluginName)
 	}
 	sort.Strings(pluginNames)
+	configHash := agentConfigurationHash(config)
 
 	for _, pluginName := range pluginNames {
 		pluginConfig := config.Plugins[pluginName]
@@ -1344,7 +1349,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			Level:  hclog.Level(config.logVerbosity()),
 		})
 
-		labels := pluginEvidenceLabels(config, pluginName, pluginConfig)
+		labels := pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, configHash)
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
@@ -1504,7 +1509,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		Level:  hclog.Level(config.logVerbosity()),
 	})
 
-	labels := pluginEvidenceLabels(config, name, plugin)
+	labels := pluginEvidenceLabelsWithHash(config, name, plugin, agentConfigurationHash(config))
 
 	pluginLogger.Debug("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 

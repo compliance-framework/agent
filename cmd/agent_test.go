@@ -1995,6 +1995,72 @@ func TestPluginProvidedEvidenceLabelsCannotOverrideReservedAgentLabels(t *testin
 	}
 }
 
+func TestPluginProvidedReservedEvidenceLabelsIgnoredWhenAgentLabelsOmitThem(t *testing.T) {
+	var submittedLabels map[string]string
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/evidence" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+			return nil, nil
+		}
+		var submitted struct {
+			Labels map[string]string `json:"labels"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
+			t.Fatalf("decode evidence request: %v", err)
+		}
+		submittedLabels = submitted.Labels
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+		Plugins:   map[string]*agentPlugin{},
+	})
+	apiHelper := runner.NewApiHelper(
+		hclog.NewNullLogger(),
+		agentRunner.getAPIClient(),
+		map[string]string{},
+		"plugin-a",
+	)
+
+	now := time.Now().UTC()
+	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
+		{
+			UUID:  uuid.NewString(),
+			Title: "Evidence",
+			Labels: map[string]string{
+				agentConfigHashLabel: "plugin-provided-hash",
+				"_agent":             "plugin-provided-agent",
+				"_plugin":            "plugin-provided-plugin",
+				"finding":            "preserved",
+			},
+			Start: timestamppb.New(now.Add(-time.Minute)),
+			End:   timestamppb.New(now),
+			Status: &proto.EvidenceStatus{
+				Reason: "pass",
+				State:  proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create evidence: %v", err)
+	}
+
+	if _, ok := submittedLabels[agentConfigHashLabel]; ok {
+		t.Fatalf("expected plugin-provided config hash to be ignored, got %#v", submittedLabels)
+	}
+	if _, ok := submittedLabels["_agent"]; ok {
+		t.Fatalf("expected plugin-provided agent label to be ignored, got %#v", submittedLabels)
+	}
+	if submittedLabels["_plugin"] != "plugin-a" {
+		t.Fatalf("expected plugin label to come from helper plugin name, got %#v", submittedLabels)
+	}
+	if submittedLabels["finding"] != "preserved" {
+		t.Fatalf("expected non-reserved evidence label to be preserved, got %#v", submittedLabels)
+	}
+}
+
 func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
 	config := &agentConfig{
 		ApiConfig: &apiConfig{Url: "http://localhost:8080"},
