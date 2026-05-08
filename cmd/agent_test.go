@@ -1301,9 +1301,10 @@ func TestAgentRunEvidenceIncludesPluginRunSummaryAndErrorArtifacts(t *testing.T)
 		t.Fatalf("expected readable failure reason, got %q", evidence.Status.Reason)
 	}
 	expectedLabels := map[string]string{
-		"_agent": clientID,
-		"tool":   "ccf",
-		"type":   "operations",
+		"_agent":             clientID,
+		agentConfigHashLabel: agentConfigurationHash(agentRunner.getConfig()),
+		"tool":               "ccf",
+		"type":               "operations",
 	}
 	for key, expected := range expectedLabels {
 		if evidence.Labels[key] != expected {
@@ -1656,8 +1657,11 @@ func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	if labels["_agent"] != "ccf" || labels["tool"] != "ccf" || labels["type"] != "operations" {
 		t.Fatalf("unexpected foundational labels: %#v", labels)
 	}
-	if len(labels) != 3 {
-		t.Fatalf("expected only three foundational labels, got %#v", labels)
+	if labels[agentConfigHashLabel] != agentConfigurationHash(agentRunner.getConfig()) {
+		t.Fatalf("expected agent config hash label, got %#v", labels)
+	}
+	if len(labels) != 4 {
+		t.Fatalf("expected only four foundational labels, got %#v", labels)
 	}
 	if _, ok := submitted["back-matter"]; ok {
 		t.Fatalf("expected no backmatter for passing no-plugin evidence, got %#v", submitted["back-matter"])
@@ -1720,6 +1724,192 @@ func TestAgentIdentityLabelFallsBackToKubernetesPodName(t *testing.T) {
 	}
 }
 
+func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
+	base := newRuntimeHashTestConfig()
+	baseHash := agentConfigurationHash(base)
+	if len(baseHash) != 64 {
+		t.Fatalf("expected sha256 hex hash, got %q", baseHash)
+	}
+
+	reordered := newRuntimeHashTestConfigWithReorderedPlugins()
+	reordered.ApiConfig = &apiConfig{
+		Url: "http://different.example.test",
+		Auth: &apiAuthConfig{
+			ClientID:     "123e4567-e89b-12d3-a456-426614174000",
+			ClientSecret: "different-secret",
+		},
+	}
+	reordered.Verbosity = 3
+	reordered.Daemon = !base.Daemon
+	if got := agentConfigurationHash(reordered); got != baseHash {
+		t.Fatalf("expected reordered plugins and excluded fields to keep hash stable, got %q want %q", got, baseHash)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*agentConfig)
+	}{
+		{
+			name: "plugin source",
+			mutate: func(config *agentConfig) {
+				config.Plugins["plugin-a"].Source = "ghcr.io/example/plugin-a:v2"
+			},
+		},
+		{
+			name: "plugin schedule",
+			mutate: func(config *agentConfig) {
+				schedule := "0 * * * *"
+				config.Plugins["plugin-a"].Schedule = &schedule
+			},
+		},
+		{
+			name: "plugin policy",
+			mutate: func(config *agentConfig) {
+				config.Plugins["plugin-a"].Policies = append(config.Plugins["plugin-a"].Policies, "policy-c")
+			},
+		},
+		{
+			name: "plugin config",
+			mutate: func(config *agentConfig) {
+				config.Plugins["plugin-a"].Config["region"] = "eu-west-1"
+			},
+		},
+		{
+			name: "plugin label",
+			mutate: func(config *agentConfig) {
+				config.Plugins["plugin-a"].Labels["environment"] = "prod"
+			},
+		},
+		{
+			name: "protocol version",
+			mutate: func(config *agentConfig) {
+				config.Plugins["plugin-a"].ProtocolVersion = RunnerV2ProtocolVersion
+			},
+		},
+		{
+			name: "agent evidence interval",
+			mutate: func(config *agentConfig) {
+				config.AgentEvidence.Interval = "2h"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := newRuntimeHashTestConfig()
+			tt.mutate(config)
+			if got := agentConfigurationHash(config); got == baseHash {
+				t.Fatalf("expected %s change to alter hash %q", tt.name, got)
+			}
+		})
+	}
+}
+
+func TestAgentFoundationalLabelsIncludeAgentConfigurationHash(t *testing.T) {
+	config := newRuntimeHashTestConfig()
+
+	labels := agentFoundationalLabels(config)
+
+	if labels[agentConfigHashLabel] != agentConfigurationHash(config) {
+		t.Fatalf("expected foundational labels to include config hash, got %#v", labels)
+	}
+}
+
+func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	firstRunner := NewAgentRunner()
+	firstRunner.UpdateConfig(newRuntimeHashTestConfig())
+	firstEvidence, err := firstRunner.buildAgentRunEvidence(now)
+	if err != nil {
+		t.Fatalf("build first agent run evidence: %v", err)
+	}
+
+	secondConfig := newRuntimeHashTestConfig()
+	secondConfig.Plugins["plugin-a"].Source = "ghcr.io/example/plugin-a:v2"
+	secondRunner := NewAgentRunner()
+	secondRunner.UpdateConfig(secondConfig)
+	secondEvidence, err := secondRunner.buildAgentRunEvidence(now)
+	if err != nil {
+		t.Fatalf("build second agent run evidence: %v", err)
+	}
+
+	if firstEvidence.Labels[agentConfigHashLabel] == secondEvidence.Labels[agentConfigHashLabel] {
+		t.Fatalf("expected different config hash labels, got %q", firstEvidence.Labels[agentConfigHashLabel])
+	}
+	if firstEvidence.UUID == secondEvidence.UUID {
+		t.Fatalf("expected config hash change to alter agent evidence UUID %s", firstEvidence.UUID)
+	}
+}
+
+func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
+	config := newRuntimeHashTestConfig()
+
+	labels := pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"])
+
+	if labels[agentConfigHashLabel] != agentConfigurationHash(config) {
+		t.Fatalf("expected plugin labels to include config hash, got %#v", labels)
+	}
+	if labels["_plugin"] != "plugin-a" {
+		t.Fatalf("expected plugin label, got %#v", labels)
+	}
+	if labels["team"] != "security" {
+		t.Fatalf("expected configured plugin labels to be preserved, got %#v", labels)
+	}
+}
+
+func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
+	config := newRuntimeHashTestConfig()
+	config.ApiConfig.Auth = nil
+	var submittedLabels map[string]string
+	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/evidence" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+			return nil, nil
+		}
+		var submitted struct {
+			Labels map[string]string `json:"labels"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
+			t.Fatalf("decode evidence request: %v", err)
+		}
+		submittedLabels = submitted.Labels
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+
+	agentRunner := NewAgentRunner()
+	agentRunner.httpClient = client
+	agentRunner.UpdateConfig(config)
+	apiHelper := runner.NewApiHelper(
+		hclog.NewNullLogger(),
+		agentRunner.getAPIClient(),
+		pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"]),
+		"plugin-a",
+	)
+
+	now := time.Now().UTC()
+	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
+		{
+			UUID:  uuid.NewString(),
+			Title: "Evidence",
+			Start: timestamppb.New(now.Add(-time.Minute)),
+			End:   timestamppb.New(now),
+			Status: &proto.EvidenceStatus{
+				Reason: "pass",
+				State:  proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create evidence: %v", err)
+	}
+
+	if submittedLabels[agentConfigHashLabel] != agentConfigurationHash(config) {
+		t.Fatalf("expected submitted plugin evidence to include config hash, got %#v", submittedLabels)
+	}
+	if submittedLabels["_plugin"] != "plugin-a" || submittedLabels["team"] != "security" {
+		t.Fatalf("expected submitted plugin evidence to include plugin labels, got %#v", submittedLabels)
+	}
+}
+
 func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
 	config := &agentConfig{
 		ApiConfig: &apiConfig{Url: "http://localhost:8080"},
@@ -1759,6 +1949,57 @@ func newTestAgentConfig(baseURL string, auth *apiAuthConfig) *agentConfig {
 			},
 		},
 	}
+}
+
+func newRuntimeHashTestConfig() *agentConfig {
+	schedule := "*/5 * * * *"
+	emitOnRunCompletion := true
+	enabled := true
+	return &agentConfig{
+		Daemon:    true,
+		Verbosity: 1,
+		ApiConfig: &apiConfig{
+			Url: "http://example.test",
+			Auth: &apiAuthConfig{
+				ClientID:     "00000000-0000-0000-0000-000000000001",
+				ClientSecret: "client-secret",
+			},
+		},
+		AgentEvidence: &agentEvidenceConfig{
+			Enabled:             &enabled,
+			EmitOnRunCompletion: &emitOnRunCompletion,
+			Interval:            "1h",
+		},
+		Plugins: map[string]*agentPlugin{
+			"plugin-a": {
+				ProtocolVersion: DefaultProtocolVersion,
+				Schedule:        &schedule,
+				Source:          "ghcr.io/example/plugin-a:v1",
+				Policies:        []agentPolicy{"policy-a", "policy-b"},
+				Config: agentPluginConfig{
+					"region": "us-east-1",
+					"token":  "secret-token",
+				},
+				Labels: map[string]string{
+					"team": "security",
+				},
+			},
+			"plugin-b": {
+				ProtocolVersion: DefaultProtocolVersion,
+				Source:          "ghcr.io/example/plugin-b:v1",
+			},
+		},
+	}
+}
+
+func newRuntimeHashTestConfigWithReorderedPlugins() *agentConfig {
+	config := newRuntimeHashTestConfig()
+	plugins := config.Plugins
+	config.Plugins = map[string]*agentPlugin{
+		"plugin-b": plugins["plugin-b"],
+		"plugin-a": plugins["plugin-a"],
+	}
+	return config
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

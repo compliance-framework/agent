@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -199,6 +200,7 @@ const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
+const agentConfigHashLabel = "_agent_config_hash"
 
 type pluginRunStatus string
 
@@ -839,10 +841,139 @@ func agentIdentityLabel(config *agentConfig) string {
 
 func agentFoundationalLabels(config *agentConfig) map[string]string {
 	return map[string]string{
-		"_agent": agentIdentityLabel(config),
-		"tool":   "ccf",
-		"type":   "operations",
+		"_agent":             agentIdentityLabel(config),
+		agentConfigHashLabel: agentConfigurationHash(config),
+		"tool":               "ccf",
+		"type":               "operations",
 	}
+}
+
+type normalizedAgentConfigForHash struct {
+	AgentEvidence normalizedAgentEvidenceConfigForHash `json:"agent_evidence"`
+	Plugins       []normalizedAgentPluginForHash       `json:"plugins"`
+}
+
+type normalizedAgentEvidenceConfigForHash struct {
+	Enabled             bool   `json:"enabled"`
+	EmitOnRunCompletion bool   `json:"emit_on_run_completion"`
+	Interval            string `json:"interval"`
+}
+
+type normalizedAgentPluginForHash struct {
+	Name            string            `json:"name"`
+	ProtocolVersion int32             `json:"protocol_version"`
+	Schedule        string            `json:"schedule"`
+	Source          string            `json:"source"`
+	Policies        []string          `json:"policies"`
+	Config          map[string]string `json:"config,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+}
+
+func agentConfigurationHash(config *agentConfig) string {
+	normalized := normalizedAgentConfigForHash{
+		AgentEvidence: normalizedAgentEvidenceConfigForHash{
+			Enabled:             true,
+			EmitOnRunCompletion: true,
+			Interval:            normalizedAgentEvidenceInterval(config),
+		},
+	}
+
+	if config != nil {
+		normalized.AgentEvidence.Enabled = config.agentEvidenceEnabled()
+		normalized.AgentEvidence.EmitOnRunCompletion = config.agentEvidenceEmitOnRunCompletion()
+
+		pluginNames := make([]string, 0, len(config.Plugins))
+		for pluginName := range config.Plugins {
+			pluginNames = append(pluginNames, pluginName)
+		}
+		sort.Strings(pluginNames)
+
+		normalized.Plugins = make([]normalizedAgentPluginForHash, 0, len(pluginNames))
+		for _, pluginName := range pluginNames {
+			pluginConfig := config.Plugins[pluginName]
+			normalizedPlugin := normalizedAgentPluginForHash{
+				Name:     pluginName,
+				Schedule: "* * * * *",
+			}
+			if pluginConfig != nil {
+				normalizedPlugin.ProtocolVersion = effectivePluginProtocolVersion(pluginConfig)
+				normalizedPlugin.Source = pluginConfig.Source
+				if pluginConfig.Schedule != nil {
+					normalizedPlugin.Schedule = *pluginConfig.Schedule
+				}
+				normalizedPlugin.Policies = make([]string, 0, len(pluginConfig.Policies))
+				for _, policy := range pluginConfig.Policies {
+					normalizedPlugin.Policies = append(normalizedPlugin.Policies, string(policy))
+				}
+				normalizedPlugin.Config = copyStringMap(pluginConfig.Config)
+				normalizedPlugin.Labels = copyStringMap(pluginConfig.Labels)
+			}
+			normalized.Plugins = append(normalized.Plugins, normalizedPlugin)
+		}
+	}
+
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		sum := sha256.Sum256([]byte(err.Error()))
+		return fmt.Sprintf("%x", sum[:])
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func normalizedAgentEvidenceInterval(config *agentConfig) string {
+	if config == nil {
+		return time.Hour.String()
+	}
+
+	interval, err := config.agentEvidenceInterval()
+	if err != nil {
+		if config.AgentEvidence == nil {
+			return ""
+		}
+		return strings.TrimSpace(config.AgentEvidence.Interval)
+	}
+	return interval.String()
+}
+
+func copyStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *agentPlugin) map[string]string {
+	return pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, agentConfigurationHash(config))
+}
+
+func pluginEvidenceLabelsWithHash(config *agentConfig, pluginName string, pluginConfig *agentPlugin, configHash string) map[string]string {
+	labels := map[string]string{
+		"_agent":  agentIdentityLabel(config),
+		"_plugin": pluginName,
+	}
+	if pluginConfig != nil {
+		for k, v := range pluginConfig.Labels {
+			labels[k] = v
+		}
+	}
+	labels[agentConfigHashLabel] = configHash
+	return labels
+}
+
+func effectivePluginProtocolVersion(pluginConfig *agentPlugin) int32 {
+	if pluginConfig == nil {
+		return 0
+	}
+	if pluginConfig.ProtocolVersion == 0 && !pluginConfig.protocolSet {
+		return DefaultProtocolVersion
+	}
+	return pluginConfig.ProtocolVersion
 }
 
 func maskClientID(clientID string) string {
@@ -1186,6 +1317,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		pluginNames = append(pluginNames, pluginName)
 	}
 	sort.Strings(pluginNames)
+	configHash := agentConfigurationHash(config)
 
 	for _, pluginName := range pluginNames {
 		pluginConfig := config.Plugins[pluginName]
@@ -1196,13 +1328,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			Level:  hclog.Level(config.logVerbosity()),
 		})
 
-		labels := map[string]string{
-			"_agent":  agentIdentityLabel(config),
-			"_plugin": pluginName,
-		}
-		for k, v := range pluginConfig.Labels {
-			labels[k] = v
-		}
+		labels := pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, configHash)
 
 		source := ar.pluginLocations[pluginConfig.Source]
 
@@ -1362,13 +1488,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		Level:  hclog.Level(config.logVerbosity()),
 	})
 
-	labels := map[string]string{
-		"_agent":  agentIdentityLabel(config),
-		"_plugin": name,
-	}
-	for k, v := range plugin.Labels {
-		labels[k] = v
-	}
+	labels := pluginEvidenceLabelsWithHash(config, name, plugin, agentConfigurationHash(config))
 
 	pluginLogger.Debug("Running plugin", "source", pluginExecutable, "protocol_version", plugin.ProtocolVersion)
 
@@ -1516,11 +1636,7 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 	description := formatAgentEvidenceDescription(snapshot)
 	remarks := formatAgentEvidenceRemarks(snapshot)
 	labels := agentFoundationalLabels(config)
-	evidenceUUID, err := sdk.SeededUUID(map[string]string{
-		"type":   labels["type"],
-		"_agent": labels["_agent"],
-		"tool":   labels["tool"],
-	})
+	evidenceUUID, err := sdk.SeededUUID(labels)
 	if err != nil {
 		return nil, err
 	}

@@ -63,9 +63,13 @@ agent_evidence:
 
 See [configuration](./docs/configuration.md) for more information.
 
+The agent adds `_agent_config_hash` to plugin and agent evidence labels. The value is a deterministic SHA-256 hash of
+the runtime plugin and agent evidence configuration, which prevents multiple unauthenticated agents using the fallback
+`_agent=ccf` identity from writing to the same evidence seed when their configurations differ.
+
 ### Environment variables
 
-The agent can load specific configruation values from environment variables, which are prefixed with `CCF_` and the path 
+The agent can load specific configuration values from environment variables, which are prefixed with `CCF_` and the path 
 in the config is specified using underscore-separated key.
 
 For example, to specify the `token` value in the GitHub config, you may set an environment variable `CCF_PLUGINS_GITHUB_CONFIG_TOKEN`
