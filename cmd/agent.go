@@ -200,6 +200,7 @@ const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
+const defaultPluginSchedule = "* * * * *"
 const agentConfigHashLabel = internal.AgentConfigHashLabel
 
 type pluginRunStatus string
@@ -872,13 +873,16 @@ type normalizedAgentPluginForHash struct {
 func agentConfigurationHash(config *agentConfig) string {
 	normalized := normalizedAgentConfigForHash{
 		AgentEvidence: normalizedAgentEvidenceConfigForHash{
-			Enabled:             config.agentEvidenceEnabled(),
-			EmitOnRunCompletion: config.agentEvidenceEmitOnRunCompletion(),
+			Enabled:             true,
+			EmitOnRunCompletion: true,
 			Interval:            normalizedAgentEvidenceInterval(config),
 		},
 	}
 
 	if config != nil {
+		normalized.AgentEvidence.Enabled = config.agentEvidenceEnabled()
+		normalized.AgentEvidence.EmitOnRunCompletion = config.agentEvidenceEmitOnRunCompletion()
+
 		pluginNames := make([]string, 0, len(config.Plugins))
 		for pluginName := range config.Plugins {
 			pluginNames = append(pluginNames, pluginName)
@@ -890,7 +894,7 @@ func agentConfigurationHash(config *agentConfig) string {
 			pluginConfig := config.Plugins[pluginName]
 			normalizedPlugin := normalizedAgentPluginForHash{
 				Name:     pluginName,
-				Schedule: "* * * * *",
+				Schedule: defaultPluginSchedule,
 			}
 			if pluginConfig != nil {
 				normalizedPlugin.ProtocolVersion = effectivePluginProtocolVersion(pluginConfig)
@@ -912,16 +916,21 @@ func agentConfigurationHash(config *agentConfig) string {
 
 	payload, err := json.Marshal(normalized)
 	if err != nil {
-		return ""
+		sum := sha256.Sum256([]byte(err.Error()))
+		return fmt.Sprintf("%x", sum[:])
 	}
 	sum := sha256.Sum256(payload)
 	return fmt.Sprintf("%x", sum[:])
 }
 
 func normalizedAgentEvidenceInterval(config *agentConfig) string {
+	if config == nil {
+		return time.Hour.String()
+	}
+
 	interval, err := config.agentEvidenceInterval()
 	if err != nil {
-		if config == nil || config.AgentEvidence == nil {
+		if config.AgentEvidence == nil {
 			return ""
 		}
 		return strings.TrimSpace(config.AgentEvidence.Interval)
@@ -1306,7 +1315,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 		currentPluginConfig := pluginConfig
 		var schedule string
 		if currentPluginConfig.Schedule == nil {
-			schedule = "* * * * *"
+			schedule = defaultPluginSchedule
 		} else {
 			schedule = *currentPluginConfig.Schedule
 		}

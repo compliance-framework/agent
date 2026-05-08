@@ -61,13 +61,15 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 }
 
 func seededEvidenceUUID(labels map[string]string, originalUUID uuid.UUID) (uuid.UUID, error) {
+	if originalUUID == uuid.Nil {
+		return sdk.SeededUUID(labels)
+	}
+
 	seedLabels := make(map[string]string, len(labels)+1)
 	for key, value := range labels {
 		seedLabels[key] = value
 	}
-	if originalUUID != uuid.Nil {
-		seedLabels["_evidence_uuid"] = originalUUID.String()
-	}
+	seedLabels[internal.EvidenceUUIDSeedLabel] = originalUUID.String()
 	return sdk.SeededUUID(seedLabels)
 }
 

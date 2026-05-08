@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -1822,6 +1823,17 @@ func TestAgentConfigurationHashExcludesPluginConfigValues(t *testing.T) {
 	}
 }
 
+func TestAgentConfigurationHashHandlesNilConfig(t *testing.T) {
+	hash := agentConfigurationHash(nil)
+	if len(hash) != 64 {
+		t.Fatalf("expected nil config hash to be deterministic sha256 hex, got %q", hash)
+	}
+
+	if got := normalizedAgentEvidenceInterval(nil); got != time.Hour.String() {
+		t.Fatalf("expected nil config interval to use default interval, got %q", got)
+	}
+}
+
 func TestAgentFoundationalLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
 
@@ -1939,7 +1951,7 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	for key, value := range submittedLabels {
 		uuidSeedLabels[key] = value
 	}
-	uuidSeedLabels["_evidence_uuid"] = originalUUID.String()
+	uuidSeedLabels[internal.EvidenceUUIDSeedLabel] = originalUUID.String()
 	expectedUUID, err := sdk.SeededUUID(uuidSeedLabels)
 	if err != nil {
 		t.Fatalf("seed expected UUID: %v", err)
@@ -2043,10 +2055,11 @@ func TestPluginProvidedReservedEvidenceLabelsIgnoredWhenAgentLabelsOmitThem(t *t
 			UUID:  uuid.NewString(),
 			Title: "Evidence",
 			Labels: map[string]string{
-				agentConfigHashLabel: "plugin-provided-hash",
-				"_agent":             "plugin-provided-agent",
-				"_plugin":            "plugin-provided-plugin",
-				"finding":            "preserved",
+				agentConfigHashLabel:           "plugin-provided-hash",
+				internal.EvidenceUUIDSeedLabel: "plugin-provided-uuid-seed",
+				"_agent":                       "plugin-provided-agent",
+				"_plugin":                      "plugin-provided-plugin",
+				"finding":                      "preserved",
 			},
 			Start: timestamppb.New(now.Add(-time.Minute)),
 			End:   timestamppb.New(now),
@@ -2064,6 +2077,9 @@ func TestPluginProvidedReservedEvidenceLabelsIgnoredWhenAgentLabelsOmitThem(t *t
 	}
 	if _, ok := submittedLabels["_agent"]; ok {
 		t.Fatalf("expected plugin-provided agent label to be ignored, got %#v", submittedLabels)
+	}
+	if _, ok := submittedLabels[internal.EvidenceUUIDSeedLabel]; ok {
+		t.Fatalf("expected plugin-provided UUID seed label to be ignored, got %#v", submittedLabels)
 	}
 	if submittedLabels["_plugin"] != "plugin-a" {
 		t.Fatalf("expected plugin label to come from helper plugin name, got %#v", submittedLabels)
