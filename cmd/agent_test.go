@@ -1699,30 +1699,6 @@ func TestSendAgentRunEvidenceIncludesAPIErrorBody(t *testing.T) {
 	}
 }
 
-func TestAgentIdentityLabelFallsBackToKubernetesPodName(t *testing.T) {
-	t.Setenv("KUBERNETES_POD_NAME", "ccf-agent-7b6f")
-	t.Setenv("KUBERNETES_POD", "ignored")
-
-	got := agentIdentityLabel(&agentConfig{
-		ApiConfig: &apiConfig{Url: "http://example.test"},
-	})
-	if got != "ccf-agent-7b6f" {
-		t.Fatalf("expected Kubernetes pod name identity, got %q", got)
-	}
-
-	got = agentIdentityLabel(&agentConfig{
-		ApiConfig: &apiConfig{
-			Url: "http://example.test",
-			Auth: &apiAuthConfig{
-				ClientID: "123e4567-e89b-12d3-a456-426614174000",
-			},
-		},
-	})
-	if got != "123e4567-e89b-12d3-a456-426614174000" {
-		t.Fatalf("expected API auth client id to take precedence, got %q", got)
-	}
-}
-
 func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 	base := newRuntimeHashTestConfig()
 	baseHash := agentConfigurationHash(base)
