@@ -200,7 +200,7 @@ const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
-const agentConfigHashLabel = "_agent_config_hash"
+const agentConfigHashLabel = internal.AgentConfigHashLabel
 
 type pluginRunStatus string
 
@@ -904,7 +904,7 @@ func agentConfigurationHash(config *agentConfig) string {
 				}
 				normalizedPlugin.Policies = sortedUniqueStrings(policies)
 				normalizedPlugin.ConfigKeys = sortedMapKeys(pluginConfig.Config)
-				normalizedPlugin.Labels = copyStringMap(pluginConfig.Labels)
+				normalizedPlugin.Labels = copyNonReservedStringMap(pluginConfig.Labels)
 			}
 			normalized.Plugins = append(normalized.Plugins, normalizedPlugin)
 		}
@@ -937,6 +937,24 @@ func copyStringMap(input map[string]string) map[string]string {
 	output := make(map[string]string, len(input))
 	for key, value := range input {
 		output[key] = value
+	}
+	return output
+}
+
+func copyNonReservedStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		if internal.IsReservedEvidenceLabel(key) {
+			continue
+		}
+		output[key] = value
+	}
+	if len(output) == 0 {
+		return nil
 	}
 	return output
 }
@@ -980,6 +998,9 @@ func pluginEvidenceLabelsWithHash(config *agentConfig, pluginName string, plugin
 	}
 	if pluginConfig != nil {
 		for k, v := range pluginConfig.Labels {
+			if internal.IsReservedEvidenceLabel(k) {
+				continue
+			}
 			labels[k] = v
 		}
 	}

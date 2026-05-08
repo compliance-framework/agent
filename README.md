@@ -67,7 +67,7 @@ The agent adds `_agent_config_hash` to plugin and agent evidence labels. The val
 the runtime plugin and agent evidence configuration, which prevents multiple unauthenticated agents using the fallback
 `_agent=ccf` identity from writing to the same evidence seed when their configurations differ. The hash includes plugin
 config keys, but not config values, so secrets such as tokens or passwords are not included in the digest. The agent
-reserves `_agent`, `_plugin`, and `_agent_config_hash` when merging plugin evidence labels.
+reserves `_agent`, `_plugin`, and `_agent_config_hash` when merging plugin labels from configuration or evidence.
 
 ### Environment variables
 

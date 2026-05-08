@@ -3,9 +3,11 @@ package runner
 import (
 	"context"
 
+	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/compliance-framework/api/sdk/types"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -15,8 +17,6 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 }
-
-const agentConfigHashLabel = "_agent_config_hash"
 
 func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string) *apiHelper {
 	logger = logger.Named("api-helper")
@@ -42,13 +42,13 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 			labels["_plugin"] = h.pluginName
 		}
 		for k, v := range evid.Labels {
-			if isReservedEvidenceLabel(k) {
+			if internal.IsReservedEvidenceLabel(k) {
 				continue
 			}
 			labels[k] = v
 		}
 		evid.Labels = labels
-		evidenceUUID, err := sdk.SeededUUID(labels)
+		evidenceUUID, err := seededEvidenceUUID(labels, evid.UUID)
 		if err != nil {
 			return err
 		}
@@ -60,13 +60,15 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 	return h.client.Evidence.Create(ctx, labelled...)
 }
 
-func isReservedEvidenceLabel(key string) bool {
-	switch key {
-	case "_agent", "_plugin", agentConfigHashLabel:
-		return true
-	default:
-		return false
+func seededEvidenceUUID(labels map[string]string, originalUUID uuid.UUID) (uuid.UUID, error) {
+	seedLabels := make(map[string]string, len(labels)+1)
+	for key, value := range labels {
+		seedLabels[key] = value
 	}
+	if originalUUID != uuid.Nil {
+		seedLabels["_evidence_uuid"] = originalUUID.String()
+	}
+	return sdk.SeededUUID(seedLabels)
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {

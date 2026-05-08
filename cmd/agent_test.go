@@ -1860,6 +1860,9 @@ func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
 
 func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
+	config.Plugins["plugin-a"].Labels["_agent"] = "configured-agent"
+	config.Plugins["plugin-a"].Labels["_plugin"] = "configured-plugin"
+	config.Plugins["plugin-a"].Labels[agentConfigHashLabel] = "configured-hash"
 
 	labels := pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"])
 
@@ -1868,6 +1871,9 @@ func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	}
 	if labels["_plugin"] != "plugin-a" {
 		t.Fatalf("expected plugin label, got %#v", labels)
+	}
+	if labels["_agent"] != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("expected configured reserved labels to be ignored, got %#v", labels)
 	}
 	if labels["team"] != "security" {
 		t.Fatalf("expected configured plugin labels to be preserved, got %#v", labels)
@@ -1907,9 +1913,10 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	)
 
 	now := time.Now().UTC()
+	originalUUID := uuid.New()
 	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
 		{
-			UUID:  uuid.NewString(),
+			UUID:  originalUUID.String(),
 			Title: "Evidence",
 			Start: timestamppb.New(now.Add(-time.Minute)),
 			End:   timestamppb.New(now),
@@ -1928,7 +1935,12 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	if submittedLabels["_plugin"] != "plugin-a" || submittedLabels["team"] != "security" {
 		t.Fatalf("expected submitted plugin evidence to include plugin labels, got %#v", submittedLabels)
 	}
-	expectedUUID, err := sdk.SeededUUID(submittedLabels)
+	uuidSeedLabels := make(map[string]string, len(submittedLabels)+1)
+	for key, value := range submittedLabels {
+		uuidSeedLabels[key] = value
+	}
+	uuidSeedLabels["_evidence_uuid"] = originalUUID.String()
+	expectedUUID, err := sdk.SeededUUID(uuidSeedLabels)
 	if err != nil {
 		t.Fatalf("seed expected UUID: %v", err)
 	}
