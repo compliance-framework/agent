@@ -63,9 +63,10 @@ agent_evidence:
 
 See [configuration](./docs/configuration.md) for more information.
 
-The agent sets the `_agent` label to a deterministic SHA-256 hash of the runtime plugin and agent evidence configuration
-(using `api.auth.client_id` when available, then `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally the hash).
-This prevents multiple unauthenticated agents from writing to the same evidence seed when their configurations differ.
+The agent sets the `_agent` label using the following fallback chain: `api.auth.client_id` when available, then
+`KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally a deterministic SHA-256 hash of the runtime plugin and agent
+evidence configuration. This prevents multiple unauthenticated agents from writing to the same evidence seed when their
+configurations differ.
 
 ### Environment variables
 

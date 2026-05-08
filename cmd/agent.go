@@ -823,6 +823,18 @@ func apiAuthClientSecretSet(config *apiConfig) bool {
 }
 
 func agentIdentityLabel(config *agentConfig) string {
+	if config != nil && config.ApiConfig != nil && config.ApiConfig.Auth != nil {
+		if clientID := strings.TrimSpace(config.ApiConfig.Auth.ClientID); clientID != "" {
+			return clientID
+		}
+	}
+
+	for _, envName := range []string{"KUBERNETES_POD_NAME", "KUBERNETES_POD"} {
+		if podName := strings.TrimSpace(os.Getenv(envName)); podName != "" {
+			return podName
+		}
+	}
+
 	return agentConfigurationHash(config)
 }
 

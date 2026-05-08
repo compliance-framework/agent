@@ -1301,7 +1301,7 @@ func TestAgentRunEvidenceIncludesPluginRunSummaryAndErrorArtifacts(t *testing.T)
 		t.Fatalf("expected readable failure reason, got %q", evidence.Status.Reason)
 	}
 	expectedLabels := map[string]string{
-		"_agent": agentConfigurationHash(agentRunner.getConfig()),
+		"_agent": clientID,
 		"tool":   "ccf",
 		"type":   "operations",
 	}
@@ -1653,11 +1653,10 @@ func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected labels object, got %#v", submitted["labels"])
 	}
-	if labels["tool"] != "ccf" || labels["type"] != "operations" {
+	// When no client_id or pod env vars, _agent should be the config hash
+	expectedHash := agentConfigurationHash(agentRunner.getConfig())
+	if labels["_agent"] != expectedHash || labels["tool"] != "ccf" || labels["type"] != "operations" {
 		t.Fatalf("unexpected foundational labels: %#v", labels)
-	}
-	if labels["_agent"] != agentConfigurationHash(agentRunner.getConfig()) {
-		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
 	}
 	if len(labels) != 3 {
 		t.Fatalf("expected only three foundational labels, got %#v", labels)
@@ -1696,6 +1695,41 @@ func TestSendAgentRunEvidenceIncludesAPIErrorBody(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `{"error":"bad evidence"}`) {
 		t.Fatalf("expected response body in error, got %q", err.Error())
+	}
+}
+
+func TestAgentIdentityLabelFallsBackToKubernetesPodName(t *testing.T) {
+	t.Setenv("KUBERNETES_POD_NAME", "ccf-agent-7b6f")
+	t.Setenv("KUBERNETES_POD", "ignored")
+
+	got := agentIdentityLabel(&agentConfig{
+		ApiConfig: &apiConfig{Url: "http://example.test"},
+	})
+	if got != "ccf-agent-7b6f" {
+		t.Fatalf("expected Kubernetes pod name identity, got %q", got)
+	}
+
+	got = agentIdentityLabel(&agentConfig{
+		ApiConfig: &apiConfig{
+			Url: "http://example.test",
+			Auth: &apiAuthConfig{
+				ClientID: "123e4567-e89b-12d3-a456-426614174000",
+			},
+		},
+	})
+	if got != "123e4567-e89b-12d3-a456-426614174000" {
+		t.Fatalf("expected API auth client id to take precedence, got %q", got)
+	}
+
+	// Test that hash is final fallback when no client_id or pod name
+	t.Setenv("KUBERNETES_POD_NAME", "")
+	t.Setenv("KUBERNETES_POD", "")
+	config := newRuntimeHashTestConfig()
+	config.ApiConfig.Auth = nil // Remove client_id to test hash fallback
+	expectedHash := agentConfigurationHash(config)
+	got = agentIdentityLabel(config)
+	if got != expectedHash {
+		t.Fatalf("expected config hash as final fallback, got %q (expected %q)", got, expectedHash)
 	}
 }
 
@@ -1782,24 +1816,28 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 
 func TestAgentFoundationalLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
+	config.ApiConfig.Auth = nil // Remove client_id to test hash fallback
 
 	labels := agentFoundationalLabels(config)
 
 	if labels["_agent"] != agentConfigurationHash(config) {
-		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
+		t.Fatalf("expected _agent label to contain config hash when no client_id, got %#v", labels)
 	}
 }
 
 func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	firstConfig := newRuntimeHashTestConfig()
+	firstConfig.ApiConfig.Auth = nil // Remove client_id to test hash fallback
 	firstRunner := NewAgentRunner()
-	firstRunner.UpdateConfig(newRuntimeHashTestConfig())
+	firstRunner.UpdateConfig(firstConfig)
 	firstEvidence, err := firstRunner.buildAgentRunEvidence(now)
 	if err != nil {
 		t.Fatalf("build first agent run evidence: %v", err)
 	}
 
 	secondConfig := newRuntimeHashTestConfig()
+	secondConfig.ApiConfig.Auth = nil // Remove client_id to test hash fallback
 	secondConfig.Plugins["plugin-a"].Source = "ghcr.io/example/plugin-a:v2"
 	secondRunner := NewAgentRunner()
 	secondRunner.UpdateConfig(secondConfig)
@@ -1818,11 +1856,12 @@ func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
 
 func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
+	config.ApiConfig.Auth = nil // Remove client_id to test hash fallback
 
 	labels := pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"])
 
 	if labels["_agent"] != agentConfigurationHash(config) {
-		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
+		t.Fatalf("expected _agent label to contain config hash when no client_id, got %#v", labels)
 	}
 	if labels["_plugin"] != "plugin-a" {
 		t.Fatalf("expected plugin label, got %#v", labels)
@@ -1834,7 +1873,7 @@ func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 
 func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
-	config.ApiConfig.Auth = nil
+	config.ApiConfig.Auth = nil // Remove client_id to test hash fallback
 	var submittedLabels map[string]string
 	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/api/evidence" {
