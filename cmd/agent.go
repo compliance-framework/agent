@@ -200,7 +200,6 @@ const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
-const agentConfigHashLabel = "_agent_config_hash"
 
 type pluginRunStatus string
 
@@ -836,15 +835,14 @@ func agentIdentityLabel(config *agentConfig) string {
 		}
 	}
 
-	return "ccf"
+	return agentConfigurationHash(config)
 }
 
 func agentFoundationalLabels(config *agentConfig) map[string]string {
 	return map[string]string{
-		"_agent":             agentIdentityLabel(config),
-		agentConfigHashLabel: agentConfigurationHash(config),
-		"tool":               "ccf",
-		"type":               "operations",
+		"_agent": agentIdentityLabel(config),
+		"tool":   "ccf",
+		"type":   "operations",
 	}
 }
 
@@ -962,7 +960,6 @@ func pluginEvidenceLabelsWithHash(config *agentConfig, pluginName string, plugin
 			labels[k] = v
 		}
 	}
-	labels[agentConfigHashLabel] = configHash
 	return labels
 }
 

@@ -1301,10 +1301,9 @@ func TestAgentRunEvidenceIncludesPluginRunSummaryAndErrorArtifacts(t *testing.T)
 		t.Fatalf("expected readable failure reason, got %q", evidence.Status.Reason)
 	}
 	expectedLabels := map[string]string{
-		"_agent":             clientID,
-		agentConfigHashLabel: agentConfigurationHash(agentRunner.getConfig()),
-		"tool":               "ccf",
-		"type":               "operations",
+		"_agent": agentConfigurationHash(agentRunner.getConfig()),
+		"tool":   "ccf",
+		"type":   "operations",
 	}
 	for key, expected := range expectedLabels {
 		if evidence.Labels[key] != expected {
@@ -1654,14 +1653,14 @@ func TestSendAgentRunEvidenceAllowsNoPlugins(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected labels object, got %#v", submitted["labels"])
 	}
-	if labels["_agent"] != "ccf" || labels["tool"] != "ccf" || labels["type"] != "operations" {
+	if labels["tool"] != "ccf" || labels["type"] != "operations" {
 		t.Fatalf("unexpected foundational labels: %#v", labels)
 	}
-	if labels[agentConfigHashLabel] != agentConfigurationHash(agentRunner.getConfig()) {
-		t.Fatalf("expected agent config hash label, got %#v", labels)
+	if labels["_agent"] != agentConfigurationHash(agentRunner.getConfig()) {
+		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
 	}
-	if len(labels) != 4 {
-		t.Fatalf("expected only four foundational labels, got %#v", labels)
+	if len(labels) != 3 {
+		t.Fatalf("expected only three foundational labels, got %#v", labels)
 	}
 	if _, ok := submitted["back-matter"]; ok {
 		t.Fatalf("expected no backmatter for passing no-plugin evidence, got %#v", submitted["back-matter"])
@@ -1810,8 +1809,8 @@ func TestAgentFoundationalLabelsIncludeAgentConfigurationHash(t *testing.T) {
 
 	labels := agentFoundationalLabels(config)
 
-	if labels[agentConfigHashLabel] != agentConfigurationHash(config) {
-		t.Fatalf("expected foundational labels to include config hash, got %#v", labels)
+	if labels["_agent"] != agentConfigurationHash(config) {
+		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
 	}
 }
 
@@ -1833,8 +1832,8 @@ func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
 		t.Fatalf("build second agent run evidence: %v", err)
 	}
 
-	if firstEvidence.Labels[agentConfigHashLabel] == secondEvidence.Labels[agentConfigHashLabel] {
-		t.Fatalf("expected different config hash labels, got %q", firstEvidence.Labels[agentConfigHashLabel])
+	if firstEvidence.Labels["_agent"] == secondEvidence.Labels["_agent"] {
+		t.Fatalf("expected different _agent labels, got %q", firstEvidence.Labels["_agent"])
 	}
 	if firstEvidence.UUID == secondEvidence.UUID {
 		t.Fatalf("expected config hash change to alter agent evidence UUID %s", firstEvidence.UUID)
@@ -1846,8 +1845,8 @@ func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 
 	labels := pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"])
 
-	if labels[agentConfigHashLabel] != agentConfigurationHash(config) {
-		t.Fatalf("expected plugin labels to include config hash, got %#v", labels)
+	if labels["_agent"] != agentConfigurationHash(config) {
+		t.Fatalf("expected _agent label to contain config hash, got %#v", labels)
 	}
 	if labels["_plugin"] != "plugin-a" {
 		t.Fatalf("expected plugin label, got %#v", labels)
@@ -1902,8 +1901,8 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 		t.Fatalf("create evidence: %v", err)
 	}
 
-	if submittedLabels[agentConfigHashLabel] != agentConfigurationHash(config) {
-		t.Fatalf("expected submitted plugin evidence to include config hash, got %#v", submittedLabels)
+	if submittedLabels["_agent"] != agentConfigurationHash(config) {
+		t.Fatalf("expected submitted plugin evidence to include config hash in _agent, got %#v", submittedLabels)
 	}
 	if submittedLabels["_plugin"] != "plugin-a" || submittedLabels["team"] != "security" {
 		t.Fatalf("expected submitted plugin evidence to include plugin labels, got %#v", submittedLabels)
