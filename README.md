@@ -69,7 +69,7 @@ the runtime plugin and agent evidence configuration, which prevents multiple una
 
 ### Environment variables
 
-The agent can load specific configruation values from environment variables, which are prefixed with `CCF_` and the path 
+The agent can load specific configuration values from environment variables, which are prefixed with `CCF_` and the path 
 in the config is specified using underscore-separated key.
 
 For example, to specify the `token` value in the GitHub config, you may set an environment variable `CCF_PLUGINS_GITHUB_CONFIG_TOKEN`
