@@ -1742,8 +1742,13 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 	}
 	reordered.Verbosity = 3
 	reordered.Daemon = !base.Daemon
+	reordered.Plugins["plugin-a"].Policies = []agentPolicy{"policy-b", "policy-a", "policy-b"}
+	reordered.Plugins["plugin-a"].Config = agentPluginConfig{
+		"token":  "different-secret-token",
+		"region": "different-region",
+	}
 	if got := agentConfigurationHash(reordered); got != baseHash {
-		t.Fatalf("expected reordered plugins and excluded fields to keep hash stable, got %q want %q", got, baseHash)
+		t.Fatalf("expected reordered plugins, reordered policies, and excluded fields to keep hash stable, got %q want %q", got, baseHash)
 	}
 
 	tests := []struct {
@@ -1770,9 +1775,9 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 			},
 		},
 		{
-			name: "plugin config",
+			name: "plugin config key",
 			mutate: func(config *agentConfig) {
-				config.Plugins["plugin-a"].Config["region"] = "eu-west-1"
+				config.Plugins["plugin-a"].Config["account_id"] = "123456789012"
 			},
 		},
 		{
@@ -1803,6 +1808,17 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 				t.Fatalf("expected %s change to alter hash %q", tt.name, got)
 			}
 		})
+	}
+}
+
+func TestAgentConfigurationHashExcludesPluginConfigValues(t *testing.T) {
+	base := newRuntimeHashTestConfig()
+	changedSecret := newRuntimeHashTestConfig()
+	changedSecret.Plugins["plugin-a"].Config["token"] = "different-secret-token"
+	changedSecret.Plugins["plugin-a"].Config["region"] = "eu-west-1"
+
+	if got, want := agentConfigurationHash(changedSecret), agentConfigurationHash(base); got != want {
+		t.Fatalf("expected plugin config value changes to be excluded from hash, got %q want %q", got, want)
 	}
 }
 
@@ -1921,7 +1937,7 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	}
 }
 
-func TestPluginProvidedEvidenceLabelsCanOverrideAgentConfigurationHash(t *testing.T) {
+func TestPluginProvidedEvidenceLabelsCannotOverrideReservedAgentLabels(t *testing.T) {
 	config := newRuntimeHashTestConfig()
 	config.ApiConfig.Auth = nil
 	var submittedLabels map[string]string
@@ -1957,6 +1973,8 @@ func TestPluginProvidedEvidenceLabelsCanOverrideAgentConfigurationHash(t *testin
 			Title: "Evidence",
 			Labels: map[string]string{
 				agentConfigHashLabel: "plugin-provided-hash",
+				"_agent":             "plugin-provided-agent",
+				"_plugin":            "plugin-provided-plugin",
 			},
 			Start: timestamppb.New(now.Add(-time.Minute)),
 			End:   timestamppb.New(now),
@@ -1969,8 +1987,11 @@ func TestPluginProvidedEvidenceLabelsCanOverrideAgentConfigurationHash(t *testin
 		t.Fatalf("create evidence: %v", err)
 	}
 
-	if submittedLabels[agentConfigHashLabel] != "plugin-provided-hash" {
-		t.Fatalf("expected plugin evidence labels to override config hash, got %#v", submittedLabels)
+	if submittedLabels[agentConfigHashLabel] != agentConfigurationHash(config) {
+		t.Fatalf("expected agent config hash label to be reserved, got %#v", submittedLabels)
+	}
+	if submittedLabels["_agent"] != "ccf" || submittedLabels["_plugin"] != "plugin-a" {
+		t.Fatalf("expected reserved agent labels to be preserved, got %#v", submittedLabels)
 	}
 }
 
@@ -2042,6 +2063,7 @@ func newRuntimeHashTestConfig() *agentConfig {
 				Policies:        []agentPolicy{"policy-a", "policy-b"},
 				Config: agentPluginConfig{
 					"region": "us-east-1",
+					"token":  "secret-token",
 				},
 				Labels: map[string]string{
 					"team": "security",

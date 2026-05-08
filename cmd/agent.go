@@ -865,7 +865,7 @@ type normalizedAgentPluginForHash struct {
 	Schedule        string            `json:"schedule"`
 	Source          string            `json:"source"`
 	Policies        []string          `json:"policies"`
-	Config          map[string]string `json:"config,omitempty"`
+	ConfigKeys      []string          `json:"config_keys,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 }
 
@@ -898,11 +898,12 @@ func agentConfigurationHash(config *agentConfig) string {
 				if pluginConfig.Schedule != nil {
 					normalizedPlugin.Schedule = *pluginConfig.Schedule
 				}
-				normalizedPlugin.Policies = make([]string, 0, len(pluginConfig.Policies))
+				policies := make([]string, 0, len(pluginConfig.Policies))
 				for _, policy := range pluginConfig.Policies {
-					normalizedPlugin.Policies = append(normalizedPlugin.Policies, string(policy))
+					policies = append(policies, string(policy))
 				}
-				normalizedPlugin.Config = copyStringMap(pluginConfig.Config)
+				normalizedPlugin.Policies = sortedUniqueStrings(policies)
+				normalizedPlugin.ConfigKeys = sortedMapKeys(pluginConfig.Config)
 				normalizedPlugin.Labels = copyStringMap(pluginConfig.Labels)
 			}
 			normalized.Plugins = append(normalized.Plugins, normalizedPlugin)
@@ -936,6 +937,34 @@ func copyStringMap(input map[string]string) map[string]string {
 	output := make(map[string]string, len(input))
 	for key, value := range input {
 		output[key] = value
+	}
+	return output
+}
+
+func sortedMapKeys(input map[string]string) []string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(input))
+	for key := range input {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedUniqueStrings(input []string) []string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	sort.Strings(input)
+	output := input[:0]
+	for _, value := range input {
+		if len(output) == 0 || output[len(output)-1] != value {
+			output = append(output, value)
+		}
 	}
 	return output
 }

@@ -16,6 +16,8 @@ type apiHelper struct {
 	pluginName  string
 }
 
+const agentConfigHashLabel = "_agent_config_hash"
+
 func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string) *apiHelper {
 	logger = logger.Named("api-helper")
 	return &apiHelper{
@@ -37,6 +39,11 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 			labels[k] = v
 		}
 		for k, v := range evid.Labels {
+			if isReservedEvidenceLabel(k) {
+				if _, ok := h.agentLabels[k]; ok {
+					continue
+				}
+			}
 			labels[k] = v
 		}
 		evid.Labels = labels
@@ -50,6 +57,15 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 	}
 
 	return h.client.Evidence.Create(ctx, labelled...)
+}
+
+func isReservedEvidenceLabel(key string) bool {
+	switch key {
+	case "_agent", "_plugin", agentConfigHashLabel:
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
