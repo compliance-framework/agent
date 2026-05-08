@@ -200,8 +200,7 @@ const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
-const defaultPluginSchedule = "* * * * *"
-const agentConfigHashLabel = internal.AgentConfigHashLabel
+const agentConfigHashLabel = "_agent_config_hash"
 
 type pluginRunStatus string
 
@@ -866,7 +865,7 @@ type normalizedAgentPluginForHash struct {
 	Schedule        string            `json:"schedule"`
 	Source          string            `json:"source"`
 	Policies        []string          `json:"policies"`
-	ConfigKeys      []string          `json:"config_keys,omitempty"`
+	Config          map[string]string `json:"config,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 }
 
@@ -894,7 +893,7 @@ func agentConfigurationHash(config *agentConfig) string {
 			pluginConfig := config.Plugins[pluginName]
 			normalizedPlugin := normalizedAgentPluginForHash{
 				Name:     pluginName,
-				Schedule: defaultPluginSchedule,
+				Schedule: "* * * * *",
 			}
 			if pluginConfig != nil {
 				normalizedPlugin.ProtocolVersion = effectivePluginProtocolVersion(pluginConfig)
@@ -902,13 +901,12 @@ func agentConfigurationHash(config *agentConfig) string {
 				if pluginConfig.Schedule != nil {
 					normalizedPlugin.Schedule = *pluginConfig.Schedule
 				}
-				policies := make([]string, 0, len(pluginConfig.Policies))
+				normalizedPlugin.Policies = make([]string, 0, len(pluginConfig.Policies))
 				for _, policy := range pluginConfig.Policies {
-					policies = append(policies, string(policy))
+					normalizedPlugin.Policies = append(normalizedPlugin.Policies, string(policy))
 				}
-				normalizedPlugin.Policies = sortedUniqueStrings(policies)
-				normalizedPlugin.ConfigKeys = sortedMapKeys(pluginConfig.Config)
-				normalizedPlugin.Labels = copyNonReservedStringMap(pluginConfig.Labels)
+				normalizedPlugin.Config = copyStringMap(pluginConfig.Config)
+				normalizedPlugin.Labels = copyStringMap(pluginConfig.Labels)
 			}
 			normalized.Plugins = append(normalized.Plugins, normalizedPlugin)
 		}
@@ -950,52 +948,6 @@ func copyStringMap(input map[string]string) map[string]string {
 	return output
 }
 
-func copyNonReservedStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-
-	output := make(map[string]string, len(input))
-	for key, value := range input {
-		if internal.IsReservedEvidenceLabel(key) {
-			continue
-		}
-		output[key] = value
-	}
-	if len(output) == 0 {
-		return nil
-	}
-	return output
-}
-
-func sortedMapKeys(input map[string]string) []string {
-	if len(input) == 0 {
-		return nil
-	}
-
-	keys := make([]string, 0, len(input))
-	for key := range input {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedUniqueStrings(input []string) []string {
-	if len(input) == 0 {
-		return nil
-	}
-
-	sort.Strings(input)
-	output := input[:0]
-	for _, value := range input {
-		if len(output) == 0 || output[len(output)-1] != value {
-			output = append(output, value)
-		}
-	}
-	return output
-}
-
 func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *agentPlugin) map[string]string {
 	return pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, agentConfigurationHash(config))
 }
@@ -1007,9 +959,6 @@ func pluginEvidenceLabelsWithHash(config *agentConfig, pluginName string, plugin
 	}
 	if pluginConfig != nil {
 		for k, v := range pluginConfig.Labels {
-			if internal.IsReservedEvidenceLabel(k) {
-				continue
-			}
 			labels[k] = v
 		}
 	}
@@ -1315,7 +1264,7 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 		currentPluginConfig := pluginConfig
 		var schedule string
 		if currentPluginConfig.Schedule == nil {
-			schedule = defaultPluginSchedule
+			schedule = "* * * * *"
 		} else {
 			schedule = *currentPluginConfig.Schedule
 		}

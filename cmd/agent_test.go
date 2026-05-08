@@ -14,10 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
-	"github.com/compliance-framework/api/sdk"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
@@ -1743,13 +1741,8 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 	}
 	reordered.Verbosity = 3
 	reordered.Daemon = !base.Daemon
-	reordered.Plugins["plugin-a"].Policies = []agentPolicy{"policy-b", "policy-a", "policy-b"}
-	reordered.Plugins["plugin-a"].Config = agentPluginConfig{
-		"token":  "different-secret-token",
-		"region": "different-region",
-	}
 	if got := agentConfigurationHash(reordered); got != baseHash {
-		t.Fatalf("expected reordered plugins, reordered policies, and excluded fields to keep hash stable, got %q want %q", got, baseHash)
+		t.Fatalf("expected reordered plugins and excluded fields to keep hash stable, got %q want %q", got, baseHash)
 	}
 
 	tests := []struct {
@@ -1776,9 +1769,9 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 			},
 		},
 		{
-			name: "plugin config key",
+			name: "plugin config",
 			mutate: func(config *agentConfig) {
-				config.Plugins["plugin-a"].Config["account_id"] = "123456789012"
+				config.Plugins["plugin-a"].Config["region"] = "eu-west-1"
 			},
 		},
 		{
@@ -1809,28 +1802,6 @@ func TestAgentConfigurationHashUsesRuntimeConfigOnly(t *testing.T) {
 				t.Fatalf("expected %s change to alter hash %q", tt.name, got)
 			}
 		})
-	}
-}
-
-func TestAgentConfigurationHashExcludesPluginConfigValues(t *testing.T) {
-	base := newRuntimeHashTestConfig()
-	changedSecret := newRuntimeHashTestConfig()
-	changedSecret.Plugins["plugin-a"].Config["token"] = "different-secret-token"
-	changedSecret.Plugins["plugin-a"].Config["region"] = "eu-west-1"
-
-	if got, want := agentConfigurationHash(changedSecret), agentConfigurationHash(base); got != want {
-		t.Fatalf("expected plugin config value changes to be excluded from hash, got %q want %q", got, want)
-	}
-}
-
-func TestAgentConfigurationHashHandlesNilConfig(t *testing.T) {
-	hash := agentConfigurationHash(nil)
-	if len(hash) != 64 {
-		t.Fatalf("expected nil config hash to be deterministic sha256 hex, got %q", hash)
-	}
-
-	if got := normalizedAgentEvidenceInterval(nil); got != time.Hour.String() {
-		t.Fatalf("expected nil config interval to use default interval, got %q", got)
 	}
 }
 
@@ -1872,9 +1843,6 @@ func TestAgentRunEvidenceUUIDUsesAgentConfigurationHash(t *testing.T) {
 
 func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
-	config.Plugins["plugin-a"].Labels["_agent"] = "configured-agent"
-	config.Plugins["plugin-a"].Labels["_plugin"] = "configured-plugin"
-	config.Plugins["plugin-a"].Labels[agentConfigHashLabel] = "configured-hash"
 
 	labels := pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"])
 
@@ -1883,9 +1851,6 @@ func TestPluginEvidenceLabelsIncludeAgentConfigurationHash(t *testing.T) {
 	}
 	if labels["_plugin"] != "plugin-a" {
 		t.Fatalf("expected plugin label, got %#v", labels)
-	}
-	if labels["_agent"] != "00000000-0000-0000-0000-000000000001" {
-		t.Fatalf("expected configured reserved labels to be ignored, got %#v", labels)
 	}
 	if labels["team"] != "security" {
 		t.Fatalf("expected configured plugin labels to be preserved, got %#v", labels)
@@ -1896,7 +1861,6 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	config := newRuntimeHashTestConfig()
 	config.ApiConfig.Auth = nil
 	var submittedLabels map[string]string
-	var submittedUUID uuid.UUID
 	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/api/evidence" {
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -1904,13 +1868,11 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 		}
 		var submitted struct {
 			Labels map[string]string `json:"labels"`
-			UUID   uuid.UUID         `json:"uuid"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
 			t.Fatalf("decode evidence request: %v", err)
 		}
 		submittedLabels = submitted.Labels
-		submittedUUID = submitted.UUID
 		return jsonResponse(http.StatusCreated, ""), nil
 	})
 
@@ -1925,10 +1887,9 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	)
 
 	now := time.Now().UTC()
-	originalUUID := uuid.New()
 	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
 		{
-			UUID:  originalUUID.String(),
+			UUID:  uuid.NewString(),
 			Title: "Evidence",
 			Start: timestamppb.New(now.Add(-time.Minute)),
 			End:   timestamppb.New(now),
@@ -1946,146 +1907,6 @@ func TestPluginEvidenceSubmissionIncludesAgentConfigurationHash(t *testing.T) {
 	}
 	if submittedLabels["_plugin"] != "plugin-a" || submittedLabels["team"] != "security" {
 		t.Fatalf("expected submitted plugin evidence to include plugin labels, got %#v", submittedLabels)
-	}
-	uuidSeedLabels := make(map[string]string, len(submittedLabels)+1)
-	for key, value := range submittedLabels {
-		uuidSeedLabels[key] = value
-	}
-	uuidSeedLabels[internal.EvidenceUUIDSeedLabel] = originalUUID.String()
-	expectedUUID, err := sdk.SeededUUID(uuidSeedLabels)
-	if err != nil {
-		t.Fatalf("seed expected UUID: %v", err)
-	}
-	if submittedUUID != expectedUUID {
-		t.Fatalf("expected submitted plugin evidence UUID to be seeded from merged labels, got %s want %s", submittedUUID, expectedUUID)
-	}
-}
-
-func TestPluginProvidedEvidenceLabelsCannotOverrideReservedAgentLabels(t *testing.T) {
-	config := newRuntimeHashTestConfig()
-	config.ApiConfig.Auth = nil
-	var submittedLabels map[string]string
-	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/api/evidence" {
-			t.Fatalf("unexpected path %q", r.URL.Path)
-			return nil, nil
-		}
-		var submitted struct {
-			Labels map[string]string `json:"labels"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
-			t.Fatalf("decode evidence request: %v", err)
-		}
-		submittedLabels = submitted.Labels
-		return jsonResponse(http.StatusCreated, ""), nil
-	})
-
-	agentRunner := NewAgentRunner()
-	agentRunner.httpClient = client
-	agentRunner.UpdateConfig(config)
-	apiHelper := runner.NewApiHelper(
-		hclog.NewNullLogger(),
-		agentRunner.getAPIClient(),
-		pluginEvidenceLabels(config, "plugin-a", config.Plugins["plugin-a"]),
-		"plugin-a",
-	)
-
-	now := time.Now().UTC()
-	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
-		{
-			UUID:  uuid.NewString(),
-			Title: "Evidence",
-			Labels: map[string]string{
-				agentConfigHashLabel: "plugin-provided-hash",
-				"_agent":             "plugin-provided-agent",
-				"_plugin":            "plugin-provided-plugin",
-			},
-			Start: timestamppb.New(now.Add(-time.Minute)),
-			End:   timestamppb.New(now),
-			Status: &proto.EvidenceStatus{
-				Reason: "pass",
-				State:  proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
-			},
-		},
-	}); err != nil {
-		t.Fatalf("create evidence: %v", err)
-	}
-
-	if submittedLabels[agentConfigHashLabel] != agentConfigurationHash(config) {
-		t.Fatalf("expected agent config hash label to be reserved, got %#v", submittedLabels)
-	}
-	if submittedLabels["_agent"] != "ccf" || submittedLabels["_plugin"] != "plugin-a" {
-		t.Fatalf("expected reserved agent labels to be preserved, got %#v", submittedLabels)
-	}
-}
-
-func TestPluginProvidedReservedEvidenceLabelsIgnoredWhenAgentLabelsOmitThem(t *testing.T) {
-	var submittedLabels map[string]string
-	client := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/api/evidence" {
-			t.Fatalf("unexpected path %q", r.URL.Path)
-			return nil, nil
-		}
-		var submitted struct {
-			Labels map[string]string `json:"labels"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&submitted); err != nil {
-			t.Fatalf("decode evidence request: %v", err)
-		}
-		submittedLabels = submitted.Labels
-		return jsonResponse(http.StatusCreated, ""), nil
-	})
-
-	agentRunner := NewAgentRunner()
-	agentRunner.httpClient = client
-	agentRunner.UpdateConfig(&agentConfig{
-		ApiConfig: &apiConfig{Url: "http://example.test"},
-		Plugins:   map[string]*agentPlugin{},
-	})
-	apiHelper := runner.NewApiHelper(
-		hclog.NewNullLogger(),
-		agentRunner.getAPIClient(),
-		map[string]string{},
-		"plugin-a",
-	)
-
-	now := time.Now().UTC()
-	if err := apiHelper.CreateEvidence(context.Background(), []*proto.Evidence{
-		{
-			UUID:  uuid.NewString(),
-			Title: "Evidence",
-			Labels: map[string]string{
-				agentConfigHashLabel:           "plugin-provided-hash",
-				internal.EvidenceUUIDSeedLabel: "plugin-provided-uuid-seed",
-				"_agent":                       "plugin-provided-agent",
-				"_plugin":                      "plugin-provided-plugin",
-				"finding":                      "preserved",
-			},
-			Start: timestamppb.New(now.Add(-time.Minute)),
-			End:   timestamppb.New(now),
-			Status: &proto.EvidenceStatus{
-				Reason: "pass",
-				State:  proto.EvidenceStatusState_EVIDENCE_STATUS_STATE_SATISFIED,
-			},
-		},
-	}); err != nil {
-		t.Fatalf("create evidence: %v", err)
-	}
-
-	if _, ok := submittedLabels[agentConfigHashLabel]; ok {
-		t.Fatalf("expected plugin-provided config hash to be ignored, got %#v", submittedLabels)
-	}
-	if _, ok := submittedLabels["_agent"]; ok {
-		t.Fatalf("expected plugin-provided agent label to be ignored, got %#v", submittedLabels)
-	}
-	if _, ok := submittedLabels[internal.EvidenceUUIDSeedLabel]; ok {
-		t.Fatalf("expected plugin-provided UUID seed label to be ignored, got %#v", submittedLabels)
-	}
-	if submittedLabels["_plugin"] != "plugin-a" {
-		t.Fatalf("expected plugin label to come from helper plugin name, got %#v", submittedLabels)
-	}
-	if submittedLabels["finding"] != "preserved" {
-		t.Fatalf("expected non-reserved evidence label to be preserved, got %#v", submittedLabels)
 	}
 }
 

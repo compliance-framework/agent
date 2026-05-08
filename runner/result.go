@@ -3,11 +3,9 @@ package runner
 import (
 	"context"
 
-	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/compliance-framework/api/sdk/types"
-	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -38,39 +36,15 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 		for k, v := range h.agentLabels {
 			labels[k] = v
 		}
-		if _, ok := labels["_plugin"]; !ok && h.pluginName != "" {
-			labels["_plugin"] = h.pluginName
-		}
 		for k, v := range evid.Labels {
-			if internal.IsReservedEvidenceLabel(k) {
-				continue
-			}
 			labels[k] = v
 		}
 		evid.Labels = labels
-		evidenceUUID, err := seededEvidenceUUID(labels, evid.UUID)
-		if err != nil {
-			return err
-		}
-		evid.UUID = evidenceUUID
 
 		labelled = append(labelled, *evid)
 	}
 
 	return h.client.Evidence.Create(ctx, labelled...)
-}
-
-func seededEvidenceUUID(labels map[string]string, originalUUID uuid.UUID) (uuid.UUID, error) {
-	if originalUUID == uuid.Nil {
-		return sdk.SeededUUID(labels)
-	}
-
-	seedLabels := make(map[string]string, len(labels)+1)
-	for key, value := range labels {
-		seedLabels[key] = value
-	}
-	seedLabels[internal.EvidenceUUIDSeedLabel] = originalUUID.String()
-	return sdk.SeededUUID(seedLabels)
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
