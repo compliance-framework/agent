@@ -322,3 +322,148 @@ description := "Evidence was generated without a title"
 		assert.Contains(t, err.Error(), "evidence title is required")
 	}
 }
+
+func TestPolicyManagerExecuteWithSkip(t *testing.T) {
+	ctx := context.Background()
+
+	// Test case 1: skip=true should set Skip field to true
+	regoContentsSkip := []byte(`package compliance_framework.skip_test
+
+import future.keywords.in
+
+title := "This should be skipped"
+description := "This evidence should not be produced"
+skip := true
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err := buildPolicyManager(regoContentsSkip).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.True(t, results[0].Skip, "Skip field should be true when policy sets skip=true")
+
+	// Test case 2: skip=false should set Skip field to false
+	regoContentsNoSkip := []byte(`package compliance_framework.no_skip_test
+
+import future.keywords.in
+
+title := "This should not be skipped"
+description := "This evidence should be produced"
+skip := false
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err = buildPolicyManager(regoContentsNoSkip).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.False(t, results[0].Skip, "Skip field should be false when policy sets skip=false")
+
+	// Test case 3: skip not set should default to false
+	regoContentsNoSkipField := []byte(`package compliance_framework.no_skip_field
+
+import future.keywords.in
+
+title := "This should not be skipped"
+description := "This evidence should be produced"
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err = buildPolicyManager(regoContentsNoSkipField).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.False(t, results[0].Skip, "Skip field should default to false when not set")
+}
+
+func TestPolicyProcessorSkipEvidence(t *testing.T) {
+	ctx := context.Background()
+
+	// Test case 1: skip=true should skip evidence production
+	policyDirSkip := t.TempDir()
+	regoContentsSkip := []byte(`package compliance_framework.skip_test
+
+import future.keywords.in
+
+title := "This should be skipped"
+description := "This evidence should not be produced"
+skip := true
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	err := os.WriteFile(filepath.Join(policyDirSkip, "skip_test.rego"), regoContentsSkip, 0o644)
+	assert.NoError(t, err)
+
+	processorSkip := NewPolicyProcessor(
+		hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		map[string]string{
+			"_plugin": "test-plugin",
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	evidences, err := processorSkip.GenerateResults(ctx, policyDirSkip, map[string]interface{}{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, evidences, "No evidence should be produced when skip=true")
+}
+
+func TestPolicyProcessorSkipEvidenceBypassesTitleValidation(t *testing.T) {
+	ctx := context.Background()
+	policyDir := t.TempDir()
+
+	// Test case: skip=true without title should not error
+	regoContentsSkipNoTitle := []byte(`package compliance_framework.skip_no_title
+
+description := "This should be skipped without title"
+skip := true
+`)
+
+	err := os.WriteFile(filepath.Join(policyDir, "skip_no_title.rego"), regoContentsSkipNoTitle, 0o644)
+	assert.NoError(t, err)
+
+	processor := NewPolicyProcessor(
+		hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		map[string]string{
+			"_plugin": "test-plugin",
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	evidences, err := processor.GenerateResults(ctx, policyDir, map[string]interface{}{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, evidences, "No evidence should be produced when skip=true, even without title")
+}

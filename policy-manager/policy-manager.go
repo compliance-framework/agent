@@ -21,6 +21,7 @@ type EvalOutput struct {
 	Title               *string            `mapstructure:"title,omitempty"`
 	Description         *string            `mapstructure:"description,omitempty"`
 	Remarks             *string            `mapstructure:"remarks,omitempty"`
+	Skip                bool               `mapstructure:"skip"`
 	Labels              *map[string]string `mapstructure:"labels,omitempty"`
 	Violations          []Violation
 	AdditionalVariables map[string]interface{}
@@ -200,6 +201,12 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		},
 	})
 	for _, result := range results {
+		// If skip is true, skip evidence production entirely
+		if result.Skip {
+			p.logger.Debug("Skipping evidence for policy", "policy_file", result.Policy.File, "policy_package", result.Policy.Package.PurePackage())
+			continue
+		}
+
 		// Observation UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
 		// This acts as an identifier to show the history of an observation.
 		evidence, err := p.newEvidence(result, activities)
@@ -225,7 +232,6 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			evidence.Title = *result.Title
 			evidence.Description = result.Description
 			evidence.Remarks = result.Remarks
-			evidences = append(evidences, evidence)
 			evidence.Status = &proto.EvidenceStatus{
 				Reason:  "fail",
 				Remarks: *FirstOf(result.Remarks, Pointer("")),
@@ -242,6 +248,8 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 				}
 			}
 			evidence.Props = props
+
+			evidences = append(evidences, evidence)
 		}
 	}
 
