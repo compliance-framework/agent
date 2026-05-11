@@ -322,3 +322,151 @@ description := "Evidence was generated without a title"
 		assert.Contains(t, err.Error(), "evidence title is required")
 	}
 }
+
+func TestPolicyManagerExecuteWithSkipReason(t *testing.T) {
+	ctx := context.Background()
+
+	// Test case 1: skip_reason set should set SkipReason field
+	regoContentsSkip := []byte(`package compliance_framework.skip_test
+
+import future.keywords.in
+
+title := "This should be skipped"
+description := "This evidence should not be produced"
+skip_reason := "Invalid payload structure"
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err := buildPolicyManager(regoContentsSkip).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.NotNil(t, results[0].SkipReason, "SkipReason field should be set when policy sets skip_reason")
+	assert.Equal(t, "Invalid payload structure", *results[0].SkipReason, "SkipReason should match policy value")
+
+	// Test case 2: skip_reason empty string should be treated as not set
+	regoContentsEmptySkip := []byte(`package compliance_framework.empty_skip_test
+
+import future.keywords.in
+
+title := "This should not be skipped"
+description := "This evidence should be produced"
+skip_reason := ""
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err = buildPolicyManager(regoContentsEmptySkip).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	// Empty string should be decoded as empty string, which will be treated as not set in GenerateResults
+	assert.NotNil(t, results[0].SkipReason, "SkipReason field should be set even when empty")
+	assert.Equal(t, "", *results[0].SkipReason, "SkipReason should be empty string")
+
+	// Test case 3: skip_reason not set should be nil
+	regoContentsNoSkipField := []byte(`package compliance_framework.no_skip_field
+
+import future.keywords.in
+
+title := "This should not be skipped"
+description := "This evidence should be produced"
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	results, err = buildPolicyManager(regoContentsNoSkipField).Execute(ctx, map[string]interface{}{})
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Nil(t, results[0].SkipReason, "SkipReason field should be nil when not set")
+}
+
+func TestPolicyProcessorSkipEvidence(t *testing.T) {
+	ctx := context.Background()
+
+	// Test case 1: skip_reason set should skip evidence production
+	policyDirSkip := t.TempDir()
+	regoContentsSkip := []byte(`package compliance_framework.skip_test
+
+import future.keywords.in
+
+title := "This should be skipped"
+description := "This evidence should not be produced"
+skip_reason := "Invalid payload structure"
+
+violation[{
+    "title": "Test violation",
+}] if {
+	false
+}
+`)
+
+	err := os.WriteFile(filepath.Join(policyDirSkip, "skip_test.rego"), regoContentsSkip, 0o644)
+	assert.NoError(t, err)
+
+	processorSkip := NewPolicyProcessor(
+		hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		map[string]string{
+			"_plugin": "test-plugin",
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	evidences, err := processorSkip.GenerateResults(ctx, policyDirSkip, map[string]interface{}{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, evidences, "No evidence should be produced when skip_reason is set")
+}
+
+func TestPolicyProcessorSkipEvidenceBypassesTitleValidation(t *testing.T) {
+	ctx := context.Background()
+	policyDir := t.TempDir()
+
+	// Test case: skip_reason set without title should not error
+	regoContentsSkipNoTitle := []byte(`package compliance_framework.skip_no_title
+
+description := "This should be skipped without title"
+skip_reason := "Invalid payload - missing required field"
+`)
+
+	err := os.WriteFile(filepath.Join(policyDir, "skip_no_title.rego"), regoContentsSkipNoTitle, 0o644)
+	assert.NoError(t, err)
+
+	processor := NewPolicyProcessor(
+		hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}),
+		map[string]string{
+			"_plugin": "test-plugin",
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	evidences, err := processor.GenerateResults(ctx, policyDir, map[string]interface{}{})
+
+	assert.NoError(t, err)
+	assert.Empty(t, evidences, "No evidence should be produced when skip_reason is set, even without title")
+}
