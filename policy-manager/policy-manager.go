@@ -21,7 +21,7 @@ type EvalOutput struct {
 	Title               *string            `mapstructure:"title,omitempty"`
 	Description         *string            `mapstructure:"description,omitempty"`
 	Remarks             *string            `mapstructure:"remarks,omitempty"`
-	Skip                bool               `mapstructure:"skip"`
+	SkipReason          *string            `mapstructure:"skip_reason,omitempty"`
 	Labels              *map[string]string `mapstructure:"labels,omitempty"`
 	Violations          []Violation
 	AdditionalVariables map[string]interface{}
@@ -201,9 +201,9 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		},
 	})
 	for _, result := range results {
-		// If skip is true, skip evidence production entirely
-		if result.Skip {
-			p.logger.Debug("Skipping evidence for policy", "policy_file", result.Policy.File, "policy_package", result.Policy.Package.PurePackage())
+		// If skip_reason is set and non-empty, skip evidence production entirely
+		if result.SkipReason != nil && *result.SkipReason != "" {
+			p.logger.Debug("Skipping evidence for policy", "policy_file", result.Policy.File, "policy_package", result.Policy.Package.PurePackage(), "skip_reason", *result.SkipReason)
 			continue
 		}
 
