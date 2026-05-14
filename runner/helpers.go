@@ -26,7 +26,7 @@ func InitWithSubjectsAndRisksFromPolicies(
 	}
 
 	for _, path := range req.PolicyPaths {
-		pm := policyManager.New(ctx, logger, path)
+		pm := policyManager.New(ctx, logger, path, nil)
 		temps, err := pm.GetRiskTemplates(ctx)
 		if err != nil {
 			logger.Error("Error getting risk templates for policy path", "path", path, "error", err)

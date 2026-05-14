@@ -14,6 +14,8 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/rego"
+	"github.com/open-policy-agent/opa/v1/storage"
+	"github.com/open-policy-agent/opa/v1/storage/inmem"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,29 +32,105 @@ type EvalOutput struct {
 type PolicyManager struct {
 	logger        hclog.Logger
 	loaderOptions []func(r *rego.Rego)
+	policyData    map[string]interface{}
 }
 
-func New(ctx context.Context, logger hclog.Logger, policyPath string) *PolicyManager {
+func New(ctx context.Context, logger hclog.Logger, policyPath string, policyData map[string]interface{}) *PolicyManager {
 	return &PolicyManager{
-		logger: logger,
-		loaderOptions: []func(r *rego.Rego){
-			rego.LoadBundle(policyPath),
-		},
+		logger:        logger,
+		policyData:    policyData,
+		loaderOptions: []func(r *rego.Rego){rego.LoadBundle(policyPath)},
 	}
+}
+
+func (pm *PolicyManager) prepareForEval(ctx context.Context, regoArgs ...func(r *rego.Rego)) (rego.PreparedEvalQuery, error) {
+	store := inmem.New()
+	txn, err := store.NewTransaction(ctx, storage.TransactionParams{Write: true})
+	if err != nil {
+		return rego.PreparedEvalQuery{}, err
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			store.Abort(ctx, txn)
+		}
+	}()
+
+	args := make([]func(r *rego.Rego), 0, len(regoArgs)+len(pm.loaderOptions)+2)
+	args = append(args,
+		rego.Store(store),
+		rego.Transaction(txn),
+	)
+	args = append(args, regoArgs...)
+	args = append(args, pm.loaderOptions...)
+
+	query, err := rego.New(args...).PrepareForEval(ctx)
+	if err != nil {
+		return rego.PreparedEvalQuery{}, err
+	}
+
+	if err := writePolicyData(ctx, store, txn, pm.policyData); err != nil {
+		return rego.PreparedEvalQuery{}, err
+	}
+
+	if err := store.Commit(ctx, txn); err != nil {
+		return rego.PreparedEvalQuery{}, err
+	}
+	committed = true
+
+	return query, nil
+}
+
+func writePolicyData(ctx context.Context, store storage.Store, txn storage.Transaction, data map[string]interface{}) error {
+	for key, value := range data {
+		if err := writePolicyDataValue(ctx, store, txn, storage.Path{key}, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writePolicyDataValue(ctx context.Context, store storage.Store, txn storage.Transaction, path storage.Path, value interface{}) error {
+	valueMap, valueIsMap := value.(map[string]interface{})
+	if valueIsMap {
+		existing, err := store.Read(ctx, txn, path)
+		if err == nil {
+			if _, ok := existing.(map[string]interface{}); ok {
+				for key, nestedValue := range valueMap {
+					nestedPath := append(append(storage.Path{}, path...), key)
+					if err := writePolicyDataValue(ctx, store, txn, nestedPath, nestedValue); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		} else if !storage.IsNotFound(err) {
+			return err
+		}
+	}
+
+	op := storage.AddOp
+	if _, err := store.Read(ctx, txn, path); err == nil {
+		op = storage.ReplaceOp
+	} else if !storage.IsNotFound(err) {
+		return err
+	}
+
+	if err := store.Write(ctx, txn, op, path, value); err != nil {
+		return fmt.Errorf("write policy data at %q: %w", path.String(), err)
+	}
+	return nil
 }
 
 func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Result, error) {
 	var output []Result
 
 	pm.logger.Trace("Executing policy", "input", input)
-	regoArgs := []func(r *rego.Rego){
+	query, err := pm.prepareForEval(ctx,
 		rego.Query("data.compliance_framework"),
 		rego.Package("compliance_framework"),
-	}
-	regoArgs = append(regoArgs, pm.loaderOptions...)
-	r := rego.New(regoArgs...)
-
-	query, err := r.PrepareForEval(ctx)
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -71,14 +149,14 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 			},
 		}
 
-		regoArgs := []func(r *rego.Rego){
+		subQuery, err := pm.prepareForEval(ctx,
 			rego.Query(module.Package.Path.String()),
 			rego.Package(module.Package.Path.String()),
 			rego.Input(input),
+		)
+		if err != nil {
+			return nil, err
 		}
-		regoArgs = append(regoArgs, pm.loaderOptions...)
-
-		subQuery := rego.New(regoArgs...)
 
 		evaluation, err := subQuery.Eval(ctx)
 		if err != nil {
@@ -141,6 +219,7 @@ type PolicyProcessor struct {
 	inventoryItems []*proto.InventoryItem
 	actors         []*proto.OriginActor
 	activities     []*proto.Activity
+	policyData     map[string]interface{}
 }
 
 func NewPolicyProcessor(
@@ -151,6 +230,7 @@ func NewPolicyProcessor(
 	inventoryItems []*proto.InventoryItem,
 	actors []*proto.OriginActor,
 	activities []*proto.Activity,
+	policyData map[string]interface{},
 ) *PolicyProcessor {
 	return &PolicyProcessor{
 		logger:         logger,
@@ -160,6 +240,7 @@ func NewPolicyProcessor(
 		inventoryItems: inventoryItems,
 		actors:         actors,
 		activities:     activities,
+		policyData:     policyData,
 	}
 }
 
@@ -183,7 +264,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			},
 		},
 	})
-	results, err := New(ctx, p.logger, policyPath).Execute(ctx, data)
+	results, err := New(ctx, p.logger, policyPath, p.policyData).Execute(ctx, data)
 	if err != nil {
 		p.logger.Error("Failed to evaluate against policy bundle", "error", err)
 		resultErr = errors.Join(resultErr, err)
@@ -304,14 +385,10 @@ func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activit
 }
 
 func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*proto.RiskTemplate, error) {
-	regoArgs := []func(r *rego.Rego){
+	query, err := pm.prepareForEval(ctx,
 		rego.Query("data.compliance_framework"),
 		rego.Package("compliance_framework"),
-	}
-	regoArgs = append(regoArgs, pm.loaderOptions...)
-	r := rego.New(regoArgs...)
-
-	query, err := r.PrepareForEval(ctx)
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -366,12 +443,14 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*pr
 }
 
 func (pm *PolicyManager) evaluateRiskTemplates(ctx context.Context, policy Policy) ([]interface{}, error) {
-	regoArgs := []func(r *rego.Rego){
+	query, err := pm.prepareForEval(ctx,
 		rego.Query(fmt.Sprintf("%s.risk_templates", policy.Package)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prepare %q in %s: %w", "risk_templates", policy.File, err)
 	}
-	regoArgs = append(regoArgs, pm.loaderOptions...)
 
-	evaluation, err := rego.New(regoArgs...).Eval(ctx)
+	evaluation, err := query.Eval(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate %q in %s: %w", "risk_templates", policy.File, err)
 	}

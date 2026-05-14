@@ -9,6 +9,7 @@ package proto
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -70,6 +71,7 @@ func (ExecutionStatus) EnumDescriptor() ([]byte, []int) {
 type ConfigureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Config        map[string]string      `protobuf:"bytes,1,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	PolicyData    *structpb.Struct       `protobuf:"bytes,2,opt,name=policy_data,json=policyData,proto3" json:"policy_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -107,6 +109,13 @@ func (*ConfigureRequest) Descriptor() ([]byte, []int) {
 func (x *ConfigureRequest) GetConfig() map[string]string {
 	if x != nil {
 		return x.Config
+	}
+	return nil
+}
+
+func (x *ConfigureRequest) GetPolicyData() *structpb.Struct {
+	if x != nil {
+		return x.PolicyData
 	}
 	return nil
 }
@@ -347,9 +356,11 @@ var File_runner_proto_runner_proto protoreflect.FileDescriptor
 
 const file_runner_proto_runner_proto_rawDesc = "" +
 	"\n" +
-	"\x19runner/proto/runner.proto\x12\x05proto\"\x8a\x01\n" +
+	"\x19runner/proto/runner.proto\x12\x05proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc4\x01\n" +
 	"\x10ConfigureRequest\x12;\n" +
-	"\x06config\x18\x01 \x03(\v2#.proto.ConfigureRequest.ConfigEntryR\x06config\x1a9\n" +
+	"\x06config\x18\x01 \x03(\v2#.proto.ConfigureRequest.ConfigEntryR\x06config\x128\n" +
+	"\vpolicy_data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"policyData\x1a9\n" +
 	"\vConfigEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\")\n" +
@@ -395,21 +406,23 @@ var file_runner_proto_runner_proto_goTypes = []any{
 	(*EvalRequest)(nil),       // 5: proto.EvalRequest
 	(*EvalResponse)(nil),      // 6: proto.EvalResponse
 	nil,                       // 7: proto.ConfigureRequest.ConfigEntry
+	(*structpb.Struct)(nil),   // 8: google.protobuf.Struct
 }
 var file_runner_proto_runner_proto_depIdxs = []int32{
 	7, // 0: proto.ConfigureRequest.config:type_name -> proto.ConfigureRequest.ConfigEntry
-	0, // 1: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
-	1, // 2: proto.Runner.Configure:input_type -> proto.ConfigureRequest
-	5, // 3: proto.Runner.Eval:input_type -> proto.EvalRequest
-	3, // 4: proto.Runner.Init:input_type -> proto.InitRequest
-	2, // 5: proto.Runner.Configure:output_type -> proto.ConfigureResponse
-	6, // 6: proto.Runner.Eval:output_type -> proto.EvalResponse
-	4, // 7: proto.Runner.Init:output_type -> proto.InitResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	8, // 1: proto.ConfigureRequest.policy_data:type_name -> google.protobuf.Struct
+	0, // 2: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
+	1, // 3: proto.Runner.Configure:input_type -> proto.ConfigureRequest
+	5, // 4: proto.Runner.Eval:input_type -> proto.EvalRequest
+	3, // 5: proto.Runner.Init:input_type -> proto.InitRequest
+	2, // 6: proto.Runner.Configure:output_type -> proto.ConfigureResponse
+	6, // 7: proto.Runner.Eval:output_type -> proto.EvalResponse
+	4, // 8: proto.Runner.Init:output_type -> proto.InitResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_runner_proto_init() }

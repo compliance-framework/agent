@@ -52,7 +52,7 @@ func TestPolicyManager(t *testing.T) {
 		policyManager := New(ctx, hclog.New(&hclog.LoggerOptions{
 			Level:      hclog.Debug,
 			JSONFormat: true,
-		}), "testdata/001/")
+		}), "testdata/001/", nil)
 
 		results, err := policyManager.Execute(ctx, data)
 
@@ -85,6 +85,49 @@ func TestPolicyManager(t *testing.T) {
 			Description: Pointer("You have been violated."),
 			Remarks:     Pointer("Migrate to not being violated"),
 		}, result.Violations[0])
+	})
+
+	t.Run("Policy Manager injects dynamic policy data as OPA data", func(t *testing.T) {
+		ctx := context.Background()
+		policyDir := t.TempDir()
+		regoContents := []byte(`package compliance_framework.dynamic_policy_data
+
+title := "Wget version is safe"
+description := sprintf("Minimum wget version is %s", [data.allowed_versions.wget])
+
+violation[{
+	"id": "wget_version",
+	"remarks": sprintf("Required wget version is %s", [data.allowed_versions.wget]),
+}] if {
+	input.wget != data.allowed_versions.wget
+}
+`)
+
+		err := os.WriteFile(filepath.Join(policyDir, "dynamic_policy_data.rego"), regoContents, 0o644)
+		assert.NoError(t, err)
+
+		policyManager := New(ctx, hclog.New(&hclog.LoggerOptions{
+			Level:      hclog.Debug,
+			JSONFormat: true,
+		}), policyDir, map[string]interface{}{
+			"allowed_versions": map[string]interface{}{
+				"wget": "1.20.3",
+			},
+		})
+
+		results, err := policyManager.Execute(ctx, map[string]interface{}{
+			"wget": "1.19.0",
+		})
+
+		assert.NoError(t, err)
+		if assert.Len(t, results, 1) {
+			result := results[0]
+			assert.Equal(t, Pointer("Minimum wget version is 1.20.3"), result.Description)
+			if assert.Len(t, result.Violations, 1) {
+				assert.Equal(t, Pointer("wget_version"), result.Violations[0].ID)
+				assert.Equal(t, Pointer("Required wget version is 1.20.3"), result.Violations[0].Remarks)
+			}
+		}
 	})
 
 	// Removed as we are unmarshalling a map, and any extra keys will just be ignored
@@ -313,6 +356,7 @@ description := "Evidence was generated without a title"
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	evidences, err := processor.GenerateResults(ctx, policyDir, map[string]interface{}{})
@@ -428,6 +472,7 @@ violation[{
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	evidences, err := processorSkip.GenerateResults(ctx, policyDirSkip, map[string]interface{}{})
@@ -458,6 +503,7 @@ skip_reason := "Invalid payload - missing required field"
 		map[string]string{
 			"_plugin": "test-plugin",
 		},
+		nil,
 		nil,
 		nil,
 		nil,

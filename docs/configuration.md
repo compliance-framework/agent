@@ -29,6 +29,9 @@ plugins:
       <config1>: <value1>
       <config2>: <value2>
       ...
+    policy_data:  # Optional dynamic data for policies
+      <key>: <value>
+      ...
 
 agent_evidence:
   enabled: true
@@ -52,6 +55,12 @@ The `policies` field is a list of paths to the policy files that the plugin will
 
 The `config` field is a map of configuration values that the plugin will use to connect to the data source. The values
 will be passed to the plugin when it is run.
+
+The `policy_data` field is an optional map of dynamic data that will be passed to the plugin's policy manager. This data
+can be of any shape and is made available to OPA/Rego policies during evaluation. This allows you to provide runtime
+configuration to policies without modifying the policy files themselves.
+
+Usage: ```satisfied if input.value == data.allowed_value```
 
 You can specify as many plugins as you wish, as long as each identifier is unique. You can even reuse the same plugin
 multiple times with different configurations.
