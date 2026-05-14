@@ -396,6 +396,19 @@ func initRunner(name string, protocolVersion int32, runnerInstance runner.Runner
 	return err
 }
 
+func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPluginConfig, policyData map[string]interface{}) error {
+	policyDataStruct, err := mapToStruct(policyData)
+	if err != nil {
+		return fmt.Errorf("invalid policy_data for plugin %s: %w", name, err)
+	}
+
+	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
+		Config:     config,
+		PolicyData: policyDataStruct,
+	})
+	return err
+}
+
 func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
 	err := v.ReadInConfig()
 	if err != nil {
@@ -1360,12 +1373,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		if err := func() error {
 			defer cleanupRunner()
 
-			policyDataStruct, _ := mapToStruct(pluginConfig.PolicyData)
-			_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-				Config:     pluginConfig.Config,
-				PolicyData: policyDataStruct,
-			})
-			if err != nil {
+			if err := configureRunner(pluginName, runnerInstance, pluginConfig.Config, pluginConfig.PolicyData); err != nil {
 				// What do we do here ?
 				//endTimer := time.Now()
 				//_, err = client.Results.Create(&sdk.Result{
@@ -1511,12 +1519,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 	defer cleanupRunner()
 
-	policyDataStruct, _ := mapToStruct(plugin.PolicyData)
-	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-		Config:     plugin.Config,
-		PolicyData: policyDataStruct,
-	})
-	if err != nil {
+	if err := configureRunner(name, runnerInstance, plugin.Config, plugin.PolicyData); err != nil {
 		return err
 	}
 

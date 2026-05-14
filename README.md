@@ -52,7 +52,7 @@ plugins:
     policies:
       - <policy>
       - <policy>
-    policy_data: # Optional: Mapping for supported policies. Can be any data struct
+    policy_data: # Optional: Mapping for supported policies. Can be any data structure
       <data key>: <data value>
     config:
       <config1>: <value>

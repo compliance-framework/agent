@@ -79,6 +79,9 @@ func (pm *PolicyManager) prepareForEval(ctx context.Context, regoArgs ...func(r 
 	}
 	committed = true
 
+	// PreparedEvalQuery.Eval opens a fresh read transaction unless an
+	// EvalTransaction is provided, so committing this write transaction makes the
+	// loaded bundle and injected policy data visible to later evaluations.
 	return query, nil
 }
 

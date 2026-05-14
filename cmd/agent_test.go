@@ -27,7 +27,10 @@ import (
 )
 
 type initTestRunner struct {
-	initErr error
+	configureCalls   int
+	configureErr     error
+	configureRequest *proto.ConfigureRequest
+	initErr          error
 }
 
 type emptyError struct{}
@@ -37,7 +40,9 @@ func (e emptyError) Error() string {
 }
 
 func (r *initTestRunner) Configure(request *proto.ConfigureRequest) (*proto.ConfigureResponse, error) {
-	return &proto.ConfigureResponse{}, nil
+	r.configureCalls++
+	r.configureRequest = request
+	return &proto.ConfigureResponse{}, r.configureErr
 }
 
 func (r *initTestRunner) Eval(request *proto.EvalRequest, a runner.ApiHelper) (*proto.EvalResponse, error) {
@@ -978,6 +983,53 @@ func TestInitRunner(t *testing.T) {
 		)
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("initRunner() error = %v, expected %v", err, expectedErr)
+		}
+	})
+}
+
+func TestConfigureRunner(t *testing.T) {
+	t.Run("passes config and policy data to runner", func(t *testing.T) {
+		testRunner := &initTestRunner{}
+
+		err := configureRunner(
+			"test-plugin",
+			testRunner,
+			agentPluginConfig{"endpoint": "localhost"},
+			map[string]interface{}{"allowed_versions": map[string]interface{}{"wget": "1.20.3"}},
+		)
+		if err != nil {
+			t.Fatalf("configureRunner() error = %v, expected nil", err)
+		}
+
+		if testRunner.configureCalls != 1 {
+			t.Fatalf("Configure called %d times, expected 1", testRunner.configureCalls)
+		}
+		if got := testRunner.configureRequest.Config["endpoint"]; got != "localhost" {
+			t.Fatalf("Configure config endpoint = %q, expected %q", got, "localhost")
+		}
+		allowedVersions := testRunner.configureRequest.PolicyData.Fields["allowed_versions"].GetStructValue()
+		if got := allowedVersions.Fields["wget"].GetStringValue(); got != "1.20.3" {
+			t.Fatalf("Configure policy_data allowed_versions.wget = %q, expected %q", got, "1.20.3")
+		}
+	})
+
+	t.Run("rejects unsupported policy data before configuring runner", func(t *testing.T) {
+		testRunner := &initTestRunner{}
+
+		err := configureRunner(
+			"test-plugin",
+			testRunner,
+			nil,
+			map[string]interface{}{"unsupported": make(chan int)},
+		)
+		if err == nil {
+			t.Fatal("configureRunner() error = nil, expected invalid policy_data error")
+		}
+		if !strings.Contains(err.Error(), "invalid policy_data for plugin test-plugin") {
+			t.Fatalf("configureRunner() error = %q, expected plugin policy_data context", err.Error())
+		}
+		if testRunner.configureCalls != 0 {
+			t.Fatalf("Configure called %d times, expected 0", testRunner.configureCalls)
 		}
 	})
 }

@@ -60,7 +60,7 @@ The `policy_data` field is an optional map of dynamic data that will be passed t
 can be of any shape and is made available to OPA/Rego policies during evaluation. This allows you to provide runtime
 configuration to policies without modifying the policy files themselves.
 
-Usage: ```satisfied if input.value == data.allowed_value```
+Usage: `satisfied if input.value == data.allowed_value`
 
 You can specify as many plugins as you wish, as long as each identifier is unique. You can even reuse the same plugin
 multiple times with different configurations.
