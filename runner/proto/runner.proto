@@ -3,6 +3,8 @@ package proto;
 
 option go_package = "./proto";
 
+import "google/protobuf/struct.proto";
+
 enum ExecutionStatus {
   SUCCESS = 0;
   FAILURE = 1;
@@ -10,6 +12,7 @@ enum ExecutionStatus {
 
 message ConfigureRequest {
   map<string, string> config = 1;
+  google.protobuf.Struct policy_data = 2;
 }
 
 message ConfigureResponse {

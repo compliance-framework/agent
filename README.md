@@ -44,6 +44,7 @@ api:
 
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
+    protocol_version: 2 # Optional: Defaults to 1 for backwards compatibility
     source: <plugin_source>
     labels:
       type: plugin-check
@@ -51,6 +52,8 @@ plugins:
     policies:
       - <policy>
       - <policy>
+    policy_data: # Optional: Mapping for supported policies. Can be any data structure
+      <data key>: <data value>
     config:
       <config1>: <value>
       <config2>: <value>

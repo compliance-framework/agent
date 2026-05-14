@@ -43,6 +43,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type apiAuthConfig struct {
@@ -60,12 +61,13 @@ type agentPolicy string
 type agentPluginConfig map[string]string
 
 type agentPlugin struct {
-	ProtocolVersion int32             `mapstructure:"protocol_version"`
-	Schedule        *string           `mapstructure:"schedule,omitempty"`
-	Source          string            `mapstructure:"source"`
-	Policies        []agentPolicy     `mapstructure:"policies"`
-	Config          agentPluginConfig `mapstructure:"config"`
-	Labels          map[string]string `mapstructure:"labels"`
+	ProtocolVersion int32                  `mapstructure:"protocol_version"`
+	Schedule        *string                `mapstructure:"schedule,omitempty"`
+	Source          string                 `mapstructure:"source"`
+	Policies        []agentPolicy          `mapstructure:"policies"`
+	Config          agentPluginConfig      `mapstructure:"config"`
+	Labels          map[string]string      `mapstructure:"labels"`
+	PolicyData      map[string]interface{} `mapstructure:"policy_data,omitempty"`
 	protocolSet     bool
 }
 
@@ -391,6 +393,19 @@ func initRunner(name string, protocolVersion int32, runnerInstance runner.Runner
 		return fmt.Errorf("plugin %s configured as protocol_version=%d but does not implement Init", name, protocolVersion)
 	}
 
+	return err
+}
+
+func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPluginConfig, policyData map[string]interface{}) error {
+	policyDataStruct, err := mapToStruct(policyData)
+	if err != nil {
+		return fmt.Errorf("invalid policy_data for plugin %s: %w", name, err)
+	}
+
+	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
+		Config:     config,
+		PolicyData: policyDataStruct,
+	})
 	return err
 }
 
@@ -946,6 +961,13 @@ func copyStringMap(input map[string]string) map[string]string {
 	return output
 }
 
+func mapToStruct(m map[string]interface{}) (*structpb.Struct, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return structpb.NewStruct(m)
+}
+
 func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *agentPlugin) map[string]string {
 	return pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, agentConfigurationHash(config))
 }
@@ -1351,10 +1373,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		if err := func() error {
 			defer cleanupRunner()
 
-			_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-				Config: pluginConfig.Config,
-			})
-			if err != nil {
+			if err := configureRunner(pluginName, runnerInstance, pluginConfig.Config, pluginConfig.PolicyData); err != nil {
 				// What do we do here ?
 				//endTimer := time.Now()
 				//_, err = client.Results.Create(&sdk.Result{
@@ -1500,10 +1519,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 	defer cleanupRunner()
 
-	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-		Config: plugin.Config,
-	})
-	if err != nil {
+	if err := configureRunner(name, runnerInstance, plugin.Config, plugin.PolicyData); err != nil {
 		return err
 	}
 
