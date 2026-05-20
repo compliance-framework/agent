@@ -253,11 +253,12 @@ func (*InitResponse) Descriptor() ([]byte, []int) {
 }
 
 type EvalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PolicyPaths   []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
-	ApiServer     uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	PolicyPaths           []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
+	ApiServer             uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
+	PolicyBehaviorMapping *structpb.Struct       `protobuf:"bytes,3,opt,name=policy_behavior_mapping,json=policyBehaviorMapping,proto3" json:"policy_behavior_mapping,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *EvalRequest) Reset() {
@@ -302,6 +303,13 @@ func (x *EvalRequest) GetApiServer() uint32 {
 		return x.ApiServer
 	}
 	return 0
+}
+
+func (x *EvalRequest) GetPolicyBehaviorMapping() *structpb.Struct {
+	if x != nil {
+		return x.PolicyBehaviorMapping
+	}
+	return nil
 }
 
 // *
@@ -369,10 +377,11 @@ const file_runner_proto_runner_proto_rawDesc = "" +
 	"\vInitRequest\x12 \n" +
 	"\vpolicyPaths\x18\x01 \x03(\tR\vpolicyPaths\x12\x1c\n" +
 	"\tapiServer\x18\x02 \x01(\rR\tapiServer\"\x0e\n" +
-	"\fInitResponse\"M\n" +
+	"\fInitResponse\"\x9e\x01\n" +
 	"\vEvalRequest\x12 \n" +
 	"\vpolicyPaths\x18\x01 \x03(\tR\vpolicyPaths\x12\x1c\n" +
-	"\tapiServer\x18\x02 \x01(\rR\tapiServer\">\n" +
+	"\tapiServer\x18\x02 \x01(\rR\tapiServer\x12O\n" +
+	"\x17policy_behavior_mapping\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x15policyBehaviorMapping\">\n" +
 	"\fEvalResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x16.proto.ExecutionStatusR\x06status*+\n" +
 	"\x0fExecutionStatus\x12\v\n" +
@@ -411,18 +420,19 @@ var file_runner_proto_runner_proto_goTypes = []any{
 var file_runner_proto_runner_proto_depIdxs = []int32{
 	7, // 0: proto.ConfigureRequest.config:type_name -> proto.ConfigureRequest.ConfigEntry
 	8, // 1: proto.ConfigureRequest.policy_data:type_name -> google.protobuf.Struct
-	0, // 2: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
-	1, // 3: proto.Runner.Configure:input_type -> proto.ConfigureRequest
-	5, // 4: proto.Runner.Eval:input_type -> proto.EvalRequest
-	3, // 5: proto.Runner.Init:input_type -> proto.InitRequest
-	2, // 6: proto.Runner.Configure:output_type -> proto.ConfigureResponse
-	6, // 7: proto.Runner.Eval:output_type -> proto.EvalResponse
-	4, // 8: proto.Runner.Init:output_type -> proto.InitResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8, // 2: proto.EvalRequest.policy_behavior_mapping:type_name -> google.protobuf.Struct
+	0, // 3: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
+	1, // 4: proto.Runner.Configure:input_type -> proto.ConfigureRequest
+	5, // 5: proto.Runner.Eval:input_type -> proto.EvalRequest
+	3, // 6: proto.Runner.Init:input_type -> proto.InitRequest
+	2, // 7: proto.Runner.Configure:output_type -> proto.ConfigureResponse
+	6, // 8: proto.Runner.Eval:output_type -> proto.EvalResponse
+	4, // 9: proto.Runner.Init:output_type -> proto.InitResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_runner_proto_init() }

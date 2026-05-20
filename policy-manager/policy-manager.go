@@ -531,3 +531,37 @@ func newProtoRiskTemplate(policy Policy, temp *RiskTemplate) (*proto.RiskTemplat
 		LabelSchema:     labelSchema,
 	}, nil
 }
+
+// GetPoliciesFor filters policy paths based on a behavior mapping.
+// Returns only paths that are mapped to the specified behavior.
+// If the behavior is not found in the mapping, returns an empty list.
+// If the mapping is nil or empty and behavior is not specified, returns all paths (no filtering).
+// If the mapping is nil or empty but behavior is specified, returns empty list (policy_behavior provided but no matches).
+func GetPoliciesFor(behavior string, policyPaths []string, policyBehaviorMapping map[string][]string) []string {
+	if policyBehaviorMapping == nil {
+		return policyPaths
+	}
+
+	if len(policyBehaviorMapping) == 0 {
+		// If mapping is empty and behavior is specified, return empty list
+		// This prevents false negatives when policy_behavior keys don't match
+		if behavior != "" {
+			return []string{}
+		}
+		// If mapping is empty and behavior is not specified, return all paths (backwards compatible)
+		return policyPaths
+	}
+
+	filtered := make([]string, 0, len(policyPaths))
+	for _, path := range policyPaths {
+		if mappedBehaviors, exists := policyBehaviorMapping[path]; exists {
+			for _, mappedBehavior := range mappedBehaviors {
+				if mappedBehavior == behavior {
+					filtered = append(filtered, path)
+					break
+				}
+			}
+		}
+	}
+	return filtered
+}

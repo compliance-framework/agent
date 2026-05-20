@@ -25,6 +25,10 @@ plugins:
       - <policy1>
       - <policy2>
       ...
+    policy_behavior:  # Optional mapping of policy sources to behavior types
+      <policy1>: <behavior1>
+      <policy2>: <behavior2>
+      ...
     config:
       <config1>: <value1>
       <config2>: <value2>
@@ -59,6 +63,17 @@ will be passed to the plugin when it is run.
 The `policy_data` field is an optional map of dynamic data that will be passed to the plugin's policy manager. This data
 can be of any shape and is made available to OPA/Rego policies during evaluation. This allows you to provide runtime
 configuration to policies without modifying the policy files themselves.
+
+The `policy_behavior` field is an optional mapping of policy substrings to behavior types. This allows plugins that evaluate
+multiple resource types to filter policies per resource type, preventing policies from evaluating incompatible data. For
+example, a plugin that evaluates both VPCs and Security Groups can use this mapping to ensure VPC policies only evaluate
+VPC data and Security Group policies only evaluate Security Group data. The mapping keys must be substrings that match
+the policy paths from the `policies` list. For example, if a policy is specified as
+`/path/to/plugin-aws-networking-security-policies/dist/bundle.tar.gz`, you can use `plugin-aws-networking-security-policies`
+as the key. The agent uses substring matching to find the corresponding policy. This approach provides flexibility while
+ensuring uniqueness. If a key does not match any policy path, a warning is logged and that key is ignored. Plugins that
+support this feature will use the `policyManager.GetPoliciesFor()` helper to filter policies during evaluation. If this
+field is not set, all policies are passed to the plugin (backwards compatible).
 
 Usage: `satisfied if input.value == data.allowed_value`
 

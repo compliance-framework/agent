@@ -26,6 +26,174 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func TestFindMatchingPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		substring string
+		policies  []agentPolicy
+		want      agentPolicy
+		found     bool
+	}{
+		{
+			name:      "matching substring found",
+			substring: "plugin-aws-networking-security-policies",
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+				"/home/user/other-policies/dist/bundle.tar",
+			},
+			want:  "/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			found: true,
+		},
+		{
+			name:      "no matching substring",
+			substring: "non-existent",
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			},
+			want:  "",
+			found: false,
+		},
+		{
+			name:      "empty policies list",
+			substring: "plugin",
+			policies:  []agentPolicy{},
+			want:      "",
+			found:     false,
+		},
+		{
+			name:      "substring matches multiple policies (returns first)",
+			substring: "policies",
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+				"/home/user/other-policies/dist/bundle.tar",
+			},
+			want:  "/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			found: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, found := findMatchingPolicy(tt.substring, tt.policies)
+			if found != tt.found {
+				t.Errorf("findMatchingPolicy() found = %v, want %v", found, tt.found)
+			}
+			if got != tt.want {
+				t.Errorf("findMatchingPolicy() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildBehaviorMapping(t *testing.T) {
+	tests := []struct {
+		name            string
+		policyBehavior  map[string][]string
+		policyLocations map[string]string
+		policies        []agentPolicy
+		wantMapping     map[string][]string
+		wantUnmatched   []string
+	}{
+		{
+			name: "successful mapping",
+			policyBehavior: map[string][]string{
+				"plugin-aws-networking-security-policies": {"security-group"},
+			},
+			policyLocations: map[string]string{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz": "/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			},
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			},
+			wantMapping: map[string][]string{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz": {"security-group"},
+			},
+			wantUnmatched: []string{},
+		},
+		{
+			name: "multiple policies with multiple behaviors",
+			policyBehavior: map[string][]string{
+				"plugin-aws-networking-security-policies": {"security-group", "vpc"},
+				"plugin-aws-vpc-policies":                 {"vpc"},
+			},
+			policyLocations: map[string]string{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz": "/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+				"/home/user/plugin-aws-vpc-policies/dist/bundle.tar":                    "/home/user/plugin-aws-vpc-policies/dist/bundle.tar",
+			},
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+				"/home/user/plugin-aws-vpc-policies/dist/bundle.tar",
+			},
+			wantMapping: map[string][]string{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz": {"security-group", "vpc"},
+				"/home/user/plugin-aws-vpc-policies/dist/bundle.tar":                    {"vpc"},
+			},
+			wantUnmatched: []string{},
+		},
+		{
+			name: "policy not found in locations",
+			policyBehavior: map[string][]string{
+				"plugin-aws-networking-security-policies": {"security-group"},
+			},
+			policyLocations: map[string]string{},
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			},
+			wantMapping:   map[string][]string{},
+			wantUnmatched: []string{},
+		},
+		{
+			name: "policy key not found in policies",
+			policyBehavior: map[string][]string{
+				"non-existent-policy": {"some-behavior"},
+			},
+			policyLocations: map[string]string{},
+			policies: []agentPolicy{
+				"/home/user/plugin-aws-networking-security-policies/dist/bundle.tar.gz",
+			},
+			wantMapping:   map[string][]string{},
+			wantUnmatched: []string{"non-existent-policy"},
+		},
+		{
+			name:            "empty policy behavior",
+			policyBehavior:  map[string][]string{},
+			policyLocations: map[string]string{},
+			policies:        []agentPolicy{},
+			wantMapping:     map[string][]string{},
+			wantUnmatched:   []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMapping, gotUnmatched := buildBehaviorMapping(tt.policyBehavior, tt.policyLocations, tt.policies)
+			if len(gotMapping) != len(tt.wantMapping) {
+				t.Errorf("buildBehaviorMapping() mapping length = %d, want %d", len(gotMapping), len(tt.wantMapping))
+			}
+			for k, v := range tt.wantMapping {
+				if gotMapping[k] == nil {
+					t.Errorf("buildBehaviorMapping()[%s] = nil, want %v", k, v)
+				} else if len(gotMapping[k]) != len(v) {
+					t.Errorf("buildBehaviorMapping()[%s] length = %d, want %d", k, len(gotMapping[k]), len(v))
+				}
+				for i, behavior := range v {
+					if i >= len(gotMapping[k]) || gotMapping[k][i] != behavior {
+						t.Errorf("buildBehaviorMapping()[%s] = %v, want %v", k, gotMapping[k], v)
+					}
+				}
+			}
+			if len(gotUnmatched) != len(tt.wantUnmatched) {
+				t.Errorf("buildBehaviorMapping() unmatched length = %d, want %d", len(gotUnmatched), len(tt.wantUnmatched))
+			}
+			for i, key := range tt.wantUnmatched {
+				if i >= len(gotUnmatched) || gotUnmatched[i] != key {
+					t.Errorf("buildBehaviorMapping() unmatched[%d] = %v, want %v", i, gotUnmatched, tt.wantUnmatched)
+				}
+			}
+		})
+	}
+}
+
 type initTestRunner struct {
 	configureCalls   int
 	configureErr     error

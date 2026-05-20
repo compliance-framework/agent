@@ -65,6 +65,7 @@ type agentPlugin struct {
 	Schedule        *string                `mapstructure:"schedule,omitempty"`
 	Source          string                 `mapstructure:"source"`
 	Policies        []agentPolicy          `mapstructure:"policies"`
+	PolicyBehavior  map[string][]string    `mapstructure:"policy_behavior,omitempty"`
 	Config          agentPluginConfig      `mapstructure:"config"`
 	Labels          map[string]string      `mapstructure:"labels"`
 	PolicyData      map[string]interface{} `mapstructure:"policy_data,omitempty"`
@@ -118,9 +119,52 @@ func (ac *agentConfig) validate() error {
 		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
 			return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
 		}
+
+		// Validate policy_behavior mapping
+		if len(pluginConfig.PolicyBehavior) > 0 {
+			for policySource, behaviors := range pluginConfig.PolicyBehavior {
+				if len(behaviors) == 0 {
+					return fmt.Errorf("plugin %s has empty behavior array for policy source %s", name, policySource)
+				}
+				for _, behavior := range behaviors {
+					if strings.TrimSpace(behavior) == "" {
+						return fmt.Errorf("plugin %s has empty behavior string in array for policy source %s", name, policySource)
+					}
+				}
+				// Note: We don't validate if policySource matches any policy path here.
+				// Non-matching keys will be ignored during mapping with a warning.
+			}
+		}
 	}
 
 	return nil
+}
+
+// findMatchingPolicy finds the policy path that contains the given substring
+func findMatchingPolicy(substring string, policies []agentPolicy) (agentPolicy, bool) {
+	for _, policy := range policies {
+		if strings.Contains(string(policy), substring) {
+			return policy, true
+		}
+	}
+	return "", false
+}
+
+// buildBehaviorMapping converts policy_behavior keys to resolved paths
+// Returns the mapping and a list of keys that didn't match any policy
+func buildBehaviorMapping(policyBehavior map[string][]string, policyLocations map[string]string, policies []agentPolicy) (map[string][]string, []string) {
+	mapping := make(map[string][]string)
+	unmatchedKeys := []string{}
+	for policySource, behaviors := range policyBehavior {
+		if policy, found := findMatchingPolicy(policySource, policies); found {
+			if resolvedPath, exists := policyLocations[string(policy)]; exists {
+				mapping[resolvedPath] = behaviors
+			}
+		} else {
+			unmatchedKeys = append(unmatchedKeys, policySource)
+		}
+	}
+	return mapping, unmatchedKeys
 }
 
 func (ac *agentConfig) agentEvidenceEnabled() bool {
@@ -407,6 +451,27 @@ func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPl
 		PolicyData: policyDataStruct,
 	})
 	return err
+}
+
+func mapStringSliceToStruct(m map[string][]string) (*structpb.Struct, error) {
+	if m == nil {
+		return nil, nil
+	}
+	fields := make(map[string]*structpb.Value)
+	for k, v := range m {
+		listValues := make([]*structpb.Value, 0, len(v))
+		for _, item := range v {
+			listValues = append(listValues, &structpb.Value{
+				Kind: &structpb.Value_StringValue{StringValue: item},
+			})
+		}
+		fields[k] = &structpb.Value{
+			Kind: &structpb.Value_ListValue{
+				ListValue: &structpb.ListValue{Values: listValues},
+			},
+		}
+	}
+	return &structpb.Struct{Fields: fields}, nil
 }
 
 func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
@@ -1407,8 +1472,26 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			}
 
 			// TODO: Send failed results to the database?
+			// Convert policy_behavior_mapping to proto format for Eval
+			// Build mapping from resolved paths to behaviors using helper function
+			behaviorMappingWithResolved, unmatchedKeys := buildBehaviorMapping(pluginConfig.PolicyBehavior, ar.policyLocations, pluginConfig.Policies)
+			// Log warnings for unmatched keys
+			for _, key := range unmatchedKeys {
+				logger.Warn("plugin %s policy_behavior key %s does not match any policy path, ignoring\n", pluginName, key)
+			}
+			// If all keys were unmatched, log a warning and pass empty mapping to prevent false negatives
+			if len(behaviorMappingWithResolved) == 0 && len(pluginConfig.PolicyBehavior) > 0 {
+				logger.Warn("plugin %s policy_behavior provided but no keys matched any policy path. Passing empty mapping to prevent false negatives.\n", pluginName)
+			}
+			// Convert to Struct format
+			policyBehaviorStruct, err := mapStringSliceToStruct(behaviorMappingWithResolved)
+			if err != nil {
+				logger.Error("invalid policy_behavior_mapping for plugin", "plugin", pluginName, "error", err)
+				return err
+			}
 			_, err = runnerInstance.Eval(&proto.EvalRequest{
-				PolicyPaths: policyPaths,
+				PolicyPaths:           policyPaths,
+				PolicyBehaviorMapping: policyBehaviorStruct,
 			}, resultsHelper)
 
 			if err != nil {
@@ -1536,8 +1619,25 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 
 	// TODO: Send failed results to the database?
+	// Convert policy_behavior_mapping to proto format for Eval
+	// Build mapping from resolved paths to behaviors using helper function
+	behaviorMappingWithResolved, unmatchedKeys := buildBehaviorMapping(plugin.PolicyBehavior, ar.policyLocations, plugin.Policies)
+	// Log warnings for unmatched keys
+	for _, key := range unmatchedKeys {
+		fmt.Printf("WARNING: plugin %s policy_behavior key %s does not match any policy path, ignoring\n", name, key)
+	}
+	// If all keys were unmatched, log a warning and pass empty mapping to prevent false negatives
+	if len(behaviorMappingWithResolved) == 0 && len(plugin.PolicyBehavior) > 0 {
+		fmt.Printf("WARNING: plugin %s policy_behavior provided but no keys matched any policy path. Passing empty mapping to prevent false negatives.\n", name)
+	}
+	// Convert to Struct format
+	policyBehaviorStruct, err := mapStringSliceToStruct(behaviorMappingWithResolved)
+	if err != nil {
+		return fmt.Errorf("invalid policy_behavior_mapping for plugin %s: %w", name, err)
+	}
 	_, err = runnerInstance.Eval(&proto.EvalRequest{
-		PolicyPaths: policyPaths,
+		PolicyPaths:           policyPaths,
+		PolicyBehaviorMapping: policyBehaviorStruct,
 	}, resultsHelper)
 
 	if err != nil {

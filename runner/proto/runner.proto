@@ -30,6 +30,7 @@ message InitResponse {
 message EvalRequest {
   repeated string policyPaths = 1;
   uint32 apiServer = 2;
+  google.protobuf.Struct policy_behavior_mapping = 3;
 }
 
 /**
