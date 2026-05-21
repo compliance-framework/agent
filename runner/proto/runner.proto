@@ -5,6 +5,10 @@ option go_package = "./proto";
 
 import "google/protobuf/struct.proto";
 
+message StringList {
+  repeated string values = 1;
+}
+
 enum ExecutionStatus {
   SUCCESS = 0;
   FAILURE = 1;
@@ -13,6 +17,7 @@ enum ExecutionStatus {
 message ConfigureRequest {
   map<string, string> config = 1;
   google.protobuf.Struct policy_data = 2;
+  map<string, StringList> policyBehavior = 3;
 }
 
 message ConfigureResponse {
@@ -22,6 +27,7 @@ message ConfigureResponse {
 message InitRequest {
   repeated string policyPaths = 1;
   uint32 apiServer = 2;
+  map<string, StringList> policyBehavior = 3;
 }
 
 message InitResponse {
@@ -30,6 +36,7 @@ message InitResponse {
 message EvalRequest {
   repeated string policyPaths = 1;
   uint32 apiServer = 2;
+  map<string, StringList> policyBehavior = 3;
 }
 
 /**

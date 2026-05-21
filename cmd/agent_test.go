@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -30,6 +31,8 @@ type initTestRunner struct {
 	configureCalls   int
 	configureErr     error
 	configureRequest *proto.ConfigureRequest
+	initCalls        int
+	initRequest      *proto.InitRequest
 	initErr          error
 }
 
@@ -50,6 +53,8 @@ func (r *initTestRunner) Eval(request *proto.EvalRequest, a runner.ApiHelper) (*
 }
 
 func (r *initTestRunner) Init(request *proto.InitRequest, a runner.ApiHelper) (*proto.InitResponse, error) {
+	r.initCalls++
+	r.initRequest = request
 	return &proto.InitResponse{}, r.initErr
 }
 
@@ -948,9 +953,34 @@ func activePluginClientCount(agentRunner *AgentRunner) int {
 
 func TestInitRunner(t *testing.T) {
 	t.Run("skips init for v1", func(t *testing.T) {
-		err := initRunner("test-plugin", DefaultProtocolVersion, &initTestRunner{}, nil, nil)
+		err := initRunner("test-plugin", DefaultProtocolVersion, &initTestRunner{}, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("initRunner() error = %v, expected nil", err)
+		}
+	})
+
+	t.Run("passes policy behavior to init request", func(t *testing.T) {
+		testRunner := &initTestRunner{}
+		policyBehavior := map[string]*proto.StringList{
+			"policy-bundle": {Values: []string{"vpc", "sg"}},
+		}
+
+		err := initRunner(
+			"test-plugin",
+			RunnerV2ProtocolVersion,
+			testRunner,
+			[]string{"/tmp/policies/vpc.rego"},
+			policyBehavior,
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("initRunner() error = %v, expected nil", err)
+		}
+		if testRunner.initCalls != 1 {
+			t.Fatalf("Init called %d times, expected 1", testRunner.initCalls)
+		}
+		if got := testRunner.initRequest.GetPolicyBehavior()["policy-bundle"].GetValues(); !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
+			t.Fatalf("Init policyBehavior policy-bundle = %#v, expected %#v", got, []string{"vpc", "sg"})
 		}
 	})
 
@@ -959,6 +989,7 @@ func TestInitRunner(t *testing.T) {
 			"test-plugin",
 			RunnerV2ProtocolVersion,
 			&initTestRunner{initErr: status.Error(codes.Unimplemented, "not implemented")},
+			nil,
 			nil,
 			nil,
 		)
@@ -980,6 +1011,7 @@ func TestInitRunner(t *testing.T) {
 			&initTestRunner{initErr: expectedErr},
 			nil,
 			nil,
+			nil,
 		)
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("initRunner() error = %v, expected %v", err, expectedErr)
@@ -996,6 +1028,7 @@ func TestConfigureRunner(t *testing.T) {
 			testRunner,
 			agentPluginConfig{"endpoint": "localhost"},
 			map[string]interface{}{"allowed_versions": map[string]interface{}{"wget": "1.20.3"}},
+			map[string][]string{"policy-bundle": {"vpc", "sg"}},
 		)
 		if err != nil {
 			t.Fatalf("configureRunner() error = %v, expected nil", err)
@@ -1011,6 +1044,9 @@ func TestConfigureRunner(t *testing.T) {
 		if got := allowedVersions.Fields["wget"].GetStringValue(); got != "1.20.3" {
 			t.Fatalf("Configure policy_data allowed_versions.wget = %q, expected %q", got, "1.20.3")
 		}
+		if got := testRunner.configureRequest.GetPolicyBehavior()["policy-bundle"].GetValues(); !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
+			t.Fatalf("Configure policyBehavior policy-bundle = %#v, expected %#v", got, []string{"vpc", "sg"})
+		}
 	})
 
 	t.Run("rejects unsupported policy data before configuring runner", func(t *testing.T) {
@@ -1021,6 +1057,7 @@ func TestConfigureRunner(t *testing.T) {
 			testRunner,
 			nil,
 			map[string]interface{}{"unsupported": make(chan int)},
+			nil,
 		)
 		if err == nil {
 			t.Fatal("configureRunner() error = nil, expected invalid policy_data error")
@@ -1030,6 +1067,45 @@ func TestConfigureRunner(t *testing.T) {
 		}
 		if testRunner.configureCalls != 0 {
 			t.Fatalf("Configure called %d times, expected 0", testRunner.configureCalls)
+		}
+	})
+}
+
+func TestPolicyBehaviorToProto(t *testing.T) {
+	t.Run("nil and empty maps return nil", func(t *testing.T) {
+		if got := policyBehaviorToProto(nil); got != nil {
+			t.Fatalf("policyBehaviorToProto(nil) = %#v, want nil", got)
+		}
+
+		if got := policyBehaviorToProto(map[string][]string{}); got != nil {
+			t.Fatalf("policyBehaviorToProto(empty) = %#v, want nil", got)
+		}
+	})
+
+	t.Run("clones value slices", func(t *testing.T) {
+		input := map[string][]string{
+			"bundle": {"vpc", "sg"},
+		}
+
+		got := policyBehaviorToProto(input)
+		input["bundle"][0] = "mutated"
+
+		want := []string{"vpc", "sg"}
+		if !reflect.DeepEqual(got["bundle"].Values, want) {
+			t.Fatalf("policyBehaviorToProto() values = %#v, want %#v", got["bundle"].Values, want)
+		}
+	})
+
+	t.Run("preserves nil slices as nil StringList values", func(t *testing.T) {
+		got := policyBehaviorToProto(map[string][]string{
+			"bundle": nil,
+		})
+
+		if _, ok := got["bundle"]; !ok {
+			t.Fatalf("policyBehaviorToProto() missing bundle key: %#v", got)
+		}
+		if got["bundle"] != nil {
+			t.Fatalf("policyBehaviorToProto() bundle = %#v, want nil", got["bundle"])
 		}
 	})
 }

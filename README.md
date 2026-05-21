@@ -54,6 +54,10 @@ plugins:
       - <policy>
     policy_data: # Optional: Mapping for supported policies. Can be any data structure
       <data key>: <data value>
+    policy_behavior: # Optional: Used with supported plugins to filter specific policies for different inputs
+      <substring>: 
+        - label1
+        - label2
     config:
       <config1>: <value>
       <config2>: <value>
