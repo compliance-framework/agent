@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -948,7 +949,7 @@ func activePluginClientCount(agentRunner *AgentRunner) int {
 
 func TestInitRunner(t *testing.T) {
 	t.Run("skips init for v1", func(t *testing.T) {
-		err := initRunner("test-plugin", DefaultProtocolVersion, &initTestRunner{}, nil, nil)
+		err := initRunner("test-plugin", DefaultProtocolVersion, &initTestRunner{}, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("initRunner() error = %v, expected nil", err)
 		}
@@ -959,6 +960,7 @@ func TestInitRunner(t *testing.T) {
 			"test-plugin",
 			RunnerV2ProtocolVersion,
 			&initTestRunner{initErr: status.Error(codes.Unimplemented, "not implemented")},
+			nil,
 			nil,
 			nil,
 		)
@@ -980,6 +982,7 @@ func TestInitRunner(t *testing.T) {
 			&initTestRunner{initErr: expectedErr},
 			nil,
 			nil,
+			nil,
 		)
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("initRunner() error = %v, expected %v", err, expectedErr)
@@ -996,6 +999,7 @@ func TestConfigureRunner(t *testing.T) {
 			testRunner,
 			agentPluginConfig{"endpoint": "localhost"},
 			map[string]interface{}{"allowed_versions": map[string]interface{}{"wget": "1.20.3"}},
+			map[string][]string{"policy-bundle": {"vpc", "sg"}},
 		)
 		if err != nil {
 			t.Fatalf("configureRunner() error = %v, expected nil", err)
@@ -1011,6 +1015,9 @@ func TestConfigureRunner(t *testing.T) {
 		if got := allowedVersions.Fields["wget"].GetStringValue(); got != "1.20.3" {
 			t.Fatalf("Configure policy_data allowed_versions.wget = %q, expected %q", got, "1.20.3")
 		}
+		if got := testRunner.configureRequest.PolicyBehavior["policy-bundle"].Values; !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
+			t.Fatalf("Configure policyBehavior policy-bundle = %#v, expected %#v", got, []string{"vpc", "sg"})
+		}
 	})
 
 	t.Run("rejects unsupported policy data before configuring runner", func(t *testing.T) {
@@ -1021,6 +1028,7 @@ func TestConfigureRunner(t *testing.T) {
 			testRunner,
 			nil,
 			map[string]interface{}{"unsupported": make(chan int)},
+			nil,
 		)
 		if err == nil {
 			t.Fatal("configureRunner() error = nil, expected invalid policy_data error")

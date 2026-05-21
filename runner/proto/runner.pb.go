@@ -68,17 +68,62 @@ func (ExecutionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_runner_proto_runner_proto_rawDescGZIP(), []int{0}
 }
 
-type ConfigureRequest struct {
+type StringList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Config        map[string]string      `protobuf:"bytes,1,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	PolicyData    *structpb.Struct       `protobuf:"bytes,2,opt,name=policy_data,json=policyData,proto3" json:"policy_data,omitempty"`
+	Values        []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *StringList) Reset() {
+	*x = StringList{}
+	mi := &file_runner_proto_runner_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StringList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StringList) ProtoMessage() {}
+
+func (x *StringList) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_runner_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StringList.ProtoReflect.Descriptor instead.
+func (*StringList) Descriptor() ([]byte, []int) {
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StringList) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type ConfigureRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Config         map[string]string      `protobuf:"bytes,1,rep,name=config,proto3" json:"config,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	PolicyData     *structpb.Struct       `protobuf:"bytes,2,opt,name=policy_data,json=policyData,proto3" json:"policy_data,omitempty"`
+	PolicyBehavior map[string]*StringList `protobuf:"bytes,3,rep,name=policyBehavior,proto3" json:"policyBehavior,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
 func (x *ConfigureRequest) Reset() {
 	*x = ConfigureRequest{}
-	mi := &file_runner_proto_runner_proto_msgTypes[0]
+	mi := &file_runner_proto_runner_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -90,7 +135,7 @@ func (x *ConfigureRequest) String() string {
 func (*ConfigureRequest) ProtoMessage() {}
 
 func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[0]
+	mi := &file_runner_proto_runner_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -103,7 +148,7 @@ func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureRequest) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{0}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ConfigureRequest) GetConfig() map[string]string {
@@ -120,6 +165,13 @@ func (x *ConfigureRequest) GetPolicyData() *structpb.Struct {
 	return nil
 }
 
+func (x *ConfigureRequest) GetPolicyBehavior() map[string]*StringList {
+	if x != nil {
+		return x.PolicyBehavior
+	}
+	return nil
+}
+
 type ConfigureResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         []byte                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
@@ -129,7 +181,7 @@ type ConfigureResponse struct {
 
 func (x *ConfigureResponse) Reset() {
 	*x = ConfigureResponse{}
-	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	mi := &file_runner_proto_runner_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +193,7 @@ func (x *ConfigureResponse) String() string {
 func (*ConfigureResponse) ProtoMessage() {}
 
 func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[1]
+	mi := &file_runner_proto_runner_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,7 +206,7 @@ func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{1}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ConfigureResponse) GetValue() []byte {
@@ -165,16 +217,17 @@ func (x *ConfigureResponse) GetValue() []byte {
 }
 
 type InitRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PolicyPaths   []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
-	ApiServer     uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PolicyPaths    []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
+	ApiServer      uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
+	PolicyBehavior map[string]*StringList `protobuf:"bytes,3,rep,name=policyBehavior,proto3" json:"policyBehavior,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *InitRequest) Reset() {
 	*x = InitRequest{}
-	mi := &file_runner_proto_runner_proto_msgTypes[2]
+	mi := &file_runner_proto_runner_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -186,7 +239,7 @@ func (x *InitRequest) String() string {
 func (*InitRequest) ProtoMessage() {}
 
 func (x *InitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[2]
+	mi := &file_runner_proto_runner_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -199,7 +252,7 @@ func (x *InitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitRequest.ProtoReflect.Descriptor instead.
 func (*InitRequest) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{2}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *InitRequest) GetPolicyPaths() []string {
@@ -216,6 +269,13 @@ func (x *InitRequest) GetApiServer() uint32 {
 	return 0
 }
 
+func (x *InitRequest) GetPolicyBehavior() map[string]*StringList {
+	if x != nil {
+		return x.PolicyBehavior
+	}
+	return nil
+}
+
 type InitResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -224,7 +284,7 @@ type InitResponse struct {
 
 func (x *InitResponse) Reset() {
 	*x = InitResponse{}
-	mi := &file_runner_proto_runner_proto_msgTypes[3]
+	mi := &file_runner_proto_runner_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -236,7 +296,7 @@ func (x *InitResponse) String() string {
 func (*InitResponse) ProtoMessage() {}
 
 func (x *InitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[3]
+	mi := &file_runner_proto_runner_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -249,20 +309,21 @@ func (x *InitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitResponse.ProtoReflect.Descriptor instead.
 func (*InitResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{3}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{4}
 }
 
 type EvalRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PolicyPaths   []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
-	ApiServer     uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PolicyPaths    []string               `protobuf:"bytes,1,rep,name=policyPaths,proto3" json:"policyPaths,omitempty"`
+	ApiServer      uint32                 `protobuf:"varint,2,opt,name=apiServer,proto3" json:"apiServer,omitempty"`
+	PolicyBehavior map[string]*StringList `protobuf:"bytes,3,rep,name=policyBehavior,proto3" json:"policyBehavior,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EvalRequest) Reset() {
 	*x = EvalRequest{}
-	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	mi := &file_runner_proto_runner_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +335,7 @@ func (x *EvalRequest) String() string {
 func (*EvalRequest) ProtoMessage() {}
 
 func (x *EvalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[4]
+	mi := &file_runner_proto_runner_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +348,7 @@ func (x *EvalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvalRequest.ProtoReflect.Descriptor instead.
 func (*EvalRequest) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{4}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EvalRequest) GetPolicyPaths() []string {
@@ -304,6 +365,13 @@ func (x *EvalRequest) GetApiServer() uint32 {
 	return 0
 }
 
+func (x *EvalRequest) GetPolicyBehavior() map[string]*StringList {
+	if x != nil {
+		return x.PolicyBehavior
+	}
+	return nil
+}
+
 // *
 // EvalResponse is the result of an assessment check
 // Results are sent back by the plugins using the Result service defined
@@ -317,7 +385,7 @@ type EvalResponse struct {
 
 func (x *EvalResponse) Reset() {
 	*x = EvalResponse{}
-	mi := &file_runner_proto_runner_proto_msgTypes[5]
+	mi := &file_runner_proto_runner_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -329,7 +397,7 @@ func (x *EvalResponse) String() string {
 func (*EvalResponse) ProtoMessage() {}
 
 func (x *EvalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_runner_proto_msgTypes[5]
+	mi := &file_runner_proto_runner_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -342,7 +410,7 @@ func (x *EvalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvalResponse.ProtoReflect.Descriptor instead.
 func (*EvalResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_runner_proto_rawDescGZIP(), []int{5}
+	return file_runner_proto_runner_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EvalResponse) GetStatus() ExecutionStatus {
@@ -356,23 +424,38 @@ var File_runner_proto_runner_proto protoreflect.FileDescriptor
 
 const file_runner_proto_runner_proto_rawDesc = "" +
 	"\n" +
-	"\x19runner/proto/runner.proto\x12\x05proto\x1a\x1cgoogle/protobuf/struct.proto\"\xc4\x01\n" +
+	"\x19runner/proto/runner.proto\x12\x05proto\x1a\x1cgoogle/protobuf/struct.proto\"$\n" +
+	"\n" +
+	"StringList\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\xef\x02\n" +
 	"\x10ConfigureRequest\x12;\n" +
 	"\x06config\x18\x01 \x03(\v2#.proto.ConfigureRequest.ConfigEntryR\x06config\x128\n" +
 	"\vpolicy_data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"policyData\x1a9\n" +
+	"policyData\x12S\n" +
+	"\x0epolicyBehavior\x18\x03 \x03(\v2+.proto.ConfigureRequest.PolicyBehaviorEntryR\x0epolicyBehavior\x1a9\n" +
 	"\vConfigEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\")\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aT\n" +
+	"\x13PolicyBehaviorEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12'\n" +
+	"\x05value\x18\x02 \x01(\v2\x11.proto.StringListR\x05value:\x028\x01\")\n" +
 	"\x11ConfigureResponse\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\fR\x05value\"M\n" +
+	"\x05value\x18\x01 \x01(\fR\x05value\"\xf3\x01\n" +
 	"\vInitRequest\x12 \n" +
 	"\vpolicyPaths\x18\x01 \x03(\tR\vpolicyPaths\x12\x1c\n" +
-	"\tapiServer\x18\x02 \x01(\rR\tapiServer\"\x0e\n" +
-	"\fInitResponse\"M\n" +
+	"\tapiServer\x18\x02 \x01(\rR\tapiServer\x12N\n" +
+	"\x0epolicyBehavior\x18\x03 \x03(\v2&.proto.InitRequest.PolicyBehaviorEntryR\x0epolicyBehavior\x1aT\n" +
+	"\x13PolicyBehaviorEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12'\n" +
+	"\x05value\x18\x02 \x01(\v2\x11.proto.StringListR\x05value:\x028\x01\"\x0e\n" +
+	"\fInitResponse\"\xf3\x01\n" +
 	"\vEvalRequest\x12 \n" +
 	"\vpolicyPaths\x18\x01 \x03(\tR\vpolicyPaths\x12\x1c\n" +
-	"\tapiServer\x18\x02 \x01(\rR\tapiServer\">\n" +
+	"\tapiServer\x18\x02 \x01(\rR\tapiServer\x12N\n" +
+	"\x0epolicyBehavior\x18\x03 \x03(\v2&.proto.EvalRequest.PolicyBehaviorEntryR\x0epolicyBehavior\x1aT\n" +
+	"\x13PolicyBehaviorEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12'\n" +
+	"\x05value\x18\x02 \x01(\v2\x11.proto.StringListR\x05value:\x028\x01\">\n" +
 	"\fEvalResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x16.proto.ExecutionStatusR\x06status*+\n" +
 	"\x0fExecutionStatus\x12\v\n" +
@@ -396,33 +479,43 @@ func file_runner_proto_runner_proto_rawDescGZIP() []byte {
 }
 
 var file_runner_proto_runner_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_runner_proto_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_runner_proto_runner_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_runner_proto_runner_proto_goTypes = []any{
 	(ExecutionStatus)(0),      // 0: proto.ExecutionStatus
-	(*ConfigureRequest)(nil),  // 1: proto.ConfigureRequest
-	(*ConfigureResponse)(nil), // 2: proto.ConfigureResponse
-	(*InitRequest)(nil),       // 3: proto.InitRequest
-	(*InitResponse)(nil),      // 4: proto.InitResponse
-	(*EvalRequest)(nil),       // 5: proto.EvalRequest
-	(*EvalResponse)(nil),      // 6: proto.EvalResponse
-	nil,                       // 7: proto.ConfigureRequest.ConfigEntry
-	(*structpb.Struct)(nil),   // 8: google.protobuf.Struct
+	(*StringList)(nil),        // 1: proto.StringList
+	(*ConfigureRequest)(nil),  // 2: proto.ConfigureRequest
+	(*ConfigureResponse)(nil), // 3: proto.ConfigureResponse
+	(*InitRequest)(nil),       // 4: proto.InitRequest
+	(*InitResponse)(nil),      // 5: proto.InitResponse
+	(*EvalRequest)(nil),       // 6: proto.EvalRequest
+	(*EvalResponse)(nil),      // 7: proto.EvalResponse
+	nil,                       // 8: proto.ConfigureRequest.ConfigEntry
+	nil,                       // 9: proto.ConfigureRequest.PolicyBehaviorEntry
+	nil,                       // 10: proto.InitRequest.PolicyBehaviorEntry
+	nil,                       // 11: proto.EvalRequest.PolicyBehaviorEntry
+	(*structpb.Struct)(nil),   // 12: google.protobuf.Struct
 }
 var file_runner_proto_runner_proto_depIdxs = []int32{
-	7, // 0: proto.ConfigureRequest.config:type_name -> proto.ConfigureRequest.ConfigEntry
-	8, // 1: proto.ConfigureRequest.policy_data:type_name -> google.protobuf.Struct
-	0, // 2: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
-	1, // 3: proto.Runner.Configure:input_type -> proto.ConfigureRequest
-	5, // 4: proto.Runner.Eval:input_type -> proto.EvalRequest
-	3, // 5: proto.Runner.Init:input_type -> proto.InitRequest
-	2, // 6: proto.Runner.Configure:output_type -> proto.ConfigureResponse
-	6, // 7: proto.Runner.Eval:output_type -> proto.EvalResponse
-	4, // 8: proto.Runner.Init:output_type -> proto.InitResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8,  // 0: proto.ConfigureRequest.config:type_name -> proto.ConfigureRequest.ConfigEntry
+	12, // 1: proto.ConfigureRequest.policy_data:type_name -> google.protobuf.Struct
+	9,  // 2: proto.ConfigureRequest.policyBehavior:type_name -> proto.ConfigureRequest.PolicyBehaviorEntry
+	10, // 3: proto.InitRequest.policyBehavior:type_name -> proto.InitRequest.PolicyBehaviorEntry
+	11, // 4: proto.EvalRequest.policyBehavior:type_name -> proto.EvalRequest.PolicyBehaviorEntry
+	0,  // 5: proto.EvalResponse.status:type_name -> proto.ExecutionStatus
+	1,  // 6: proto.ConfigureRequest.PolicyBehaviorEntry.value:type_name -> proto.StringList
+	1,  // 7: proto.InitRequest.PolicyBehaviorEntry.value:type_name -> proto.StringList
+	1,  // 8: proto.EvalRequest.PolicyBehaviorEntry.value:type_name -> proto.StringList
+	2,  // 9: proto.Runner.Configure:input_type -> proto.ConfigureRequest
+	6,  // 10: proto.Runner.Eval:input_type -> proto.EvalRequest
+	4,  // 11: proto.Runner.Init:input_type -> proto.InitRequest
+	3,  // 12: proto.Runner.Configure:output_type -> proto.ConfigureResponse
+	7,  // 13: proto.Runner.Eval:output_type -> proto.EvalResponse
+	5,  // 14: proto.Runner.Init:output_type -> proto.InitResponse
+	12, // [12:15] is the sub-list for method output_type
+	9,  // [9:12] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_runner_proto_init() }
@@ -436,7 +529,7 @@ func file_runner_proto_runner_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_runner_proto_rawDesc), len(file_runner_proto_runner_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -68,6 +68,7 @@ type agentPlugin struct {
 	Config          agentPluginConfig      `mapstructure:"config"`
 	Labels          map[string]string      `mapstructure:"labels"`
 	PolicyData      map[string]interface{} `mapstructure:"policy_data,omitempty"`
+	PolicyBehavior  map[string][]string    `mapstructure:"policy_behavior,omitempty"`
 	protocolSet     bool
 }
 
@@ -377,13 +378,14 @@ func runnerDispenseName(protocolVersion int32) (string, error) {
 	}
 }
 
-func initRunner(name string, protocolVersion int32, runnerInstance runner.RunnerV2, policyPaths []string, resultsHelper runner.ApiHelper) error {
+func initRunner(name string, protocolVersion int32, runnerInstance runner.RunnerV2, policyPaths []string, policyBehavior map[string]*proto.StringList, resultsHelper runner.ApiHelper) error {
 	if protocolVersion <= DefaultProtocolVersion {
 		return nil
 	}
 
 	_, err := runnerInstance.Init(&proto.InitRequest{
-		PolicyPaths: policyPaths,
+		PolicyPaths:    policyPaths,
+		PolicyBehavior: policyBehavior,
 	}, resultsHelper)
 	if err == nil {
 		return nil
@@ -396,15 +398,16 @@ func initRunner(name string, protocolVersion int32, runnerInstance runner.Runner
 	return err
 }
 
-func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPluginConfig, policyData map[string]interface{}) error {
+func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPluginConfig, policyData map[string]interface{}, policyBehavior map[string][]string) error {
 	policyDataStruct, err := mapToStruct(policyData)
 	if err != nil {
 		return fmt.Errorf("invalid policy_data for plugin %s: %w", name, err)
 	}
 
 	_, err = runnerInstance.Configure(&proto.ConfigureRequest{
-		Config:     config,
-		PolicyData: policyDataStruct,
+		Config:         config,
+		PolicyData:     policyDataStruct,
+		PolicyBehavior: policyBehaviorToProto(policyBehavior),
 	})
 	return err
 }
@@ -968,6 +971,17 @@ func mapToStruct(m map[string]interface{}) (*structpb.Struct, error) {
 	return structpb.NewStruct(m)
 }
 
+func policyBehaviorToProto(policyBehavior map[string][]string) map[string]*proto.StringList {
+	if policyBehavior == nil {
+		return nil
+	}
+	result := make(map[string]*proto.StringList)
+	for key, values := range policyBehavior {
+		result[key] = &proto.StringList{Values: values}
+	}
+	return result
+}
+
 func pluginEvidenceLabels(config *agentConfig, pluginName string, pluginConfig *agentPlugin) map[string]string {
 	return pluginEvidenceLabelsWithHash(config, pluginName, pluginConfig, agentConfigurationHash(config))
 }
@@ -1373,7 +1387,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 		if err := func() error {
 			defer cleanupRunner()
 
-			if err := configureRunner(pluginName, runnerInstance, pluginConfig.Config, pluginConfig.PolicyData); err != nil {
+			if err := configureRunner(pluginName, runnerInstance, pluginConfig.Config, pluginConfig.PolicyData, pluginConfig.PolicyBehavior); err != nil {
 				// What do we do here ?
 				//endTimer := time.Now()
 				//_, err = client.Results.Create(&sdk.Result{
@@ -1402,13 +1416,15 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			)
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
 
-			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
+			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
+			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
 				return err
 			}
 
 			// TODO: Send failed results to the database?
 			_, err = runnerInstance.Eval(&proto.EvalRequest{
-				PolicyPaths: policyPaths,
+				PolicyPaths:    policyPaths,
+				PolicyBehavior: policyBehaviorProto,
 			}, resultsHelper)
 
 			if err != nil {
@@ -1519,7 +1535,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	}
 	defer cleanupRunner()
 
-	if err := configureRunner(name, runnerInstance, plugin.Config, plugin.PolicyData); err != nil {
+	if err := configureRunner(name, runnerInstance, plugin.Config, plugin.PolicyData, plugin.PolicyBehavior); err != nil {
 		return err
 	}
 
@@ -1531,13 +1547,15 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	)
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name)
 
-	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, resultsHelper); err != nil {
+	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
+	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
 		return err
 	}
 
 	// TODO: Send failed results to the database?
 	_, err = runnerInstance.Eval(&proto.EvalRequest{
-		PolicyPaths: policyPaths,
+		PolicyPaths:    policyPaths,
+		PolicyBehavior: policyBehaviorProto,
 	}, resultsHelper)
 
 	if err != nil {
