@@ -31,6 +31,8 @@ type initTestRunner struct {
 	configureCalls   int
 	configureErr     error
 	configureRequest *proto.ConfigureRequest
+	initCalls        int
+	initRequest      *proto.InitRequest
 	initErr          error
 }
 
@@ -51,6 +53,8 @@ func (r *initTestRunner) Eval(request *proto.EvalRequest, a runner.ApiHelper) (*
 }
 
 func (r *initTestRunner) Init(request *proto.InitRequest, a runner.ApiHelper) (*proto.InitResponse, error) {
+	r.initCalls++
+	r.initRequest = request
 	return &proto.InitResponse{}, r.initErr
 }
 
@@ -955,6 +959,31 @@ func TestInitRunner(t *testing.T) {
 		}
 	})
 
+	t.Run("passes policy behavior to init request", func(t *testing.T) {
+		testRunner := &initTestRunner{}
+		policyBehavior := map[string]*proto.StringList{
+			"policy-bundle": {Values: []string{"vpc", "sg"}},
+		}
+
+		err := initRunner(
+			"test-plugin",
+			RunnerV2ProtocolVersion,
+			testRunner,
+			[]string{"/tmp/policies/vpc.rego"},
+			policyBehavior,
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("initRunner() error = %v, expected nil", err)
+		}
+		if testRunner.initCalls != 1 {
+			t.Fatalf("Init called %d times, expected 1", testRunner.initCalls)
+		}
+		if got := testRunner.initRequest.GetPolicyBehavior()["policy-bundle"].GetValues(); !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
+			t.Fatalf("Init policyBehavior policy-bundle = %#v, expected %#v", got, []string{"vpc", "sg"})
+		}
+	})
+
 	t.Run("wraps unimplemented init for configured v2 plugin", func(t *testing.T) {
 		err := initRunner(
 			"test-plugin",
@@ -1064,6 +1093,19 @@ func TestPolicyBehaviorToProto(t *testing.T) {
 		want := []string{"vpc", "sg"}
 		if !reflect.DeepEqual(got["bundle"].Values, want) {
 			t.Fatalf("policyBehaviorToProto() values = %#v, want %#v", got["bundle"].Values, want)
+		}
+	})
+
+	t.Run("preserves nil slices as nil StringList values", func(t *testing.T) {
+		got := policyBehaviorToProto(map[string][]string{
+			"bundle": nil,
+		})
+
+		if _, ok := got["bundle"]; !ok {
+			t.Fatalf("policyBehaviorToProto() missing bundle key: %#v", got)
+		}
+		if got["bundle"] != nil {
+			t.Fatalf("policyBehaviorToProto() bundle = %#v, want nil", got["bundle"])
 		}
 	})
 }

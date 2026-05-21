@@ -977,6 +977,10 @@ func policyBehaviorToProto(policyBehavior map[string][]string) map[string]*proto
 	}
 	result := make(map[string]*proto.StringList, len(policyBehavior))
 	for key, values := range policyBehavior {
+		if values == nil {
+			result[key] = nil
+			continue
+		}
 		result[key] = &proto.StringList{Values: append([]string(nil), values...)}
 	}
 	return result

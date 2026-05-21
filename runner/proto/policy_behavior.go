@@ -66,7 +66,7 @@ func (r *EvalRequest) PolicyPathsForBehavior(behavior string) []string {
 outer:
 	for _, path := range r.PolicyPaths {
 		for _, key := range matchingKeys {
-			if pathCoveredByPolicyBehavior(path, map[string]*StringList{key: nil}) {
+			if key != "" && strings.Contains(path, key) {
 				filtered = append(filtered, path)
 				continue outer
 			}
