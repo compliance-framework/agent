@@ -972,12 +972,12 @@ func mapToStruct(m map[string]interface{}) (*structpb.Struct, error) {
 }
 
 func policyBehaviorToProto(policyBehavior map[string][]string) map[string]*proto.StringList {
-	if policyBehavior == nil {
+	if len(policyBehavior) == 0 {
 		return nil
 	}
-	result := make(map[string]*proto.StringList)
+	result := make(map[string]*proto.StringList, len(policyBehavior))
 	for key, values := range policyBehavior {
-		result[key] = &proto.StringList{Values: values}
+		result[key] = &proto.StringList{Values: append([]string(nil), values...)}
 	}
 	return result
 }

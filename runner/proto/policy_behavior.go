@@ -22,23 +22,23 @@ func (r *EvalRequest) WithUndefinedMappedTo(behavior []string) *EvalRequest {
 		return nil
 	}
 
-	copy := &EvalRequest{
+	cloned := &EvalRequest{
 		PolicyPaths:    slices.Clone(r.PolicyPaths),
 		ApiServer:      r.ApiServer,
 		PolicyBehavior: mergePolicyBehavior(nil, r.PolicyBehavior),
 	}
 
-	for _, path := range copy.PolicyPaths {
-		if pathCoveredByPolicyBehavior(path, copy.PolicyBehavior) {
+	for _, path := range cloned.PolicyPaths {
+		if pathCoveredByPolicyBehavior(path, cloned.PolicyBehavior) {
 			continue
 		}
-		if copy.PolicyBehavior == nil {
-			copy.PolicyBehavior = make(map[string]*StringList)
+		if cloned.PolicyBehavior == nil {
+			cloned.PolicyBehavior = make(map[string]*StringList)
 		}
-		copy.PolicyBehavior[path] = &StringList{Values: slices.Clone(behavior)}
+		cloned.PolicyBehavior[path] = &StringList{Values: slices.Clone(behavior)}
 	}
 
-	return copy
+	return cloned
 }
 
 func (r *EvalRequest) PolicyPathsForBehavior(behavior string) []string {
@@ -99,6 +99,9 @@ func mergePolicyBehavior(defaults map[string][]string, configured map[string]*St
 
 func pathCoveredByPolicyBehavior(path string, behavior map[string]*StringList) bool {
 	for key := range behavior {
+		if key == "" {
+			continue
+		}
 		if strings.Contains(path, key) {
 			return true
 		}

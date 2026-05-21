@@ -1015,7 +1015,7 @@ func TestConfigureRunner(t *testing.T) {
 		if got := allowedVersions.Fields["wget"].GetStringValue(); got != "1.20.3" {
 			t.Fatalf("Configure policy_data allowed_versions.wget = %q, expected %q", got, "1.20.3")
 		}
-		if got := testRunner.configureRequest.PolicyBehavior["policy-bundle"].Values; !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
+		if got := testRunner.configureRequest.GetPolicyBehavior()["policy-bundle"].GetValues(); !reflect.DeepEqual(got, []string{"vpc", "sg"}) {
 			t.Fatalf("Configure policyBehavior policy-bundle = %#v, expected %#v", got, []string{"vpc", "sg"})
 		}
 	})
@@ -1038,6 +1038,32 @@ func TestConfigureRunner(t *testing.T) {
 		}
 		if testRunner.configureCalls != 0 {
 			t.Fatalf("Configure called %d times, expected 0", testRunner.configureCalls)
+		}
+	})
+}
+
+func TestPolicyBehaviorToProto(t *testing.T) {
+	t.Run("nil and empty maps return nil", func(t *testing.T) {
+		if got := policyBehaviorToProto(nil); got != nil {
+			t.Fatalf("policyBehaviorToProto(nil) = %#v, want nil", got)
+		}
+
+		if got := policyBehaviorToProto(map[string][]string{}); got != nil {
+			t.Fatalf("policyBehaviorToProto(empty) = %#v, want nil", got)
+		}
+	})
+
+	t.Run("clones value slices", func(t *testing.T) {
+		input := map[string][]string{
+			"bundle": {"vpc", "sg"},
+		}
+
+		got := policyBehaviorToProto(input)
+		input["bundle"][0] = "mutated"
+
+		want := []string{"vpc", "sg"}
+		if !reflect.DeepEqual(got["bundle"].Values, want) {
+			t.Fatalf("policyBehaviorToProto() values = %#v, want %#v", got["bundle"].Values, want)
 		}
 	})
 }

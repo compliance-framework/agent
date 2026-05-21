@@ -50,6 +50,25 @@ func TestEvalRequestWithUndefinedMappedTo(t *testing.T) {
 		}
 	})
 
+	t.Run("empty key does not count as covered", func(t *testing.T) {
+		request := &EvalRequest{
+			PolicyPaths: []string{"/tmp/custom/unmapped.rego"},
+			PolicyBehavior: map[string]*StringList{
+				"": {Values: []string{"vpc"}},
+			},
+		}
+
+		got := request.WithUndefinedMappedTo([]string{"vpc"})
+
+		wantBehavior := map[string]*StringList{
+			"":                          {Values: []string{"vpc"}},
+			"/tmp/custom/unmapped.rego": {Values: []string{"vpc"}},
+		}
+		if !reflect.DeepEqual(got.PolicyBehavior, wantBehavior) {
+			t.Fatalf("WithUndefinedMappedTo() with empty key = %#v, want %#v", got.PolicyBehavior, wantBehavior)
+		}
+	})
+
 	t.Run("chains after defaults and fills only remaining uncovered paths", func(t *testing.T) {
 		request := &EvalRequest{
 			PolicyPaths: []string{
@@ -201,6 +220,17 @@ func TestEvalRequestPolicyPathsForBehavior(t *testing.T) {
 				},
 			},
 			behavior: "subnet",
+			want:     []string{},
+		},
+		{
+			name: "empty key is ignored for matching",
+			request: &EvalRequest{
+				PolicyPaths: []string{"/tmp/a", "/tmp/b"},
+				PolicyBehavior: map[string]*StringList{
+					"": {Values: []string{"vpc"}},
+				},
+			},
+			behavior: "vpc",
 			want:     []string{},
 		},
 	}
