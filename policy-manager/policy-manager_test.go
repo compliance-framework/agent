@@ -87,6 +87,30 @@ func TestPolicyManager(t *testing.T) {
 		}, result.Violations[0])
 	})
 
+	t.Run("Policy Manager returns descriptive error when violation is a set", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents := []byte(`package compliance_framework.set_violation
+
+import future.keywords.contains
+import future.keywords.if
+
+violation contains {"title": "Violation 1"} if {
+	input.violated
+}
+`)
+
+		var data map[string]interface{} = make(map[string]interface{})
+		data["violated"] = true
+
+		_, err := buildPolicyManager(regoContents).Execute(ctx, data)
+
+		if assert.Error(t, err) {
+			assert.Contains(t, err.Error(), "expected violations to be a map, but it was processed as a slice")
+			assert.Contains(t, err.Error(), "compliance_framework.set_violation")
+		}
+	})
+
 	t.Run("Policy Manager injects dynamic policy data as OPA data", func(t *testing.T) {
 		ctx := context.Background()
 		policyDir := t.TempDir()

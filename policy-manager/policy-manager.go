@@ -168,14 +168,27 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 
 		for _, eval := range evaluation {
 			for _, expression := range eval.Expressions {
-				moduleOutputs := expression.Value.(map[string]interface{})
+				moduleOutputs, ok := expression.Value.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf(
+						"expected module outputs to be a map (policy package %q, file %q)",
+						result.Policy.Package, result.Policy.File,
+					)
+				}
 				violations := make([]Violation, 0)
 
 				val, ok := moduleOutputs["violation"]
 				// If the key exists
 				if ok {
-					// Do something
-					for violation, _ := range val.(map[string]interface{}) {
+					violationsMap, ok := val.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf(
+							"expected violations to be a map, but it was processed as a slice (policy package %q, file %q): "+
+								"define `violation` as a partial object rule (violation[msg] := obj) rather than a set (violation contains {...})",
+							result.Policy.Package, result.Policy.File,
+						)
+					}
+					for violation := range violationsMap {
 						viol := &Violation{}
 						err := json.Unmarshal([]byte(violation), viol)
 						if err != nil {
@@ -190,11 +203,11 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 					Violations:          violations,
 				}
 
-				fmt.Println(expression.Value.(map[string]interface{}))
-
-				err := mapstructure.Decode(expression.Value.(map[string]interface{}), evalOutput)
-				if err != nil {
-					panic(err)
+				if err := mapstructure.Decode(moduleOutputs, evalOutput); err != nil {
+					return nil, fmt.Errorf(
+						"decode policy outputs (policy package %q, file %q): %w",
+						result.Policy.Package, result.Policy.File, err,
+					)
 				}
 
 				// TODO here we could run evalOutput.Validate()
