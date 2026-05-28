@@ -87,7 +87,7 @@ func TestPolicyManager(t *testing.T) {
 		}, result.Violations[0])
 	})
 
-	t.Run("Policy Manager returns descriptive error when violation is a set", func(t *testing.T) {
+	t.Run("Policy Manager handles violations defined as a set", func(t *testing.T) {
 		ctx := context.Background()
 
 		regoContents := []byte(`package compliance_framework.set_violation
@@ -95,7 +95,11 @@ func TestPolicyManager(t *testing.T) {
 import future.keywords.contains
 import future.keywords.if
 
-violation contains {"title": "Violation 1"} if {
+violation contains {
+	"title": "Violation 1",
+	"description": "You have been violated.",
+	"remarks": "Migrate to not being violated",
+} if {
 	input.violated
 }
 `)
@@ -103,12 +107,18 @@ violation contains {"title": "Violation 1"} if {
 		var data map[string]interface{} = make(map[string]interface{})
 		data["violated"] = true
 
-		_, err := buildPolicyManager(regoContents).Execute(ctx, data)
+		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
 
-		if assert.Error(t, err) {
-			assert.Contains(t, err.Error(), "expected violations to be a map, but it was processed as a slice")
-			assert.Contains(t, err.Error(), "compliance_framework.set_violation")
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
+		result := results[0]
+		assert.Equal(t, 1, len(result.Violations))
+		assert.Equal(t, Violation{
+			Title:       Pointer("Violation 1"),
+			Description: Pointer("You have been violated."),
+			Remarks:     Pointer("Migrate to not being violated"),
+		}, result.Violations[0])
 	})
 
 	t.Run("Policy Manager injects dynamic policy data as OPA data", func(t *testing.T) {

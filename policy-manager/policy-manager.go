@@ -177,24 +177,36 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 				}
 				violations := make([]Violation, 0)
 
-				val, ok := moduleOutputs["violation"]
-				// If the key exists
-				if ok {
-					violationsMap, ok := val.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf(
-							"expected violations to be a map, but it was processed as a slice (policy package %q, file %q): "+
-								"define `violation` as a partial object rule (violation[msg] := obj) rather than a set (violation contains {...})",
-							result.Policy.Package, result.Policy.File,
-						)
-					}
-					for violation := range violationsMap {
-						viol := &Violation{}
-						err := json.Unmarshal([]byte(violation), viol)
-						if err != nil {
-							return nil, err
+				if val, ok := moduleOutputs["violation"]; ok {
+					switch v := val.(type) {
+					case map[string]interface{}:
+						// Partial object rule: `violation[obj] := ...` — keys are
+						// JSON-encoded violation objects.
+						for violation := range v {
+							viol := &Violation{}
+							if err := json.Unmarshal([]byte(violation), viol); err != nil {
+								return nil, err
+							}
+							violations = append(violations, *viol)
 						}
-						violations = append(violations, *viol)
+					case []interface{}:
+						// Set rule: `violation contains {...}` — each element is
+						// already a decoded violation object.
+						for _, item := range v {
+							viol := &Violation{}
+							if err := mapstructure.Decode(item, viol); err != nil {
+								return nil, fmt.Errorf(
+									"decode violation entry (policy package %q, file %q): %w",
+									result.Policy.Package, result.Policy.File, err,
+								)
+							}
+							violations = append(violations, *viol)
+						}
+					default:
+						return nil, fmt.Errorf(
+							"unexpected violations type %T (policy package %q, file %q)",
+							val, result.Policy.Package, result.Policy.File,
+						)
 					}
 				}
 
