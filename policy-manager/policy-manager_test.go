@@ -104,8 +104,7 @@ violation contains {
 }
 `)
 
-		var data map[string]interface{} = make(map[string]interface{})
-		data["violated"] = true
+		data := map[string]interface{}{"violated": true}
 
 		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
 

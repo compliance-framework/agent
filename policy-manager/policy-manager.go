@@ -126,6 +126,38 @@ func writePolicyDataValue(ctx context.Context, store storage.Store, txn storage.
 	return nil
 }
 
+// normalizeViolationEntries converts OPA's two possible serializations of a
+// `violation` rule into a uniform list of JSON byte slices that can be decoded
+// into a Violation via the same path.
+//
+// Partial object rule (`violation[obj] := ...` / `violation[obj]`): OPA returns
+// a map[string]interface{} whose keys are JSON-encoded violation objects.
+//
+// Set rule (`violation contains {...}`): OPA returns a []interface{} whose
+// elements are already-decoded violation objects.
+func normalizeViolationEntries(val interface{}) ([][]byte, error) {
+	switch v := val.(type) {
+	case map[string]interface{}:
+		entries := make([][]byte, 0, len(v))
+		for key := range v {
+			entries = append(entries, []byte(key))
+		}
+		return entries, nil
+	case []interface{}:
+		entries := make([][]byte, 0, len(v))
+		for _, item := range v {
+			raw, err := json.Marshal(item)
+			if err != nil {
+				return nil, fmt.Errorf("re-encode violation entry: %w", err)
+			}
+			entries = append(entries, raw)
+		}
+		return entries, nil
+	default:
+		return nil, fmt.Errorf("unexpected violations type %T, want map or slice", val)
+	}
+}
+
 func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Result, error) {
 	var output []Result
 
@@ -178,35 +210,22 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 				violations := make([]Violation, 0)
 
 				if val, ok := moduleOutputs["violation"]; ok {
-					switch v := val.(type) {
-					case map[string]interface{}:
-						// Partial object rule: `violation[obj] := ...` — keys are
-						// JSON-encoded violation objects.
-						for violation := range v {
-							viol := &Violation{}
-							if err := json.Unmarshal([]byte(violation), viol); err != nil {
-								return nil, err
-							}
-							violations = append(violations, *viol)
-						}
-					case []interface{}:
-						// Set rule: `violation contains {...}` — each element is
-						// already a decoded violation object.
-						for _, item := range v {
-							viol := &Violation{}
-							if err := mapstructure.Decode(item, viol); err != nil {
-								return nil, fmt.Errorf(
-									"decode violation entry (policy package %q, file %q): %w",
-									result.Policy.Package, result.Policy.File, err,
-								)
-							}
-							violations = append(violations, *viol)
-						}
-					default:
+					rawEntries, err := normalizeViolationEntries(val)
+					if err != nil {
 						return nil, fmt.Errorf(
-							"unexpected violations type %T (policy package %q, file %q)",
-							val, result.Policy.Package, result.Policy.File,
+							"%w (policy package %q, file %q)",
+							err, result.Policy.Package, result.Policy.File,
 						)
+					}
+					for _, raw := range rawEntries {
+						viol := &Violation{}
+						if err := json.Unmarshal(raw, viol); err != nil {
+							return nil, fmt.Errorf(
+								"decode violation entry (policy package %q, file %q): %w",
+								result.Policy.Package, result.Policy.File, err,
+							)
+						}
+						violations = append(violations, *viol)
 					}
 				}
 
