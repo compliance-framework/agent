@@ -176,6 +176,15 @@ func (pm *PolicyManager) Execute(ctx context.Context, input interface{}) ([]Resu
 			continue
 		}
 
+		// Only treat packages under the compliance_framework namespace as
+		// evaluable policies. Packages in other namespaces (e.g. shared helper
+		// libraries under ccf_libs) are bundled for import only and must not be
+		// evaluated as policies, as they intentionally produce no title/evidence.
+		packagePath := module.Package.Path.String()
+		if packagePath != "data.compliance_framework" && !strings.HasPrefix(packagePath, "data.compliance_framework.") {
+			continue
+		}
+
 		result := Result{
 			Policy: Policy{
 				File:        module.Package.Location.File,
