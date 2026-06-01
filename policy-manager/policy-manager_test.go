@@ -87,6 +87,39 @@ func TestPolicyManager(t *testing.T) {
 		}, result.Violations[0])
 	})
 
+	t.Run("Policy Manager handles violations defined as a set", func(t *testing.T) {
+		ctx := context.Background()
+
+		regoContents := []byte(`package compliance_framework.set_violation
+
+import future.keywords.contains
+import future.keywords.if
+
+violation contains {
+	"title": "Violation 1",
+	"description": "You have been violated.",
+	"remarks": "Migrate to not being violated",
+} if {
+	input.violated
+}
+`)
+
+		data := map[string]interface{}{"violated": true}
+
+		results, err := buildPolicyManager(regoContents).Execute(ctx, data)
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(results))
+
+		result := results[0]
+		assert.Equal(t, 1, len(result.Violations))
+		assert.Equal(t, Violation{
+			Title:       Pointer("Violation 1"),
+			Description: Pointer("You have been violated."),
+			Remarks:     Pointer("Migrate to not being violated"),
+		}, result.Violations[0])
+	})
+
 	t.Run("Policy Manager injects dynamic policy data as OPA data", func(t *testing.T) {
 		ctx := context.Background()
 		policyDir := t.TempDir()
