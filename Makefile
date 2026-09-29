@@ -44,6 +44,21 @@ test:  ## Run tests
 	fi ; \
 	$(OK) Tests passed
 
+.PHONY: check-opa-version
+check-opa-version: ## Check the agent and the API module require the same OPA version
+	@graph=$$(go mod graph); \
+	agent_opa=$$(awk '$$1 == "github.com/compliance-framework/agent" && $$2 ~ /^github.com\/open-policy-agent\/opa@/ { sub(/.*@/, "", $$2); print $$2 }' <<< "$$graph"); \
+	api_opa=$$(awk '$$1 ~ /^github.com\/compliance-framework\/api@/ && $$2 ~ /^github.com\/open-policy-agent\/opa@/ { sub(/.*@/, "", $$2); print $$2 }' <<< "$$graph"); \
+	if [ -z "$$agent_opa" ] || [ -z "$$api_opa" ]; then \
+		$(ERR) "Could not find the OPA requirement: agent '$$agent_opa', api '$$api_opa'"; \
+		exit 1; \
+	fi; \
+	if [ "$$agent_opa" != "$$api_opa" ]; then \
+		$(ERR) "OPA version drift: agent requires $$agent_opa, api requires $$api_opa. Policies must evaluate the same in both."; \
+		exit 1; \
+	fi; \
+	$(OK) "Agent and API both require OPA $$agent_opa"
+
 
 build: ## Build the project
 	@mkdir -p dist

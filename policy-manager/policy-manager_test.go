@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/compliance-framework/api/pkg/policyeval"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/bundle"
@@ -34,12 +35,12 @@ func buildPolicyManagerWithModules(modules map[string][]byte) *PolicyManager {
 			Level:      hclog.Debug,
 			JSONFormat: true,
 		}),
-		loaderOptions: []func(r *rego.Rego){
+		evaluator: policyeval.NewWithLoaders([]func(r *rego.Rego){
 			rego.ParsedBundle("test", &bundle.Bundle{
 				Modules:  bundleModules,
 				Manifest: bundle.Manifest{Revision: "test", Roots: &[]string{"/"}},
 			}),
-		},
+		}, nil, policyeval.Options{}),
 	}
 }
 

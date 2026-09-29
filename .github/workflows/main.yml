@@ -40,6 +40,21 @@ jobs:
       - name: Run unit tests
         run: make test
 
+  opa-version-check:
+    needs: setup-go-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Check agent and API require the same OPA version
+        run: make check-opa-version
+
   go-fmt-check:
     needs: setup-go-and-build
     runs-on: ubuntu-latest
