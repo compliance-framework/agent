@@ -1,30 +1,14 @@
 package policy_manager
 
 import (
-	"fmt"
-	"strings"
-
-	"github.com/open-policy-agent/opa/ast"
+	"github.com/compliance-framework/api/pkg/policyeval"
 )
 
-type Violation struct {
-	ID          *string `json:"id,omitempty" mapstructure:"id"`
-	Title       *string `json:"title,omitempty" mapstructure:"title"`
-	Description *string `json:"description,omitempty" mapstructure:"description"`
-	Remarks     *string `json:"remarks,omitempty" mapstructure:"remarks"`
-}
+type Violation = policyeval.Violation
 
-type Package string
+type Package = policyeval.Package
 
-func (p Package) PurePackage() string {
-	return strings.TrimPrefix(string(p), "data.")
-}
-
-type Policy struct {
-	File        string
-	Package     Package
-	Annotations []*ast.Annotations
-}
+type Policy = policyeval.Policy
 
 type Step struct {
 	Title       string `json:"title" mapstructure:"title"`
@@ -88,19 +72,4 @@ type RiskTemplate struct {
 	LabelSchema     []RiskTemplateLabelSchema `json:"label_schema" mapstructure:"label_schema"`
 }
 
-type Result struct {
-	Policy Policy
-	*EvalOutput
-}
-
-func (res Result) String() string {
-	return fmt.Sprintf(`
-Policy:
-	file: %s
-	package: %s
-	annotations: %s
-AdditionalVariables: %v
-Labels: %v
-Violations: %v
-`, res.Policy.File, res.Policy.Package.PurePackage(), res.Policy.Annotations, res.AdditionalVariables, res.Labels, res.Violations)
-}
+type Result = policyeval.Result
