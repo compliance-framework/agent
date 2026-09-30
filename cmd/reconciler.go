@@ -484,7 +484,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		return nil, rejected(agentconfig.ReasonInvalidConfig, errs)
 	}
 
-	resolved, err := agentconfig.ResolveEnv(declared, rc.lookupEnv)
+	resolved, envWarnings, err := resolveEnv(declared, base.declared, rc.lookupEnv)
 	switch {
 	case errors.Is(err, agentconfig.ErrEnvForbidden):
 		return nil, rejected(agentconfig.ReasonForbiddenChanges, err)
@@ -492,6 +492,11 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		return nil, failed(agentconfig.ReasonEnvMissing, err)
 	case err != nil:
 		return nil, failed(agentconfig.ReasonInternal, err)
+	}
+	for _, w := range envWarnings {
+		if rc.logOnce("env-missing\x00" + w.Path + "\x00" + w.Message) {
+			rc.logWarnings([]agentconfig.FieldError{w})
+		}
 	}
 
 	inline, aerr := rc.prepareInline(ctx, resolved, part.skip)
@@ -525,7 +530,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		digest:         digest,
 		identity:       candidateIdentity(declared, inline.dirs),
 		bundles:        inline.reports,
-		warnings:       part.warnings,
+		warnings:       append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
 		policyWarnings: inline.warnings,
 	}, nil
 }
@@ -874,7 +879,11 @@ func (rc *reconciler) handleRemoteError(op string, err error, backoff *time.Time
 
 func (rc *reconciler) logWarnings(warnings []agentconfig.FieldError) {
 	for _, w := range warnings {
-		rc.logger.Warn("Ignoring a problem in the config file; the plugin is skipped", "path", w.Path, "error", w.Message)
+		if isToleratedFileRule(w) {
+			rc.logger.Warn("Ignoring a problem in the config file; the plugin is skipped", "path", w.Path, "error", w.Message)
+			continue
+		}
+		rc.logger.Warn("Ignoring a problem in the config file; the value is kept unchanged", "path", w.Path, "error", w.Message)
 	}
 }
 

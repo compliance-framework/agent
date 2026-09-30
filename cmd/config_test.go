@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
+	"github.com/hashicorp/go-hclog"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -206,6 +207,97 @@ plugins:
 	}
 	if _, ok := base.declared.Plugins["ssh"]; !ok {
 		t.Fatalf("skipped plugin must stay in the declared (reported) config")
+	}
+}
+
+// TestLoadBase_FileOriginWarnOnly pins R34/R51: values that load on main keep loading. They
+// are reported as warnings, the value is unchanged and no plugin is skipped.
+func TestLoadBase_FileOriginWarnOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantPath string
+		check    func(t *testing.T, rt *agentConfig)
+	}{
+		{
+			name:     "negative verbosity",
+			content:  "verbosity: -1\napi:\n  url: http://localhost:8080\nplugins:\n  ssh:\n    source: ./plugin-ssh\n",
+			wantPath: "/verbosity",
+			check: func(t *testing.T, rt *agentConfig) {
+				if rt.Verbosity != -1 || rt.logVerbosity() != int32(hclog.Warn) {
+					t.Fatalf("verbosity -1 must stay Warn level, got %d", rt.Verbosity)
+				}
+			},
+		},
+		{
+			name:     "literal env placeholder in labels",
+			content:  "api:\n  url: http://localhost:8080\nplugins:\n  ssh:\n    source: ./plugin-ssh\n    labels:\n      team: \"${env:TEAM}\"\n",
+			wantPath: "/plugins/ssh/labels/team",
+			check: func(t *testing.T, rt *agentConfig) {
+				if got := rt.Plugins["ssh"].Labels["team"]; got != "${env:TEAM}" {
+					t.Fatalf("the label must be passed through unchanged, got %q", got)
+				}
+			},
+		},
+		{
+			name:     "literal env placeholder in policy_data",
+			content:  "api:\n  url: http://localhost:8080\nplugins:\n  ssh:\n    source: ./plugin-ssh\n    policy_data:\n      url: \"${env:URL}\"\n",
+			wantPath: "/plugins/ssh/policy_data/url",
+			check: func(t *testing.T, rt *agentConfig) {
+				if got := rt.Plugins["ssh"].PolicyData["url"]; got != "${env:URL}" {
+					t.Fatalf("policy_data must be passed through unchanged, got %v", got)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := mustLoadBase(t, "yaml", tt.content)
+			if len(base.warnings) != 1 || base.warnings[0].Path != tt.wantPath {
+				t.Fatalf("expected one warning at %s, got %#v", tt.wantPath, base.warnings)
+			}
+			if len(base.skip) != 0 {
+				t.Fatalf("a warn-only problem must not skip a plugin, got %v", base.skip)
+			}
+			rt, err := toRuntime(base.declared, nil, base.skip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := rt.Plugins["ssh"]; !ok {
+				t.Fatal("the plugin must run")
+			}
+			tt.check(t, rt)
+		})
+	}
+
+	t.Run("overlay-origin stays strict", func(t *testing.T) {
+		errs := agentconfig.ValidationErrors{
+			{Path: "/verbosity", Code: agentconfig.FieldCodeInvalidValue, Message: "must not be negative"},
+			{Path: "/plugins/ssh/labels/team", Code: agentconfig.FieldCodeEnvLocation, Message: "env"},
+		}
+		p := partitionByOrigin(errs, []string{"/verbosity", "/plugins/ssh/labels/team"})
+		if len(p.overlay) != 2 || len(p.warnings) != 0 {
+			t.Fatalf("overlay-introduced values must be strict, got %#v", p)
+		}
+	})
+	t.Run("policy_bundles env-location stays fatal", func(t *testing.T) {
+		errs := agentconfig.ValidationErrors{{Path: "/policy_bundles/b/modules/x.rego", Code: agentconfig.FieldCodeEnvLocation, Message: "env"}}
+		if p := partitionByOrigin(errs, nil); len(p.fatal) != 1 {
+			t.Fatalf("policy_bundles is a new feature and stays strict, got %#v", p)
+		}
+	})
+}
+
+// TestLoadBase_NoPolicyBundlesTakesMainPath: without policy_bundles the file never goes through
+// the JSON conversion, so YAML that JSON cannot represent loads as on main.
+func TestLoadBase_NoPolicyBundlesTakesMainPath(t *testing.T) {
+	base := mustLoadBase(t, "yaml", "api:\n  url: http://localhost:8080\nplugins:\n  ssh:\n    source: ./plugin-ssh\n    policy_data:\n      ratio: .nan\n      max: .inf\n")
+	if base.declared.PolicyBundles != nil {
+		t.Fatalf("no bundles expected, got %v", base.declared.PolicyBundles)
+	}
+	base = mustLoadBase(t, "yaml", "api:\n  url: http://localhost:8080\npolicy_bundles:\nplugins:\n  ssh:\n    source: ./plugin-ssh\n")
+	if base.declared.PolicyBundles != nil {
+		t.Fatalf("a null policy_bundles must load as none, got %v", base.declared.PolicyBundles)
 	}
 }
 

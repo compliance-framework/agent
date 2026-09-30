@@ -71,8 +71,19 @@ The shared `Validate` is stricter than the agent used to be in one way: it parse
 file used to be only logged, and the plugin never ran. To stay non-breaking, a validation error is attributed by
 origin: an error at a pointer the overlay touched (equal, prefix or extension, segment-wise) is overlay-origin and
 rejects the revision; otherwise it is file-origin. File-origin errors on the closed tolerated list (only
-`/plugins/<p>/schedule`) become reported warnings and the plugin is skipped; every other file-origin error stays fatal
-(startup exit 1, or last-known-good on reload).
+`/plugins/<p>/schedule`) become reported warnings and the plugin is skipped. A second, warn-only list covers values
+that load on `main` with a meaning the agent keeps: a negative `verbosity` (hclog Warn) and a literal `${env:...}`
+outside `plugins.*.config` (except in `policy_bundles`, a new feature). They are reported as warnings; nothing is
+skipped and the value is unchanged. Every other file-origin error stays fatal (startup exit 1, or last-known-good on
+reload). Overlay-origin errors are always strict.
+
+### Unset `${env:}` in the file (R60)
+
+Owner decision (2026-09-30, review of agent#95): R24 resolves `${env:NAME}` in the file's `plugins.*.config` too, but
+an unset variable that the file references is a **warning** and the literal value is passed to the plugin unchanged,
+exactly as on `main`, where placeholders were never resolved. "File-origin" is decided per (pointer, variable): the
+base's value at that pointer references the variable. An unset variable that the overlay introduces still fails the
+revision with `failed/env-missing`.
 
 ## Consequences
 

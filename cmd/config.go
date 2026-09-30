@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,6 +62,25 @@ func isToleratedFileRule(e agentconfig.FieldError) bool {
 		if re.MatchString(e.Path) {
 			return true
 		}
+	}
+	return false
+}
+
+// isWarnOnlyFileRule reports whether a file-origin error is a warning that neither skips a
+// plugin nor changes the value (R34, R51; owner review of agent#95). These are values that
+// load on main with a meaning the agent keeps:
+//   - a negative verbosity: hclog.Info - v, i.e. a quieter agent (-1 = Warn);
+//   - a literal ${env:...} outside plugins.*.config (labels, policy_data, ...): an opaque
+//     string handed to the plugin or to Rego, never resolved.
+//
+// policy_bundles is a new feature, so its env-location errors stay fatal.
+func isWarnOnlyFileRule(e agentconfig.FieldError) bool {
+	switch {
+	case e.Path == "/verbosity":
+		return true
+	case e.Code == agentconfig.FieldCodeEnvLocation:
+		segs := agentconfig.SplitPointer(e.Path)
+		return len(segs) == 0 || segs[0] != "policy_bundles"
 	}
 	return false
 }
@@ -270,14 +290,20 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte, ext string) (
 	if err != nil {
 		return nil, err
 	}
-	bundles, err := decodePolicyBundles(raw, ext)
-	if err != nil {
-		return nil, err
+	// Only a file that sets policy_bundles takes the non-viper decode, so every other file
+	// loads exactly as on main (e.g. a YAML .nan, which JSON cannot represent).
+	if v.IsSet("policy_bundles") {
+		switch ext {
+		case "yaml", "yml", "json", "toml":
+		default:
+			return nil, fmt.Errorf("policy_bundles is only supported in yaml, json and toml config files")
+		}
+		bundles, err := decodePolicyBundles(raw, ext)
+		if err != nil {
+			return nil, err
+		}
+		declared.PolicyBundles = bundles
 	}
-	if bundles == nil && v.IsSet("policy_bundles") {
-		return nil, fmt.Errorf("policy_bundles is only supported in yaml, json and toml config files")
-	}
-	declared.PolicyBundles = bundles
 
 	base := &baseSnapshot{
 		declared:   declared,
@@ -298,14 +324,15 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte, ext string) (
 type validationPartition struct {
 	overlay  []agentconfig.FieldError // touched by the overlay: strict
 	fatal    []agentconfig.FieldError // file-origin, not tolerated: fatal
-	warnings []agentconfig.FieldError // file-origin, tolerated: reported
-	skip     map[string]string        // plugin name -> reason, for tolerated errors
+	warnings []agentconfig.FieldError // file-origin, tolerated or warn-only: reported
+	skip     map[string]string        // plugin name -> reason, for tolerated (skip) errors
 }
 
 // partitionByOrigin splits validation errors by origin (R34). An error at pointer P is
 // overlay-origin when some overlay-touched pointer o equals P, is a prefix of P, or has P as a
 // prefix (segment-wise). Everything else is file-origin: tolerated rules become warnings
-// (and the plugin is skipped), the rest is fatal.
+// (and the plugin is skipped), warn-only rules become warnings (nothing is skipped or
+// changed), the rest is fatal.
 func partitionByOrigin(err error, overlayTouched []string) validationPartition {
 	var out validationPartition
 	if err == nil {
@@ -328,6 +355,8 @@ func partitionByOrigin(err error, overlayTouched []string) validationPartition {
 				}
 				out.skip[segs[1]] = e.Message
 			}
+		case isWarnOnlyFileRule(e):
+			out.warnings = append(out.warnings, e)
 		default:
 			out.fatal = append(out.fatal, e)
 		}
@@ -346,6 +375,89 @@ func touchedByOverlay(ptr string, touched []string) bool {
 		}
 	}
 	return false
+}
+
+// resolveEnv resolves ${env:NAME} placeholders in plugins.*.config values (R24) with the R60
+// file-origin leniency: when every unset variable of a value is already referenced by the
+// base's (file) value at the same pointer, the value is passed to the plugin unchanged, as on
+// main, and a warning is returned. An unset variable the overlay introduced still fails with
+// agentconfig.ErrEnvMissing; forbidden names always fail with agentconfig.ErrEnvForbidden.
+func resolveEnv(declared, base agentconfig.Config, lookup func(string) (string, bool)) (agentconfig.Config, []agentconfig.FieldError, error) {
+	type literal struct{ plugin, key, value string }
+	var keep []literal
+	var warnings []agentconfig.FieldError
+	work := declared
+	copied := map[string]bool{} // plugins whose Config was copied into work
+	for _, name := range sortedPluginNames(declared.Plugins) {
+		p := declared.Plugins[name]
+		if p == nil {
+			continue
+		}
+		for _, key := range sortedStringKeys(p.Config) {
+			value := p.Config[key]
+			names := agentconfig.EnvRefs(value)
+			if len(names) == 0 || slices.ContainsFunc(names, agentconfig.IsForbiddenEnvName) {
+				continue
+			}
+			var missing []string
+			for _, n := range names {
+				if _, ok := lookup(n); !ok {
+					missing = append(missing, n)
+				}
+			}
+			if len(missing) == 0 {
+				continue
+			}
+			fileRefs := agentconfig.EnvRefs(basePluginConfigValue(base, name, key))
+			if slices.ContainsFunc(missing, func(n string) bool { return !slices.Contains(fileRefs, n) }) {
+				continue // overlay-introduced: ResolveEnv reports env-missing
+			}
+			if !copied[name] {
+				if len(copied) == 0 {
+					work.Plugins = maps.Clone(declared.Plugins)
+				}
+				cp := *p
+				cp.Config = maps.Clone(p.Config)
+				work.Plugins[name] = &cp
+				copied[name] = true
+			}
+			delete(work.Plugins[name].Config, key)
+			keep = append(keep, literal{name, key, value})
+			warnings = append(warnings, agentconfig.FieldError{
+				Path:    agentconfig.Pointer("plugins", name, "config", key),
+				Code:    agentconfig.FieldCodeEnvMissing,
+				Message: fmt.Sprintf("environment variable %s is not set; the value is passed to the plugin unchanged", strings.Join(missing, ", ")),
+			})
+		}
+	}
+	resolved, err := agentconfig.ResolveEnv(work, lookup)
+	if err != nil {
+		return agentconfig.Config{}, nil, err
+	}
+	for _, l := range keep {
+		p := resolved.Plugins[l.plugin]
+		if p.Config == nil {
+			p.Config = map[string]string{}
+		}
+		p.Config[l.key] = l.value
+	}
+	return resolved, warnings, nil
+}
+
+func basePluginConfigValue(base agentconfig.Config, plugin, key string) string {
+	if p := base.Plugins[plugin]; p != nil {
+		return p.Config[key]
+	}
+	return ""
+}
+
+func sortedStringKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // toRuntime converts a merged, env-resolved declared config into the runtime structs.

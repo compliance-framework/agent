@@ -709,14 +709,22 @@ func TestStartupLadder(t *testing.T) {
 }
 
 func TestEnvPlaceholders(t *testing.T) {
-	// ${env:} is only resolved in plugins.*.config (R24): in the file's policy_data it is an
-	// error (agentconfig env-location), and an overlay using it there is rejected.
-	bad := newRemoteHarness(t, remoteConfig("apply_all", "")+`
+	// ${env:} is only resolved in plugins.*.config (R24): in the file's policy_data it is a
+	// literal passed through unchanged with a warning (R34, as on main), and an overlay using
+	// it there is rejected.
+	lenient := newRemoteHarness(t, remoteConfig("apply_all", "")+`
     policy_data:
       url: "${env:NOT_RESOLVED}"
 `)
-	if _, err := bad.rc.startup(context.Background()); err == nil || !strings.Contains(err.Error(), "only resolved in plugins.*.config") {
-		t.Fatalf("expected an env-location error for policy_data in the file, got %v", err)
+	started, err := lenient.rc.startup(context.Background())
+	if err != nil {
+		t.Fatalf("a file policy_data placeholder must not be fatal: %v", err)
+	}
+	if got := started.runtime.Plugins["ssh"].PolicyData["url"]; got != "${env:NOT_RESOLVED}" {
+		t.Fatalf("policy_data must be passed through unchanged, got %v", got)
+	}
+	if r := lenient.remote.lastReport(t); len(r.Warnings) != 1 || r.Warnings[0].Code != agentconfig.FieldCodeEnvLocation {
+		t.Fatalf("expected one env-location warning, got %+v", r.Warnings)
 	}
 
 	h := newRemoteHarness(t, remoteConfig("apply_all", ""))
@@ -755,6 +763,40 @@ func TestEnvPlaceholders(t *testing.T) {
 	}
 	if !strings.Contains(*r.Error, "PORT") || strings.Contains(*r.Error, "rotated") {
 		t.Fatalf("the error must name the variable, never values: %q", *r.Error)
+	}
+}
+
+// TestEnvPlaceholders_FileOriginUnsetIsWarning pins R60: an unset variable the FILE references
+// is a warning and the literal reaches the plugin unchanged (as on main); an unset variable the
+// overlay introduces still fails with failed/env-missing.
+func TestEnvPlaceholders_FileOriginUnsetIsWarning(t *testing.T) {
+	content := strings.Replace(remoteConfig("apply_all", ""), "token: t0ken", "token: \"${env:UNSET_TOKEN}\"\n      dsn: \"pg://${env:DB_HOST}/x\"", 1)
+	h := newRemoteHarness(t, content)
+	env := map[string]string{"DB_HOST": "db.internal"}
+	h.rc.lookupEnv = func(n string) (string, bool) { v, ok := env[n]; return v, ok }
+	h.remote.publish(1, `{}`)
+
+	active := mustStartup(t, h.rc)
+	cfg := active.runtime.Plugins["ssh"].Config
+	if cfg["token"] != "${env:UNSET_TOKEN}" || cfg["dsn"] != "pg://db.internal/x" {
+		t.Fatalf("expected the unset literal unchanged and the set one resolved, got %#v", cfg)
+	}
+	r := h.remote.lastReport(t)
+	if r.Status != agentconfig.StatusApplied || len(r.Warnings) != 1 || r.Warnings[0].Path != "/plugins/ssh/config/token" || r.Warnings[0].Code != agentconfig.FieldCodeEnvMissing {
+		t.Fatalf("expected applied with one env-missing warning, got %s %+v", r.Status, r.Warnings)
+	}
+
+	h.remote.publish(2, `{"plugins":{"ssh":{"config":{"extra":"${env:NEW_UNSET}"}}}}`)
+	h.poll(t)
+	if r := h.remote.lastReport(t); r.Status != agentconfig.StatusFailed || r.Reason != agentconfig.ReasonEnvMissing {
+		t.Fatalf("an overlay-introduced unset variable must fail with env-missing, got %s/%s", r.Status, r.Reason)
+	}
+
+	// Per (pointer, variable): the overlay rewrites the value but the variable is the file's.
+	h.remote.publish(3, `{"plugins":{"ssh":{"config":{"token":"x-${env:UNSET_TOKEN}"}}}}`)
+	next := h.poll(t)
+	if got := next.runtime.Plugins["ssh"].Config["token"]; got != "x-${env:UNSET_TOKEN}" || next.appliedRevision() == nil || *next.appliedRevision() != 3 {
+		t.Fatalf("expected revision 3 applied with the literal unchanged, got %q", got)
 	}
 }
 

@@ -192,10 +192,14 @@ plugins:
       dsn: "postgres://app:${env:PG_PASSWORD}@db:5432/app"
 ```
 
-Placeholders are resolved **only** in `plugins.*.config`, in the file and in a remote overlay. A placeholder anywhere
-else (for example `policy_data` or `labels`) is an error. `CCF_API_AUTH_*` may never be referenced. An unset variable
-fails the configuration with `env-missing`; the error names the variable, never a value. Reports, redaction and the
-configuration digest always use the unresolved placeholder, so rotating a secret never changes them (R24).
+Placeholders are resolved **only** in `plugins.*.config`, in the file and in a remote overlay. Anywhere else (for
+example `policy_data` or `labels`) a placeholder is not resolved: in the file it is passed through as a literal string,
+as it always was, and reported as a warning; a remote overlay that puts one there is rejected. `CCF_API_AUTH_*` may
+never be referenced. An unset variable that the **file** references is a warning, and the value reaches the plugin
+unchanged (the literal `${env:NAME}`), exactly as before placeholders were resolved (R60). An unset variable that a
+remote overlay introduces fails the revision with `env-missing`; the error names the variable, never a value. Reports,
+redaction and the configuration digest always use the unresolved placeholder, so rotating a secret never changes them
+(R24).
 
 Plugin values set through viper environment variables (`CCF_PLUGINS_<P>_CONFIG_<K>`, see the README) are masked as
 `••••` in every report, as are keys that look like secrets (`secret`, `token`, `password`, `key`, `credential`,
@@ -204,8 +208,11 @@ Plugin values set through viper environment variables (`CCF_PLUGINS_<P>_CONFIG_<
 ## Tolerated file problems
 
 A plugin `schedule` in the file that does not parse does not stop the agent: that plugin is skipped, the others run,
-and the problem is logged and reported as a warning (R34). Every other invalid value in the file (for example a missing
-`api.url`) still fails startup, and on a live reload the agent keeps running its last good configuration.
+and the problem is logged and reported as a warning (R34). A few other file values that always loaded are also only
+warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above), a literal `${env:...}` outside
+`plugins.*.config`, and an unset variable referenced from the file's `plugins.*.config` (see above). Every other
+invalid value in the file (for example a missing `api.url`) still fails startup, and on a live reload the agent keeps
+running its last good configuration. Values set by a remote overlay are always validated strictly.
 
 ## Policy bundles
 
