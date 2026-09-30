@@ -191,6 +191,34 @@ func TestMaterialize_Errors(t *testing.T) {
 	})
 }
 
+func TestMaterialize_ExtendsRootSymlinkAndEmptyTree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks")
+	}
+	t.Run("symlinked root is followed", func(t *testing.T) {
+		vendorDir, _ := vendorTree(t, map[string]string{"banner.rego": vendorBanner, "lib/x.rego": "package lib.x\n"})
+		link := filepath.Join(t.TempDir(), "policies")
+		if err := os.Symlink(vendorDir, link); err != nil {
+			t.Fatal(err)
+		}
+		resolve := func(context.Context, string) (string, error) { return link, nil }
+		m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("/etc/ccf/policies")}, resolve)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m.Extends.Files) != 2 || len(m.Warnings) != 0 {
+			t.Fatalf("expected both vendor files through the symlinked root, got %+v (warnings %+v)", m.Extends.Files, m.Warnings)
+		}
+	})
+	t.Run("a tree without .rego files is an error", func(t *testing.T) {
+		_, resolve := vendorTree(t, map[string]string{"README.md": "nothing here"})
+		_, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1")}, resolve)
+		if !errors.Is(err, ErrResolve) || !strings.Contains(err.Error(), "no .rego files") {
+			t.Fatalf("expected an ErrResolve for an empty extends tree, got %v", err)
+		}
+	})
+}
+
 func TestMaterialize_SkipsSymlinksInExtends(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")

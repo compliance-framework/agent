@@ -96,6 +96,10 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 		if err != nil {
 			return nil, fmt.Errorf("%w %s: %v", ErrResolve, *b.Extends, err)
 		}
+		if !slices.ContainsFunc(sortedKeys(baseFiles), func(p string) bool { return strings.HasSuffix(p, ".rego") }) {
+			// An empty or unreadable vendor tree would silently drop every vendor policy.
+			return nil, fmt.Errorf("%w %s: the policy tree at %s has no .rego files", ErrResolve, *b.Extends, dir)
+		}
 		for _, s := range skipped {
 			warn(s, "symlink in the extends tree skipped")
 		}
@@ -234,12 +238,17 @@ func mergeRootData(files map[string][]byte, data map[string]any) error {
 	return nil
 }
 
-// readTree reads the regular files under dir (paths relative, slash-separated). Symlinks are
-// skipped and returned.
+// readTree reads the regular files under dir (paths relative, slash-separated). dir itself
+// may be a symlink (e.g. /etc/ccf/policies -> a versioned directory); symlinks inside the
+// tree are skipped and returned.
 func readTree(dir string) (map[string][]byte, []string, error) {
 	files := map[string][]byte{}
 	var skipped []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

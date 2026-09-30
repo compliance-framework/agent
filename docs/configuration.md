@@ -248,8 +248,8 @@ policy_bundles:
   files, then `data` is merged (RFC 7396) onto the root `data.json` (a root `data.yaml` is converted) and written as
   `data.json`.
 - **Paths (R18)** are relative to the policy root the plugin receives, e.g. `max_auth_tries.rego`, not
-  `policies/max_auth_tries.rego`. `..`, absolute paths and empty segments are rejected. Symlinks in a local `extends`
-  tree are skipped.
+  `policies/max_auth_tries.rego`. `..`, absolute paths and empty segments are rejected. Symlinks inside a local
+  `extends` tree are skipped.
 - **Data files (R18).** OPA only loads `data.json`, `data.yaml` and `data.yml`. Any other `.json`/`.yaml`/`.yml`
   module is an error (a warning when it comes from the vendor tree). Setting both `data` and a root `data.json`
   module is an error.
@@ -261,7 +261,10 @@ policy_bundles:
 - **Checks.** Before a bundle is used the agent compiles it exactly as the plugin will, rejects any use of
   `http.send`, `net.lookup_ip_addr` or `opa.runtime` reachable from the bundle's own rules (including through vendor
   helpers and `with ... as http.send`), and runs its Rego tests with the plugin's `policy_data`. A failing test that the
-  bundle authored rejects the configuration; a failing vendor test is only a warning.
+  bundle authored rejects the configuration; a failing vendor test is only a warning. Tests never run when a forbidden
+  builtin is reachable, and they run sandboxed: a test that calls one of those builtins fails instead of executing it.
+- **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
+  `.rego` file fails with `download-failed`.
 - Inline bundles are written under the state directory (`<state>/inline/<bundle>/<digest>/`) and are never downloaded.
 
 ## Remote configuration
