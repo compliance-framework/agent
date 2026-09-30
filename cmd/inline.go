@@ -59,7 +59,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	materialized := map[string]*inlinepolicy.Materialized{}
 	var problems []agentconfig.PolicyError
 	for _, name := range sortedBoolKeys(refs) {
-		m, err := inlinepolicy.Materialize(ctx, rc.inlineRoot(), name, resolved.PolicyBundles[name], rc.resolvePolicy)
+		m, err := inlinepolicy.Materialize(ctx, rc.inlineRoot(), name, resolved.PolicyBundles[name], rc.boundedResolver())
 		var perrs inlinepolicy.PolicyErrors
 		switch {
 		case errors.As(err, &perrs):
@@ -139,7 +139,8 @@ func policyRejection(errs []agentconfig.PolicyError) *applyError {
 // sourceReports inventories the non-inline policy paths of runtime for the report. OCI trees
 // are memoized per (source, dir); local trees are re-read.
 func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) []agentconfig.PolicyBundleReport {
-	if rc.resolvePolicy == nil {
+	resolve := rc.boundedResolver()
+	if resolve == nil {
 		return nil
 	}
 	sources := map[string]struct{}{}
@@ -152,7 +153,7 @@ func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) [
 	}
 	var out []agentconfig.PolicyBundleReport
 	for _, source := range sortedSetKeys(sources) {
-		dir, err := rc.resolvePolicy(ctx, source)
+		dir, err := resolve(ctx, source)
 		if err != nil {
 			continue
 		}
@@ -174,17 +175,46 @@ func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) [
 	return out
 }
 
-// afterStartup removes materialized inline bundles that are neither active nor among the
-// newest per bundle. It runs only at the end of startup.
+// boundedResolver wraps resolvePolicy with prepareNetworkTimeout per call (nil when unset).
+func (rc *reconciler) boundedResolver() inlinepolicy.Resolver {
+	if rc.resolvePolicy == nil {
+		return nil
+	}
+	return func(ctx context.Context, source string) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, prepareNetworkTimeout)
+		defer cancel()
+		return rc.resolvePolicy(ctx, source)
+	}
+}
+
+// afterStartup removes the materialized inline bundles startup does not use.
 func (rc *reconciler) afterStartup(active *candidate) {
-	if active == nil || !rc.store.Writable() {
+	rc.gcInline(active)
+}
+
+// gcInline removes materialized inline bundles that none of keep uses and that are not among
+// the newest inlineGCKeepPerBundle per bundle. It runs after startup and after every swap
+// (keep = the running, the replaced and the new pending candidate), so a long-running daemon
+// does not accumulate one directory per revision.
+func (rc *reconciler) gcInline(keep ...*candidate) {
+	if !rc.store.Writable() {
 		return
 	}
-	keep := map[string]struct{}{}
-	for _, dir := range active.runtime.inlinePolicyDirs {
-		keep[dir] = struct{}{}
+	dirs := map[string]struct{}{}
+	found := false
+	for _, c := range keep {
+		if c == nil || c.runtime == nil {
+			continue
+		}
+		found = true
+		for _, dir := range c.runtime.inlinePolicyDirs {
+			dirs[dir] = struct{}{}
+		}
 	}
-	if err := inlinepolicy.GC(rc.inlineRoot(), keep, inlineGCKeepPerBundle); err != nil {
+	if !found {
+		return
+	}
+	if err := inlinepolicy.GC(rc.inlineRoot(), dirs, inlineGCKeepPerBundle); err != nil {
 		rc.logger.Warn("Could not clean up old inline policy bundles", "error", err)
 	}
 }

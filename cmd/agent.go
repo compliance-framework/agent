@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -20,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -80,7 +82,9 @@ type agentEvidenceConfig struct {
 
 // agentConfig is the RUNTIME form of the configuration, built from the declared form
 // (agentconfig.Config) by toRuntime. It is immutable once handed to AgentRunner.UpdateConfig,
-// except for the protocol resolution AgentRunner.Run performs on its own copy.
+// except for the protocol resolution AgentRunner.Run performs on its own copy and the sync
+// metadata, which the reconciler may update atomically when a new revision leaves the
+// effective configuration unchanged.
 type agentConfig struct {
 	Daemon        bool                    `mapstructure:"daemon"`
 	Verbosity     int32                   `mapstructure:"verbosity"`
@@ -91,7 +95,8 @@ type agentConfig struct {
 	// inlinePolicyDirs maps "inline:<name>" policy entries to their materialized directory.
 	inlinePolicyDirs map[string]string
 	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
-	sync syncMeta
+	// Read it with syncInfo; nil means the zero syncMeta.
+	sync *atomic.Pointer[syncMeta]
 	// remote is the normalized remote_config block.
 	remote agentconfig.RemoteConfig
 }
@@ -101,6 +106,25 @@ type syncMeta struct {
 	AppliedRevision int64  // 0 when running the file only
 	Digest          string // agentconfig.Digest of the effective declared config
 	Mode            string // remote_config.mode
+}
+
+// syncInfo returns the sync metadata (safe for concurrent use with setSync).
+func (ac *agentConfig) syncInfo() syncMeta {
+	if ac == nil || ac.sync == nil {
+		return syncMeta{}
+	}
+	if p := ac.sync.Load(); p != nil {
+		return *p
+	}
+	return syncMeta{}
+}
+
+// setSync stores the sync metadata. The first call must happen before the config is shared.
+func (ac *agentConfig) setSync(m syncMeta) {
+	if ac.sync == nil {
+		ac.sync = &atomic.Pointer[syncMeta]{}
+	}
+	ac.sync.Store(&m)
 }
 
 // logVerbosity maps our verbosity "increase" onto hclog's levels: our 0/1/2 = Info/Debug/Trace,
@@ -171,7 +195,10 @@ const CCFPropNamespace = "https://compliance-framework.github.io/ns"
 
 // configRevisionPropName stamps evidence with the applied remote configuration revision (R38).
 const configRevisionPropName = "agent-config-revision"
-const daemonCronStopTimeout = 30 * time.Second
+
+// daemonCronStopTimeout bounds the cron stop on SIGINT/SIGTERM before plugins are killed,
+// also when the signal arrives during a reload drain (R33).
+var daemonCronStopTimeout = 30 * time.Second
 
 // reloadDrainTimeout bounds how long in-flight plugin runs may finish when a new
 // configuration replaces the running one (R33). SIGTERM keeps daemonCronStopTimeout.
@@ -338,6 +365,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
 		return ar.downloadPolicy(ctx, source, logger)
 	}
+	rc.onStartupFailure = ar.ReportStartupFailure
 
 	active, err := rc.startup(context.Background())
 	if err != nil {
@@ -407,6 +435,10 @@ type AgentRunner struct {
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
 	sendHeartbeatFunc    func(ctx context.Context, instanceID uuid.UUID) error
+	// notifySignals and exitFunc are test seams over signal.Notify(SIGINT, SIGTERM) and
+	// os.Exit (nil = the real ones).
+	notifySignals func(c chan<- os.Signal)
+	exitFunc      func(code int)
 
 	pluginRunMu                   sync.RWMutex
 	pluginRuns                    map[string]pluginRunRecord
@@ -1049,7 +1081,7 @@ func (ar *AgentRunner) resolveProtocolsFor(ctx context.Context, config *agentCon
 func (ar *AgentRunner) runDaemon(ctx context.Context) error {
 	logger := ar.getLogger()
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	ar.signalNotify(sigs)
 	defer signal.Stop(sigs)
 
 	agentCron, err := ar.setupCron(ctx)
@@ -1094,7 +1126,7 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) error {
 		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
 		logger.Debug("Exiting")
-		os.Exit(0)
+		ar.exitProcess(0)
 		return nil
 	case <-ctx.Done():
 		logger.Debug("received cancel signal to return from daemon")
@@ -1102,7 +1134,19 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) error {
 		agentCronStopCtx := agentCron.Stop()
 		heartbeatCronStopCtx := heartbeatCron.Stop()
 		agentEvidenceCronStopCtx := agentEvidenceCron.Stop()
-		if !waitForCronStop(reloadDrainTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
+		drained, sig := waitForCronStopOrSignal(reloadDrainTimeout, sigs, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx)
+		if sig != nil {
+			// A SIGINT/SIGTERM during the reload drain is not lost: it keeps its 30s (R33).
+			logger.Info("received signal during the reload drain; terminating plugins and exiting", "signal", sig)
+			if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
+				logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
+			}
+			ar.closePluginClients()
+			logger.Debug("Exiting")
+			ar.exitProcess(0)
+			return nil
+		}
+		if !drained {
 			logger.Warn("Timed out waiting for in-flight plugin runs to drain before reload", "timeout", reloadDrainTimeout)
 		}
 		logger.Debug("Shutting down plugins")
@@ -1111,7 +1155,30 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) error {
 	}
 }
 
+func (ar *AgentRunner) signalNotify(c chan<- os.Signal) {
+	if ar.notifySignals != nil {
+		ar.notifySignals(c)
+		return
+	}
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+}
+
+func (ar *AgentRunner) exitProcess(code int) {
+	if ar.exitFunc != nil {
+		ar.exitFunc(code)
+		return
+	}
+	os.Exit(code)
+}
+
 func waitForCronStop(timeout time.Duration, stopContexts ...context.Context) bool {
+	done, _ := waitForCronStopOrSignal(timeout, nil, stopContexts...)
+	return done
+}
+
+// waitForCronStopOrSignal waits until every stop context is done (true), the timeout expires
+// (false) or a signal arrives on sigs (false and the signal; a nil sigs never fires).
+func waitForCronStopOrSignal(timeout time.Duration, sigs <-chan os.Signal, stopContexts ...context.Context) (bool, os.Signal) {
 	allDone := make(chan struct{})
 	waitCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1139,13 +1206,15 @@ func waitForCronStop(timeout time.Duration, stopContexts ...context.Context) boo
 
 	select {
 	case <-allDone:
-		return true
+		return true, nil
+	case sig := <-sigs:
+		return false, sig
 	case <-timer.C:
 		select {
 		case <-allDone:
-			return true
+			return true, nil
 		default:
-			return false
+			return false, nil
 		}
 	}
 }
@@ -1240,7 +1309,12 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 		parserOptions,
 	)))
 	config := ar.getConfig()
-	runPlugin := ar.runPlugin
+	// Each job runs with the config, API client and logger of THIS setup: a job still running
+	// when a reload's drain times out must not pick up the next configuration's state.
+	snap := ar.snapshot()
+	runPlugin := func(ctx context.Context, name string, plugin *agentPlugin) error {
+		return ar.runPluginWith(ctx, snap, name, plugin)
+	}
 	if ar.runPluginFunc != nil {
 		runPlugin = ar.runPluginFunc
 	}
@@ -1433,15 +1507,23 @@ func (ar *AgentRunner) sendAgentRunEvidenceOnStartupFailure(ctx context.Context)
 	return ar.SendAgentRunEvidence(ctx)
 }
 
-// Run the agent as an instance, this is a single run of the agent that will check the
-// policies against the plugins.
+// runSnapshot is the state one plugin run uses from start to end.
+type runSnapshot struct {
+	config *agentConfig
+	client *sdk.Client
+	logger hclog.Logger
+}
+
+func (ar *AgentRunner) snapshot() runSnapshot {
+	return runSnapshot{config: ar.getConfig(), client: ar.getAPIClient(), logger: ar.getLogger()}
+}
+
+// runPluginWith runs one plugin once with the state in snap.
 //
 // Returns:
 // - error: any error that occurred during the run
-func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agentPlugin) error {
-	config := ar.getConfig()
-	client := ar.getAPIClient()
-	logger := ar.getLogger()
+func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name string, plugin *agentPlugin) error {
+	config, client, logger := snap.config, snap.client, snap.logger
 	logger.Debug("Running single plugin with shared API SDK client",
 		"plugin", name,
 		"auth_enabled", hasAPIAuth(config),
@@ -1549,13 +1631,14 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 // configRevisionProps returns the evidence prop naming the applied overlay revision, or nil
 // when the agent runs the file only (R38).
 func configRevisionProps(config *agentConfig) []sdktypes.Property {
-	if config == nil || config.sync.AppliedRevision <= 0 {
+	meta := config.syncInfo()
+	if meta.AppliedRevision <= 0 {
 		return nil
 	}
 	return []sdktypes.Property{{
 		Ns:    CCFPropNamespace,
 		Name:  configRevisionPropName,
-		Value: strconv.FormatInt(config.sync.AppliedRevision, 10),
+		Value: strconv.FormatInt(meta.AppliedRevision, 10),
 	}}
 }
 
@@ -1564,10 +1647,10 @@ func configRevisionProps(config *agentConfig) []sdktypes.Property {
 // which lets the API create the instance row (R11, R45).
 func buildHeartbeat(config *agentConfig, id uuid.UUID, now time.Time) sdktypes.Heartbeat {
 	hb := sdktypes.Heartbeat{UUID: id, CreatedAt: now}
-	if config != nil && config.sync.Mode != "" && config.sync.Mode != agentconfig.ModeOff {
-		rev := config.sync.AppliedRevision
+	if meta := config.syncInfo(); meta.Mode != "" && meta.Mode != agentconfig.ModeOff {
+		rev := meta.AppliedRevision
 		hb.ConfigRevision = &rev
-		hb.ConfigDigest = config.sync.Digest
+		hb.ConfigDigest = meta.Digest
 	}
 	return hb
 }
@@ -1963,16 +2046,53 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 	}
 	for _, source := range sortedSetKeys(pluginSources) {
 		if _, err := ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform)); err != nil {
-			return fmt.Errorf("download plugin %s: %w", source, err)
+			return &downloadError{source: source, err: err}
 		}
 	}
 	ar.resolveProtocolsFor(ctx, cfg, logger)
 	for _, source := range sortedSetKeys(policySources) {
 		if _, err := ar.downloadPolicy(ctx, source, logger); err != nil {
-			return fmt.Errorf("download policy %s: %w", source, err)
+			return &downloadError{source: source, policy: true, err: err}
 		}
 	}
 	return nil
+}
+
+// downloadError is a Prefetch failure: which plugin or policy source could not be fetched.
+type downloadError struct {
+	source string
+	policy bool
+	err    error
+}
+
+func (e *downloadError) Error() string {
+	kind := "plugin"
+	if e.policy {
+		kind = "policy"
+	}
+	return fmt.Sprintf("download %s %s: %v", kind, e.source, e.err)
+}
+
+func (e *downloadError) Unwrap() error { return e.err }
+
+// ReportStartupFailure records that the configuration the agent starts with could not be
+// downloaded, exactly as Run always has on a startup download failure: the plugins using the
+// failed source are marked failed and the startup-failure agent evidence is sent (when agent
+// evidence and emit_on_run_completion are enabled). The agent then exits 1.
+func (ar *AgentRunner) ReportStartupFailure(ctx context.Context, cfg *agentConfig, err error) {
+	ar.UpdateConfig(cfg)
+	var dl *downloadError
+	switch {
+	case errors.As(err, &dl) && dl.policy:
+		ar.markPluginsWithPolicyFailed(agentPolicy(dl.source), dl.err)
+	case errors.As(err, &dl):
+		ar.markPluginsWithSourceFailed(dl.source, dl.err)
+	}
+	logger := ar.getLogger()
+	logger.Error("Error downloading plugins and policies", "error", err)
+	if evidenceErr := ar.sendAgentRunEvidenceOnStartupFailure(ctx); evidenceErr != nil {
+		logger.Error("Error sending agent run evidence", "error", evidenceErr)
+	}
 }
 
 // downloadPolicy fetches one policy source into the shared policy cache.

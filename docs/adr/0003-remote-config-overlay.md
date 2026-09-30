@@ -30,9 +30,16 @@ The file is decoded through viper's weak decoder exactly as before (R51). Only a
 One reconciler goroutine serializes every trigger (config file change, poll). A trigger builds a complete candidate:
 overlay validation, the `Classify` gate, merge, validation, `${env:}` resolution, inline bundle materialization and
 checks, and every download (`Prefetch`). Only then is the running configuration cancelled. Any failure leaves the
-running configuration untouched and is reported. In-flight plugin runs drain for up to 5 minutes on a swap. A run that
-fails on its own after a swap falls back to the previous configuration. Startup tries the fetched overlay, then the
-cached applied overlay, then the file alone; only an unusable file exits.
+running configuration untouched and is reported. Each network step of a prepare is bounded (5 minutes), so a hung
+registry is a `download-failed`, not a stalled reconciler. In-flight plugin runs drain for up to 5 minutes on a swap; a
+SIGINT/SIGTERM during the drain still exits within 30 seconds. A run that fails on its own after a swap falls back to
+the previous configuration and that candidate (overlay or file-only) enters the failed backoff, so it is not re-applied
+on every poll. A candidate whose effective configuration equals the running one (a no-op revision, a comment-only file
+edit) is recorded as applied without a restart: the heartbeat, evidence and report show its revision. An applied
+overlay that a file edit makes invalid is remembered as rejected and the last good configuration keeps running.
+Materialized inline bundles are garbage-collected at startup and after every swap. Startup tries the fetched overlay,
+then the cached applied overlay, then the file alone; only an unusable file exits (a download failure of the file
+alone still sends the startup-failure agent evidence first, as before).
 
 ### The agent is the Classify authority
 
@@ -48,6 +55,9 @@ through the same `policyeval.NewFromBundlePath` prepare path `policy-manager` us
 unsupported. The API's Rego check is parse-level; the agent additionally walks every rule reachable from the bundle's
 authored rules in the compiled rule graph and rejects any `policyeval.DeniedBuiltins` reference (`http.send`,
 `net.lookup_ip_addr`, `opa.runtime`), including through vendor helpers and `with ... as http.send` (R19, R20).
+When the walk finds one, the bundle's Rego tests are not run. The tests themselves run sandboxed: they compile under
+`policyeval.SandboxCapabilities` with every denied builtin rewritten to a stub that errors, so no denied builtin ever
+executes on the agent host while a revision is checked (D17); a vendor test that needs one simply fails (a warning).
 
 Residual risk (R20): a vendor rule that already calls `http.send` with a URL taken from `data` makes `policy_data`
 edits to that plugin effectively able to direct its requests. Eval-time capabilities are a follow-up.
@@ -63,7 +73,8 @@ environment minus `CCF_API_AUTH_*`, so plugins never see the agent's API credent
 The overlay ETag is opaque (`"r<rev>-<uuid>"`). The agent stores the raw header in its cache and sends it back
 verbatim as `If-None-Match`; it never builds one from a revision number, so a reset or recreated API can never produce
 a false 304 (R7). The cache is bound to `api.url` and `client_id`, and a rejected revision is remembered per
-(ETag, base fingerprint), never per revision number.
+(ETag, base fingerprint), never per revision number alone. A response without an ETag (a stripping proxy) is keyed by
+revision + sha256 of the overlay instead, so one rejection never blocks later revisions.
 
 ### File-origin tolerance (R34)
 

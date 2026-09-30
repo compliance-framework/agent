@@ -40,10 +40,13 @@ type OverlayRecord struct {
 
 // RejectedRecord remembers that a fetched overlay was rejected against a given base, so it
 // is not re-prepared on every poll. It is keyed by (ETag, BaseFingerprint); the revision is
-// informational only because a reset API can reuse revision numbers.
+// informational only because a reset API can reuse revision numbers, except when the
+// response carried no ETag: then (Revision, OverlaySHA256) stands in for it.
 type RejectedRecord struct {
-	Revision        int64  `json:"revision"`
-	ETag            string `json:"etag"`
+	Revision int64  `json:"revision"`
+	ETag     string `json:"etag"`
+	// OverlaySHA256 keys the record with the revision when the response had no ETag.
+	OverlaySHA256   string `json:"overlay_sha256,omitempty"`
 	BaseFingerprint string `json:"base_fingerprint"`
 	Status          string `json:"status"`
 	Reason          string `json:"reason"`

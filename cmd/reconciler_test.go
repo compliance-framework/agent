@@ -3,11 +3,15 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,19 +20,34 @@ import (
 	"github.com/google/uuid"
 )
 
-// fakePrefetcher records Prefetch calls and can be told to fail.
+// fakePrefetcher records Prefetch calls and can be told to fail or to hang.
 type fakePrefetcher struct {
 	mu    sync.Mutex
 	calls int
 	err   error
+	block bool
 }
 
-func (f *fakePrefetcher) Prefetch(_ context.Context, _ *agentConfig) error {
+func (f *fakePrefetcher) Prefetch(ctx context.Context, _ *agentConfig) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls++
-	return f.err
+	err, block := f.err, f.block
+	f.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return err
 }
+
+func (f *fakePrefetcher) setBlock(block bool) {
+	f.mu.Lock()
+	f.block = block
+	f.mu.Unlock()
+}
+
+// errStopRun ends a test's run func (and so rc.run) on a test-owned channel.
+var errStopRun = errors.New("test stopped the run")
 
 func (f *fakePrefetcher) setErr(err error) {
 	f.mu.Lock()
@@ -220,30 +239,109 @@ func TestReconciler_RapidFileEventsRace(t *testing.T) {
 	defer cancel()
 	go rc.loop(ctx)
 
-	var writes atomic.Int32
+	const last = "*/9 * * * *" // unique: no intermediate reload can satisfy the check
 	for i := 0; i < 50; i++ {
 		schedule := "*/5 * * * *"
-		if i%2 == 0 {
+		switch {
+		case i == 49:
+			schedule = last
+		case i%2 == 0:
 			schedule = "*/7 * * * *"
 		}
 		if err := os.WriteFile(path, []byte(configWithSchedule(schedule)), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		writes.Add(1)
 		rc.signalFile()
 		time.Sleep(time.Millisecond)
 	}
-	// The last write wins.
+	// The last write wins: it is started, and it is still what runs once reloads quiesce.
 	deadline := time.After(5 * time.Second)
-	for {
+	for applied := false; !applied; {
 		select {
 		case cfg := <-rec.started:
-			if *cfg.Plugins["ssh"].Schedule == "*/5 * * * *" {
-				return
-			}
+			applied = *cfg.Plugins["ssh"].Schedule == last
 		case <-deadline:
 			t.Fatal("the last file write was never applied")
 		}
+	}
+	expectNoStart(t, rec, 300*time.Millisecond)
+	if got := *rc.current().runtime.Plugins["ssh"].Schedule; got != last {
+		t.Fatalf("the final running config has schedule %q, want %q", got, last)
+	}
+}
+
+// TestReconciler_FileOnlyRunFailureBacksOff: a file edit that prepares but fails to run is
+// not re-applied on every poll (it would cancel the healthy config and fall back each time).
+func TestReconciler_FileOnlyRunFailureBacksOff(t *testing.T) {
+	rc, pf, path := newTestReconciler(t, configWithSchedule("* * * * *"))
+	rec := newRunRecorder()
+	rec.fail = func(cfg *agentConfig) error {
+		if *cfg.Plugins["ssh"].Schedule == "*/5 * * * *" {
+			return errors.New("cron setup failed")
+		}
+		return nil
+	}
+	startReconciler(t, rc, rec)
+
+	if err := os.WriteFile(path, []byte(configWithSchedule("*/5 * * * *")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rc.reconcile(context.Background(), triggerFile)
+	waitStarted(t, rec) // the new config, which fails
+	waitStarted(t, rec) // the fallback
+	select {
+	case c := <-rc.runFailed:
+		rc.onRunFailed(context.Background(), c)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run failure was never notified")
+	}
+	calls := pf.callCount()
+	for i := 0; i < 3; i++ {
+		rc.reconcile(context.Background(), triggerPoll)
+	}
+	expectNoStart(t, rec, 200*time.Millisecond)
+	if pf.callCount() != calls {
+		t.Fatalf("a file-only run failure must be backed off, got %d prepares", pf.callCount()-calls)
+	}
+}
+
+// TestReconciler_StartupDownloadFailureReported: a download failure of the file-only config
+// at startup is handed to onStartupFailure (startup-failure evidence, as Run did on main).
+func TestReconciler_StartupDownloadFailureReported(t *testing.T) {
+	rc, pf, _ := newTestReconciler(t, configWithSchedule("* * * * *"))
+	pf.setErr(&downloadError{source: "./plugin-ssh", err: errors.New("registry down")})
+	var gotCfg *agentConfig
+	var gotErr error
+	rc.onStartupFailure = func(_ context.Context, cfg *agentConfig, err error) { gotCfg, gotErr = cfg, err }
+	if _, err := rc.startup(context.Background()); err == nil {
+		t.Fatal("startup must fail")
+	}
+	if gotCfg == nil || gotCfg.Plugins["ssh"] == nil || !strings.Contains(gotErr.Error(), "registry down") {
+		t.Fatalf("onStartupFailure was not called with the runtime and error: %v %v", gotCfg, gotErr)
+	}
+}
+
+func TestReportStartupFailureMarksPluginsAndSendsEvidence(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	ar := NewAgentRunner()
+	ar.httpClient = newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(raw))
+		mu.Unlock()
+		return jsonResponse(http.StatusCreated, ""), nil
+	})
+	cfg := newTestAgentConfig("http://example.test", nil)
+	ar.ReportStartupFailure(context.Background(), cfg, &downloadError{source: "ghcr.io/some-plugin:v1", err: errors.New("registry down")})
+
+	if snap := ar.pluginRunSnapshot(); !slices.Contains(snap.Failed, "test-plugin") || !strings.Contains(snap.Errors["test-plugin"], "registry down") {
+		t.Fatalf("the plugin using the failed source must be marked failed, got %+v", snap)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 1 || !strings.Contains(bodies[0], "Plugins with errors: test-plugin") {
+		t.Fatalf("expected one startup-failure evidence naming the failed plugin, got %d: %v", len(bodies), bodies)
 	}
 }
 
@@ -372,4 +470,60 @@ func TestRunDaemonDrainsInFlightRunsOnReload(t *testing.T) {
 	if !finishedCleanly.Load() {
 		t.Fatal("the in-flight run was cut short by the reload")
 	}
+}
+
+// TestRunDaemonSignalDuringReloadDrainExits: a SIGTERM that arrives while a reload drains is
+// not lost; it exits (R33: SIGTERM keeps its 30s) instead of waiting out the 5m drain.
+func TestRunDaemonSignalDuringReloadDrainExits(t *testing.T) {
+	oldStop := daemonCronStopTimeout
+	daemonCronStopTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { daemonCronStopTimeout = oldStop })
+
+	schedule := "@every 1s"
+	disabled := false
+	ar := NewAgentRunner()
+	ar.UpdateConfig(&agentConfig{
+		Daemon:        true,
+		ApiConfig:     &apiConfig{Url: "http://127.0.0.1:1"},
+		AgentEvidence: &agentEvidenceConfig{Enabled: &disabled},
+		Plugins:       map[string]*agentPlugin{"slow": {Source: "/tmp/slow", Schedule: &schedule}},
+	})
+	sigCh := make(chan chan<- os.Signal, 1)
+	ar.notifySignals = func(c chan<- os.Signal) { sigCh <- c }
+	exited := make(chan int, 1)
+	ar.exitFunc = func(code int) { exited <- code }
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	ar.runPluginFunc = func(context.Context, string, *agentPlugin) error {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release // outlives the test's patience: only the signal can end the drain
+		return nil
+	}
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- ar.runDaemon(ctx) }()
+	sigs := <-sigCh
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("plugin never started")
+	}
+	cancel() // reload: the drain waits for the blocked run
+	time.Sleep(50 * time.Millisecond)
+	sigs <- syscall.SIGTERM
+
+	select {
+	case code := <-exited:
+		if code != 0 {
+			t.Fatalf("exit code %d, want 0", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a SIGTERM during the reload drain was lost")
+	}
+	<-done
 }

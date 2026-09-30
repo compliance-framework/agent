@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,5 +121,28 @@ func TestInline_DownloadPoliciesNeverDownloadsInline(t *testing.T) {
 	}
 	if got := ar.policyLocations["inline:ssh"]; got != "/materialized/ssh" {
 		t.Fatalf("policy location = %q", got)
+	}
+}
+
+// TestInline_GCAfterSwap bounds the materialized directories of a long-running daemon: GC runs
+// after every swap, not only at startup.
+func TestInline_GCAfterSwap(t *testing.T) {
+	h, _ := newInlineHarness(t)
+	h.remote.publish(0, `{}`)
+	mustStartup(t, h.rc)
+	for rev := int64(1); rev <= 10; rev++ {
+		overlay := fmt.Sprintf(`{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\n# rev %d\nviolation contains {\"remarks\": \"x\"} if input.max > data.max\n"}}}}`, rev)
+		h.remote.publish(rev, overlay)
+		if got := h.poll(t); got.overlay == nil || got.overlay.Revision != rev {
+			r := h.remote.lastReport(t)
+			t.Fatalf("revision %d did not apply: %s/%s %s", rev, r.Status, r.Reason, derefString(r.Error))
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(h.rc.inlineRoot(), "ssh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) > inlineGCKeepPerBundle+2 {
+		t.Fatalf("expected at most %d materialized dirs after GC, found %d", inlineGCKeepPerBundle+2, len(entries))
 	}
 }

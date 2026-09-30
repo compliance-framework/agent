@@ -39,6 +39,10 @@ var (
 	// failedRetryMin / failedRetryMax bound the retry of a failed/* revision.
 	failedRetryMin = time.Minute
 	failedRetryMax = 10 * time.Minute
+	// prepareNetworkTimeout bounds each network step of prepare (plugin/policy prefetch, an
+	// extends tree, a report inventory), so a hung registry cannot stall the reconciler. A
+	// timeout is a failed/download-failed, which is retried with the failed backoff.
+	prepareNetworkTimeout = 5 * time.Minute
 )
 
 // candidate is a complete, validated configuration that is ready to run. The reconciler builds
@@ -75,6 +79,9 @@ type applyError struct {
 	Err          error
 	Unsafe       []agentconfig.Change
 	PolicyErrors []agentconfig.PolicyError
+	// runtime is the prepared runtime of a download-failed candidate: startup hands it to
+	// onStartupFailure so the startup-failure evidence describes it, as on main.
+	runtime *agentConfig
 }
 
 func (e *applyError) Error() string {
@@ -166,6 +173,9 @@ type reconciler struct {
 	instanceID uuid.UUID
 	fileEvents chan struct{}
 	runFailed  chan *candidate
+	// onStartupFailure records a startup download failure of the file-only configuration
+	// (plugin run state + startup-failure agent evidence, as AgentRunner.Run always did).
+	onStartupFailure func(ctx context.Context, cfg *agentConfig, err error)
 	// debounce coalesces bursts of config file events (editors write in several steps).
 	debounce time.Duration
 
@@ -198,7 +208,7 @@ type reconciler struct {
 	reportBackoffUntil time.Time
 	loggedOnce         map[string]bool
 
-	failedETag     string
+	failedKey      string // overlayKey of the target in failed backoff
 	failedBase     string
 	failedRetryAt  time.Time
 	failedInterval time.Duration
@@ -337,6 +347,9 @@ func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 		}
 		if aerr != nil {
 			if target == nil {
+				if aerr.runtime != nil && rc.onStartupFailure != nil {
+					rc.onStartupFailure(ctx, aerr.runtime, aerr.Err)
+				}
 				return nil, aerr
 			}
 			rc.logger.Warn("Could not apply the remote configuration at startup", "revision", target.Revision, "status", aerr.Status, "reason", aerr.Reason, "error", aerr.Err)
@@ -387,14 +400,41 @@ func sameOverlay(a, b *agentstate.OverlayRecord) bool {
 	}
 }
 
-func (rc *reconciler) rememberedRejected(rec *agentstate.OverlayRecord) bool {
-	r := rc.cache.Rejected
-	return r != nil && rec != nil && r.ETag == rec.ETag && r.BaseFingerprint == rc.base.fingerprint
+// overlayKey identifies an overlay for the rejected memory and the failed backoff: the raw
+// ETag, or revision + sha256(overlay) when a response carried no ETag (a stripping proxy), so
+// one rejection never blocks every later revision. nil (the file only) has its own key.
+func overlayKey(rec *agentstate.OverlayRecord) string {
+	switch {
+	case rec == nil:
+		return "file-only"
+	case rec.ETag != "":
+		return "etag:" + rec.ETag
+	default:
+		return fmt.Sprintf("rev:%d:%s", rec.Revision, overlayDigest(rec.Overlay))
+	}
 }
 
-// recordFailure remembers a rejected revision for (etag, base), or starts the failed backoff.
+func overlayDigest(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func (rc *reconciler) rememberedRejected(rec *agentstate.OverlayRecord) bool {
+	r := rc.cache.Rejected
+	if r == nil || rec == nil || r.BaseFingerprint != rc.base.fingerprint {
+		return false
+	}
+	if r.ETag != "" || rec.ETag != "" {
+		return r.ETag == rec.ETag
+	}
+	return r.Revision == rec.Revision && r.OverlaySHA256 == overlayDigest(rec.Overlay)
+}
+
+// recordFailure remembers a rejected revision for (overlay key, base), or starts the failed
+// backoff. A file-only candidate that fails to prepare is backed off too.
 func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *applyError) {
 	if target == nil {
+		rc.startFailedBackoff(nil, rc.base.fingerprint)
 		return
 	}
 	if aerr.Status == agentconfig.StatusRejected {
@@ -405,6 +445,7 @@ func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *appl
 		rc.cache.Rejected = &agentstate.RejectedRecord{
 			Revision:        target.Revision,
 			ETag:            target.ETag,
+			OverlaySHA256:   overlayDigest(target.Overlay),
 			BaseFingerprint: rc.base.fingerprint,
 			Status:          aerr.Status,
 			Reason:          aerr.Reason,
@@ -413,26 +454,35 @@ func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *appl
 		rc.saveCache()
 		return
 	}
-	rc.startFailedBackoff(target)
+	rc.startFailedBackoff(target, rc.base.fingerprint)
 }
 
-func (rc *reconciler) startFailedBackoff(target *agentstate.OverlayRecord) {
-	if rc.failedETag == target.ETag && rc.failedBase == rc.base.fingerprint && rc.failedInterval > 0 {
+// startFailedBackoff starts (or doubles, for the same target and base) the retry delay of a
+// target (nil = the file only) that failed to prepare or to run on base baseFingerprint.
+func (rc *reconciler) startFailedBackoff(target *agentstate.OverlayRecord, baseFingerprint string) {
+	key := overlayKey(target)
+	if rc.failedKey == key && rc.failedBase == baseFingerprint && rc.failedInterval > 0 {
 		rc.failedInterval = min(rc.failedInterval*2, failedRetryMax)
 	} else {
 		rc.failedInterval = failedRetryMin
 	}
-	rc.failedETag, rc.failedBase = target.ETag, rc.base.fingerprint
+	rc.failedKey, rc.failedBase = key, baseFingerprint
 	rc.failedRetryAt = rc.now().Add(rc.failedInterval)
 }
 
 func (rc *reconciler) inFailedBackoff(target *agentstate.OverlayRecord) bool {
-	return target != nil && rc.failedInterval > 0 && rc.failedETag == target.ETag &&
+	return rc.failedInterval > 0 && rc.failedKey == overlayKey(target) &&
 		rc.failedBase == rc.base.fingerprint && rc.now().Before(rc.failedRetryAt)
 }
 
-func (rc *reconciler) clearFailedBackoff() {
-	rc.failedETag, rc.failedBase, rc.failedInterval = "", "", 0
+// clearFailedBackoff forgets the failed backoff after target prepared on the current base,
+// unless it is the target in backoff: that one may still fail to RUN, and the retry delay
+// must keep growing instead of restarting at failedRetryMin (no flapping every poll).
+func (rc *reconciler) clearFailedBackoff(target *agentstate.OverlayRecord) {
+	if rc.failedKey == overlayKey(target) && rc.failedBase == rc.base.fingerprint {
+		return
+	}
+	rc.failedKey, rc.failedBase, rc.failedInterval = "", "", 0
 }
 
 // prepare builds a candidate from a base and an optional overlay (G3.3). Cheap checks run
@@ -508,8 +558,13 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	if err != nil {
 		return nil, failed(agentconfig.ReasonInvalidConfig, err)
 	}
-	if err := rc.runner.Prefetch(ctx, runtime); err != nil {
-		return nil, failed(agentconfig.ReasonDownloadFailed, err)
+	prefetchCtx, cancelPrefetch := context.WithTimeout(ctx, prepareNetworkTimeout)
+	err = rc.runner.Prefetch(prefetchCtx, runtime)
+	cancelPrefetch()
+	if err != nil {
+		aerr := failed(agentconfig.ReasonDownloadFailed, err)
+		aerr.runtime = runtime
+		return nil, aerr
 	}
 	if rcfg.Mode != agentconfig.ModeOff {
 		inline.reports = append(inline.reports, rc.sourceReports(ctx, runtime)...)
@@ -518,10 +573,11 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	// The digest is over the UNRESOLVED form with the same masking as the reported effective
 	// config (R55): it never changes when a secret rotates.
 	digest := agentconfig.Digest(declared, base.redactOpts()...)
-	runtime.sync = syncMeta{Digest: digest, Mode: rcfg.Mode}
+	meta := syncMeta{Digest: digest, Mode: rcfg.Mode}
 	if ov != nil {
-		runtime.sync.AppliedRevision = ov.Revision
+		meta.AppliedRevision = ov.Revision
 	}
+	runtime.setSync(meta)
 	return &candidate{
 		base:           base,
 		overlay:        ov,
@@ -620,6 +676,45 @@ func (rc *reconciler) bind(active *candidate, cancel context.CancelFunc) {
 	}
 }
 
+// adopt records cand, whose identity equals old's, as the running (or pending) configuration
+// WITHOUT a restart: the runtime old runs is kept and only its sync metadata changes, so the
+// heartbeat, evidence and report show cand's applied revision, and sameAsActive holds for
+// cand's base and overlay on the next trigger (no re-prepare every poll).
+func (rc *reconciler) adopt(old, cand *candidate) *candidate {
+	adopted := *cand
+	if old.runtime != nil {
+		adopted.runtime = old.runtime
+		old.runtime.setSync(cand.runtime.syncInfo())
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	switch {
+	case rc.pending == old:
+		rc.pending = &adopted
+	case rc.active == old:
+		rc.active = &adopted
+	}
+	return &adopted
+}
+
+// record returns the reconciler's current record of the candidate running c.runtime: adopt
+// may have replaced it in place.
+func (rc *reconciler) record(c *candidate) *candidate {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.active != nil && c != nil && rc.active.runtime == c.runtime {
+		return rc.active
+	}
+	return c
+}
+
+// running returns the candidate the run loop has bound (it may still be draining after a swap).
+func (rc *reconciler) running() *candidate {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return rc.active
+}
+
 // swap makes next the pending candidate and cancels the running one.
 func (rc *reconciler) swap(next *candidate) {
 	rc.mu.Lock()
@@ -651,17 +746,24 @@ func (rc *reconciler) current() *candidate {
 // run drives run with the active candidate. A cancelled run (swap) picks up the pending
 // candidate; a run that fails on its own falls back to the previous candidate once.
 func (rc *reconciler) run(active *candidate, run runFunc) error {
-	var previous *candidate
+	var previous, failedRun *candidate
 	for {
 		runCtx, cancel := context.WithCancel(context.Background())
 		rc.bind(active, cancel)
+		if failedRun != nil {
+			// Notify only once the fallback is bound, so the reconciler's current() is the
+			// fallback, never the candidate that failed.
+			rc.notifyRunFailed(failedRun)
+			failedRun = nil
+		}
 		runErr := run(runCtx, active.runtime)
 		reload := runCtx.Err() != nil
 		cancel()
+		active = rc.record(active)
 		if runErr != nil && !reload {
 			if previous != nil {
 				rc.logger.Error("Configuration failed to run; falling back to the previous configuration", "error", runErr)
-				rc.notifyRunFailed(active)
+				failedRun = active
 				active, previous = previous, nil
 				continue
 			}
@@ -727,8 +829,16 @@ func (rc *reconciler) loop(ctx context.Context) {
 // onRunFailed records that a prepared candidate failed to run (the run loop already fell back).
 func (rc *reconciler) onRunFailed(ctx context.Context, c *candidate) {
 	aerr := failed(agentconfig.ReasonInternal, errors.New("the configuration failed to start; running the previous configuration"))
+	if c != nil {
+		// File-only candidates are backed off too: otherwise every poll re-prepares the new
+		// base, cancels the healthy configuration, fails and falls back again.
+		baseFingerprint := rc.base.fingerprint
+		if c.base != nil {
+			baseFingerprint = c.base.fingerprint
+		}
+		rc.startFailedBackoff(c.overlay, baseFingerprint)
+	}
 	if c != nil && c.overlay != nil {
-		rc.startFailedBackoff(c.overlay)
 		if sameOverlay(rc.cache.Applied, c.overlay) {
 			rc.cache.Applied = nil
 			if prev := rc.current(); prev != nil && prev.overlay != nil {
@@ -770,6 +880,13 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 		rc.maybeReport(ctx, active, rc.lastOutcome)
 		return
 	}
+	if target != nil && rc.rememberedRejected(target) {
+		// The only overlay left (the applied one) was rejected for this base, e.g. after a
+		// conflicting file edit: keep the last-known-good configuration instead of
+		// re-preparing (and re-running inline policy checks) on every poll (§5.4, G3.4).
+		rc.maybeReport(ctx, active, rc.lastOutcome)
+		return
+	}
 	if rc.inFailedBackoff(target) {
 		rc.maybeReport(ctx, active, rc.lastOutcome)
 		return
@@ -783,19 +900,20 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 		rc.maybeReport(ctx, active, aerr)
 		return
 	}
-	rc.clearFailedBackoff()
+	rc.clearFailedBackoff(target)
 	if isApplyMode(rcfg.Mode) {
 		rc.cache.Applied = target
 		rc.saveCache()
 	}
 	rc.lastOutcome = nil
 	if active != nil && active.identity == cand.identity {
-		rc.logger.Debug("Trigger did not change the effective configuration")
-		rc.maybeReport(ctx, active, nil)
+		rc.logger.Debug("Trigger did not change the effective configuration; recording it without a restart", "revision", revisionForLog(target))
+		rc.maybeReport(ctx, rc.adopt(active, cand), nil)
 		return
 	}
 	rc.logger.Info("Applying the new configuration", "revision", revisionForLog(target))
 	rc.swap(cand)
+	rc.gcInline(rc.running(), active, cand)
 	rc.maybeReport(ctx, cand, nil)
 }
 

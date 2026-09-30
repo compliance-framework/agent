@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/google/uuid"
+	"github.com/hashicorp/go-hclog"
 )
 
 // fakeRemote is a scripted API for the remote configuration routes.
@@ -835,6 +837,7 @@ func TestReconciler_RaceInterleavedFileEventsAndPolls(t *testing.T) {
 	running := 0
 	maxRunning := 0
 	var last *agentConfig
+	stop := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		done <- h.rc.run(active, func(ctx context.Context, cfg *agentConfig) error {
@@ -843,13 +846,29 @@ func TestReconciler_RaceInterleavedFileEventsAndPolls(t *testing.T) {
 			maxRunning = max(maxRunning, running)
 			last = cfg
 			mu.Unlock()
-			<-ctx.Done()
-			mu.Lock()
-			running--
-			mu.Unlock()
-			return nil
+			defer func() {
+				mu.Lock()
+				running--
+				mu.Unlock()
+			}()
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-stop:
+				return errStopRun
+			}
 		})
 	}()
+	t.Cleanup(func() {
+		// Stop rc.run (it returns once the run and its fallback both stop) so the goroutine
+		// does not leak into other tests.
+		close(stop)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("rc.run did not return")
+		}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -878,5 +897,163 @@ func TestReconciler_RaceInterleavedFileEventsAndPolls(t *testing.T) {
 	}
 	if last == nil || *last.Plugins["ssh"].Schedule != want {
 		t.Fatalf("the last revision must win")
+	}
+}
+
+// TestApply_NoOpRevisionAdoptedWithoutRestart: a revision whose effective config equals the
+// running one is recorded as applied without a restart, and is not re-prepared every poll.
+func TestApply_NoOpRevisionAdoptedWithoutRestart(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	first := mustStartup(t, h.rc)
+
+	// verbosity 0 equals the base: the effective config does not change.
+	h.remote.publish(2, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}},"verbosity":0}`)
+	calls := h.pf.callCount()
+	var cur *candidate
+	for i := 0; i < 3; i++ {
+		cur = h.poll(t)
+	}
+	if got := h.pf.callCount() - calls; got != 1 {
+		t.Fatalf("a no-op revision must be prepared once, got %d prefetches", got)
+	}
+	if cur.runtime != first.runtime {
+		t.Fatal("a no-op revision must not restart the running configuration")
+	}
+	if rev := cur.runtime.syncInfo().AppliedRevision; rev != 2 {
+		t.Fatalf("the heartbeat/evidence must show applied revision 2, got %d", rev)
+	}
+	if r := h.remote.lastReport(t); r.Status != agentconfig.StatusApplied || r.AppliedRevision == nil || *r.AppliedRevision != 2 {
+		t.Fatalf("the report must show applied revision 2, got %+v", r)
+	}
+
+	// A comment-only file edit is adopted the same way.
+	h.writeConfig(t, "# a comment\n"+remoteConfig("apply_safe", ""))
+	h.rc.reconcile(context.Background(), triggerFile)
+	calls = h.pf.callCount()
+	for i := 0; i < 3; i++ {
+		cur = h.poll(t)
+	}
+	if h.pf.callCount() != calls || cur.runtime != first.runtime {
+		t.Fatalf("a comment-only edit must not be re-prepared every poll (%d prefetches) nor restart", h.pf.callCount()-calls)
+	}
+}
+
+// TestApply_RejectedAppliedOverlayNotRePrepared: after a file edit makes the applied overlay
+// invalid, the remembered rejection keeps last-known-good instead of re-preparing every poll.
+func TestApply_RejectedAppliedOverlayNotRePrepared(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", `"host"`))
+	var logs bytes.Buffer
+	h.rc.logger = hclog.New(&hclog.LoggerOptions{Output: &logs, Level: hclog.Warn})
+	h.remote.publish(1, `{"plugins":{"ssh":{"config":{"host":"other"}}}}`)
+	first := mustStartup(t, h.rc)
+	if first.overlay == nil {
+		t.Fatal("revision 1 must apply while host is overridable")
+	}
+
+	h.writeConfig(t, remoteConfig("apply_safe", "")) // host is no longer overridable
+	h.rc.reconcile(context.Background(), triggerFile)
+	if r := h.remote.lastReport(t); r.Status != agentconfig.StatusRejected || r.Reason != agentconfig.ReasonUnsafeChanges {
+		t.Fatalf("expected rejected/unsafe-changes, got %s/%s", r.Status, r.Reason)
+	}
+	prepares := strings.Count(logs.String(), "Could not apply the configuration")
+	for i := 0; i < 3; i++ {
+		if got := h.poll(t); got != first {
+			t.Fatal("the last-known-good configuration must keep running")
+		}
+	}
+	if got := strings.Count(logs.String(), "Could not apply the configuration") - prepares; got != 0 {
+		t.Fatalf("a remembered rejection must not be re-prepared, got %d prepares", got)
+	}
+}
+
+// TestApply_EmptyETagDoesNotBlockLaterRevisions: without an ETag, revisions are told apart by
+// revision + overlay bytes.
+func TestApply_EmptyETagDoesNotBlockLaterRevisions(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"source":"ghcr.io/other/plugin:v1"}}}`)
+	h.remote.etag = ""
+	mustStartup(t, h.rc)
+	if r := h.remote.lastReport(t); r.Reason != agentconfig.ReasonUnsafeChanges {
+		t.Fatalf("expected unsafe-changes, got %s", r.Reason)
+	}
+	h.remote.publish(2, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	h.remote.etag = ""
+	if got := h.poll(t); got.overlay == nil || got.overlay.Revision != 2 {
+		t.Fatalf("revision 2 must apply despite the empty ETag, got %+v", got.overlay)
+	}
+}
+
+// TestApply_RunFailureNotifiesAfterFallbackIsBound: onRunFailed sees the fallback as current,
+// so the applied overlay reverts to it and the report describes it.
+func TestApply_RunFailureNotifiesAfterFallbackIsBound(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	active, err := h.rc.startup(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- h.rc.run(active, func(ctx context.Context, cfg *agentConfig) error {
+			if *cfg.Plugins["ssh"].Schedule == "*/7 * * * *" {
+				return errors.New("failed to start")
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-stop:
+				return errStopRun
+			}
+		})
+	}()
+	h.remote.publish(2, `{"plugins":{"ssh":{"schedule":"*/7 * * * *"}}}`)
+	h.rc.reconcile(context.Background(), triggerPoll)
+
+	var failedRun *candidate
+	select {
+	case failedRun = <-h.rc.runFailed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run failure was never notified")
+	}
+	if cur := h.rc.current(); cur == nil || cur.overlay == nil || cur.overlay.Revision != 1 {
+		t.Fatalf("the fallback must be bound before the notification, current is %+v", cur)
+	}
+	h.rc.onRunFailed(context.Background(), failedRun)
+	if a := h.rc.cache.Applied; a == nil || a.Revision != 1 {
+		t.Fatalf("the applied overlay must revert to revision 1, got %+v", a)
+	}
+	if r := h.remote.lastReport(t); r.Status != agentconfig.StatusFailed || r.AppliedRevision == nil || *r.AppliedRevision != 1 {
+		t.Fatalf("the failure report must describe the fallback, got %+v", r)
+	}
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not return")
+	}
+}
+
+// TestApply_PrefetchIsBounded: a hanging registry does not stall the reconciler.
+func TestApply_PrefetchIsBounded(t *testing.T) {
+	old := prepareNetworkTimeout
+	prepareNetworkTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { prepareNetworkTimeout = old })
+
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	first := mustStartup(t, h.rc)
+	h.pf.setBlock(true)
+	h.remote.publish(2, `{"plugins":{"ssh":{"schedule":"*/7 * * * *"}}}`)
+	start := time.Now()
+	if got := h.poll(t); got != first {
+		t.Fatal("a hung download must keep the running config")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("prepare was not bounded: %s", time.Since(start))
+	}
+	if r := h.remote.lastReport(t); r.Status != agentconfig.StatusFailed || r.Reason != agentconfig.ReasonDownloadFailed {
+		t.Fatalf("expected failed/download-failed, got %s/%s", r.Status, r.Reason)
 	}
 }
