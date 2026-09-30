@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -14,24 +16,81 @@ type apiHelper struct {
 	client      *sdk.Client
 	agentLabels map[string]string
 	pluginName  string
+	artifacts   *artifactUploader
 }
 
-func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string) *apiHelper {
+type ApiHelperOption func(*apiHelper)
+
+// WithPolicyPaths sets the policy bundle paths the plugin was given. The agent uploads only
+// these bundles as artifacts, so a plugin cannot make the agent read anything else.
+func WithPolicyPaths(paths []string) ApiHelperOption {
+	return func(h *apiHelper) {
+		for _, path := range paths {
+			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
+		}
+	}
+}
+
+func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string, opts ...ApiHelperOption) *apiHelper {
 	logger = logger.Named("api-helper")
-	return &apiHelper{
+	h := &apiHelper{
 		logger:      logger,
 		client:      client,
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
+		artifacts:   newArtifactUploader(client),
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
+// CreateEvidence sends evidence to the API. Evidence that carries a PolicyEvaluation has
+// its artifacts stored first and refers to them by digest. Storage is strict: if an
+// evaluation's artifacts cannot be stored, its evidence is held back and the error returned,
+// while other evidence is still sent. If the API does not support artifacts, all evidence is
+// sent as before, without digests.
 func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
-	evidences := ProtoToSdk(evidence, EvidenceProtoToSdk)
+	refs, failed, unsupported := h.artifacts.storeEvaluations(ctx, evidence)
+	if unsupported {
+		h.logger.Warn("The API does not support policy artifacts; evidence is sent without them and cannot be played back. Upgrade the API.")
+	}
+
+	send := make([]*proto.Evidence, 0, len(evidence))
+	var policyArtifacts []*types.PolicyArtifacts
+	heldBack := 0
+	for _, e := range evidence {
+		var stored *types.PolicyArtifacts
+		if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
+			key := evaluationKey(evaluation)
+			if _, ok := failed[key]; ok {
+				heldBack++
+				continue
+			}
+			stored = refs[key]
+		}
+		send = append(send, e)
+		policyArtifacts = append(policyArtifacts, stored)
+	}
+
+	var storeErr error
+	for _, err := range failed {
+		storeErr = errors.Join(storeErr, err)
+	}
+	if storeErr != nil {
+		h.logger.Error("Holding back evidence whose policy artifacts could not be stored", "evidence_held_back", heldBack, "error", storeErr)
+	}
+	if len(send) == 0 {
+		return storeErr
+	}
+
+	evidences := ProtoToSdk(send, EvidenceProtoToSdk)
 
 	// Merge agent, config and finding labels all together.
 	labelled := make([]types.Evidence, 0)
-	for _, evid := range *evidences {
+	for i, evid := range *evidences {
+		evid.PolicyArtifacts = policyArtifacts[i]
 		labels := make(map[string]string)
 		for k, v := range h.agentLabels {
 			labels[k] = v
@@ -44,7 +103,7 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 		labelled = append(labelled, *evid)
 	}
 
-	return h.client.Evidence.Create(ctx, labelled...)
+	return errors.Join(h.client.Evidence.Create(ctx, labelled...), storeErr)
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {

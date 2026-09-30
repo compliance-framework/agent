@@ -18,6 +18,11 @@ type ApiHelper interface {
 	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
+// MaxApiHelperMessageBytes bounds one message from a plugin to the agent. Each evidence in a
+// CreateEvidence call carries its evaluation's input and policy data, so a call can be far
+// larger than gRPC's 4 MiB default.
+const MaxApiHelperMessageBytes = 256 << 20
+
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
 func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
@@ -115,14 +120,19 @@ type GRPCClient struct {
 	broker *plugin.GRPCBroker
 }
 
-func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
+// newApiHelperGRPCServer serves a to plugins.
+func newApiHelperGRPCServer(a ApiHelper, opts ...grpc.ServerOption) *grpc.Server {
 	apiHelperServer := &GRPCApiHelperServer{}
 	apiHelperServer.SetImpl(a)
 
+	s := grpc.NewServer(append(opts, grpc.MaxRecvMsgSize(MaxApiHelperMessageBytes))...)
+	proto.RegisterApiHelperServer(s, apiHelperServer)
+	return s
+}
+
+func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-		s := grpc.NewServer(opts...)
-		proto.RegisterApiHelperServer(s, apiHelperServer)
-		return s
+		return newApiHelperGRPCServer(a, opts...)
 	}
 
 	apiServerID := m.broker.NextId()
