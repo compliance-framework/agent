@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 
 const (
 	ApiHelper_CreateEvidence_FullMethodName         = "/proto.ApiHelper/CreateEvidence"
+	ApiHelper_CreateEvidenceStream_FullMethodName   = "/proto.ApiHelper/CreateEvidenceStream"
 	ApiHelper_UpsertRiskTemplates_FullMethodName    = "/proto.ApiHelper/UpsertRiskTemplates"
 	ApiHelper_UpsertSubjectTemplates_FullMethodName = "/proto.ApiHelper/UpsertSubjectTemplates"
 )
@@ -29,6 +30,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ApiHelperClient interface {
 	CreateEvidence(ctx context.Context, in *CreateEvidenceRequest, opts ...grpc.CallOption) (*CreateEvidenceResponse, error)
+	// CreateEvidenceStream sends evidence one message at a time, so there is no limit on the
+	// whole call and the agent handles each evidence as it arrives.
+	CreateEvidenceStream(ctx context.Context, opts ...grpc.CallOption) (ApiHelper_CreateEvidenceStreamClient, error)
 	UpsertRiskTemplates(ctx context.Context, in *UpsertRiskTemplatesRequest, opts ...grpc.CallOption) (*UpsertRiskTemplatesResponse, error)
 	UpsertSubjectTemplates(ctx context.Context, in *UpsertSubjectTemplatesRequest, opts ...grpc.CallOption) (*UpsertSubjectTemplatesResponse, error)
 }
@@ -48,6 +52,40 @@ func (c *apiHelperClient) CreateEvidence(ctx context.Context, in *CreateEvidence
 		return nil, err
 	}
 	return out, nil
+}
+
+func (c *apiHelperClient) CreateEvidenceStream(ctx context.Context, opts ...grpc.CallOption) (ApiHelper_CreateEvidenceStreamClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ApiHelper_ServiceDesc.Streams[0], ApiHelper_CreateEvidenceStream_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &apiHelperCreateEvidenceStreamClient{stream}
+	return x, nil
+}
+
+type ApiHelper_CreateEvidenceStreamClient interface {
+	Send(*CreateEvidenceStreamRequest) error
+	CloseAndRecv() (*CreateEvidenceResponse, error)
+	grpc.ClientStream
+}
+
+type apiHelperCreateEvidenceStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *apiHelperCreateEvidenceStreamClient) Send(m *CreateEvidenceStreamRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *apiHelperCreateEvidenceStreamClient) CloseAndRecv() (*CreateEvidenceResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(CreateEvidenceResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *apiHelperClient) UpsertRiskTemplates(ctx context.Context, in *UpsertRiskTemplatesRequest, opts ...grpc.CallOption) (*UpsertRiskTemplatesResponse, error) {
@@ -73,6 +111,9 @@ func (c *apiHelperClient) UpsertSubjectTemplates(ctx context.Context, in *Upsert
 // for forward compatibility
 type ApiHelperServer interface {
 	CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error)
+	// CreateEvidenceStream sends evidence one message at a time, so there is no limit on the
+	// whole call and the agent handles each evidence as it arrives.
+	CreateEvidenceStream(ApiHelper_CreateEvidenceStreamServer) error
 	UpsertRiskTemplates(context.Context, *UpsertRiskTemplatesRequest) (*UpsertRiskTemplatesResponse, error)
 	UpsertSubjectTemplates(context.Context, *UpsertSubjectTemplatesRequest) (*UpsertSubjectTemplatesResponse, error)
 }
@@ -83,6 +124,9 @@ type UnimplementedApiHelperServer struct {
 
 func (UnimplementedApiHelperServer) CreateEvidence(context.Context, *CreateEvidenceRequest) (*CreateEvidenceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateEvidence not implemented")
+}
+func (UnimplementedApiHelperServer) CreateEvidenceStream(ApiHelper_CreateEvidenceStreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method CreateEvidenceStream not implemented")
 }
 func (UnimplementedApiHelperServer) UpsertRiskTemplates(context.Context, *UpsertRiskTemplatesRequest) (*UpsertRiskTemplatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpsertRiskTemplates not implemented")
@@ -118,6 +162,32 @@ func _ApiHelper_CreateEvidence_Handler(srv interface{}, ctx context.Context, dec
 		return srv.(ApiHelperServer).CreateEvidence(ctx, req.(*CreateEvidenceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
+}
+
+func _ApiHelper_CreateEvidenceStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ApiHelperServer).CreateEvidenceStream(&apiHelperCreateEvidenceStreamServer{stream})
+}
+
+type ApiHelper_CreateEvidenceStreamServer interface {
+	SendAndClose(*CreateEvidenceResponse) error
+	Recv() (*CreateEvidenceStreamRequest, error)
+	grpc.ServerStream
+}
+
+type apiHelperCreateEvidenceStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *apiHelperCreateEvidenceStreamServer) SendAndClose(m *CreateEvidenceResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *apiHelperCreateEvidenceStreamServer) Recv() (*CreateEvidenceStreamRequest, error) {
+	m := new(CreateEvidenceStreamRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func _ApiHelper_UpsertRiskTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -176,6 +246,12 @@ var ApiHelper_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ApiHelper_UpsertSubjectTemplates_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "CreateEvidenceStream",
+			Handler:       _ApiHelper_CreateEvidenceStream_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "runner/proto/results.proto",
 }

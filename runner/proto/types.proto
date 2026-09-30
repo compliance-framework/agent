@@ -194,6 +194,22 @@ message Evidence {
   repeated Subject Subjects = 15;
   // Did we satisfy what was being tested for, or did we fail ?
   EvidenceStatus Status = 16;
+  // What the policy evaluation that produced this evidence depended on, so the API can
+  // store it as artifacts for playback. Set by GenerateResults. The agent uploads it and
+  // strips it before sending the evidence on; agents that do not know the field ignore it.
+  optional PolicyEvaluation PolicyEvaluation = 17;
+}
+
+message PolicyEvaluation {
+  // The policy bundle directory the agent gave the plugin.
+  string PolicyPath = 1;
+  // The input data, as JSON.
+  bytes Input = 2;
+  // The policy data, as JSON. Empty when none is configured.
+  bytes PolicyData = 3;
+  // Identifies the evaluation within one CreateEvidenceStream. Set by the stream client; a
+  // PolicyEvaluation with only an Id refers to one sent earlier in the same stream.
+  string Id = 4;
 }
 
 message ThreatRef {

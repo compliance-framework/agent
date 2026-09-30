@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -14,37 +16,133 @@ type apiHelper struct {
 	client      *sdk.Client
 	agentLabels map[string]string
 	pluginName  string
+	artifacts   *artifactUploader
 }
 
-func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string) *apiHelper {
+type ApiHelperOption func(*apiHelper)
+
+// WithPolicyPaths sets the policy bundle paths the plugin was given. The agent uploads only
+// these bundles as artifacts, so a plugin cannot make the agent read anything else.
+func WithPolicyPaths(paths []string) ApiHelperOption {
+	return func(h *apiHelper) {
+		for _, path := range paths {
+			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
+		}
+	}
+}
+
+func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[string]string, pluginName string, opts ...ApiHelperOption) *apiHelper {
 	logger = logger.Named("api-helper")
-	return &apiHelper{
+	h := &apiHelper{
 		logger:      logger,
 		client:      client,
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
+		artifacts:   newArtifactUploader(client),
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// CreateEvidence sends a batch of evidence to the API, one evidence at a time.
+func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
+	sender := h.NewEvidenceSender(ctx)
+	for _, e := range evidence {
+		sender.Send(e)
+	}
+	return sender.Close()
+}
+
+// NewEvidenceSender returns a sender that handles each evidence as it arrives: for an
+// evaluation not seen before it stores the artifacts, then it sends the evidence with their
+// digests. Only the digests are kept, never the evaluation's data. If an evaluation's
+// artifacts cannot be stored (for example an input over the API's size limit, or still
+// failing after retries), or the API does not support artifacts, its evidence is sent as
+// before, without digests: it cannot be played back, but it is never lost.
+func (h *apiHelper) NewEvidenceSender(ctx context.Context) EvidenceSender {
+	return &apiEvidenceSender{h: h, ctx: ctx, evaluations: map[string]evaluationOutcome{}}
+}
+
+type evaluationOutcome struct {
+	// refs are the stored artifacts' digests, or nil if the evidence goes without them.
+	refs *types.PolicyArtifacts
+}
+
+type apiEvidenceSender struct {
+	h           *apiHelper
+	ctx         context.Context
+	evaluations map[string]evaluationOutcome
+
+	notReplayable int
+	sendErr       error
+	unsupported   bool
+}
+
+func (s *apiEvidenceSender) Send(e *proto.Evidence) {
+	var refs *types.PolicyArtifacts
+	if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
+		refs = s.outcome(evaluation).refs
+		if refs == nil {
+			s.notReplayable++
+		}
+	}
+	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs)); err != nil {
+		s.sendErr = errors.Join(s.sendErr, err)
 	}
 }
 
-func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
-	evidences := ProtoToSdk(evidence, EvidenceProtoToSdk)
-
-	// Merge agent, config and finding labels all together.
-	labelled := make([]types.Evidence, 0)
-	for _, evid := range *evidences {
-		labels := make(map[string]string)
-		for k, v := range h.agentLabels {
-			labels[k] = v
-		}
-		for k, v := range evid.Labels {
-			labels[k] = v
-		}
-		evid.Labels = labels
-
-		labelled = append(labelled, *evid)
+func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluationOutcome {
+	key := evaluationKey(evaluation)
+	if outcome, seen := s.evaluations[key]; seen {
+		return outcome
 	}
 
-	return h.client.Evidence.Create(ctx, labelled...)
+	var outcome evaluationOutcome
+	if isReference(evaluation) {
+		s.h.logger.Warn("Sending evidence without policy artifacts; it cannot be played back",
+			"error", unknownEvaluation(evaluation.GetId()))
+	} else {
+		refs, err := s.h.artifacts.storeEvaluation(s.ctx, evaluation)
+		switch {
+		case errors.Is(err, errArtifactsUnsupported):
+			if !s.unsupported {
+				s.unsupported = true
+				s.h.logger.Warn("The API does not support policy artifacts; evidence is sent without them and cannot be played back. Upgrade the API.")
+			}
+		case err != nil:
+			s.h.logger.Warn("Could not store policy artifacts; sending the evaluation's evidence without them, so it cannot be played back",
+				"policy_path", evaluation.GetPolicyPath(), "error", err)
+		default:
+			outcome.refs = refs
+		}
+	}
+	s.evaluations[key] = outcome
+	return outcome
+}
+
+func (s *apiEvidenceSender) Close() error {
+	if s.notReplayable > 0 && !s.unsupported {
+		s.h.logger.Warn("Sent evidence without policy artifacts", "evidence_not_replayable", s.notReplayable)
+	}
+	return s.sendErr
+}
+
+// toSdk converts evidence for the API, merging agent, config and finding labels, and
+// referring to its stored artifacts. The evaluation's raw data is not included.
+func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts) types.Evidence {
+	evid := EvidenceProtoToSdk(e)
+	evid.PolicyArtifacts = refs
+	labels := make(map[string]string)
+	for k, v := range h.agentLabels {
+		labels[k] = v
+	}
+	for k, v := range evid.Labels {
+		labels[k] = v
+	}
+	evid.Labels = labels
+	return *evid
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {

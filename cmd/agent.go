@@ -1418,7 +1418,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 				"auth_enabled", hasAPIAuth(config),
 				"client_id", apiClientID(config),
 			)
-			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName)
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths))
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
 			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1549,7 +1549,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name)
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths))
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {

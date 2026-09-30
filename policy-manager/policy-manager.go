@@ -2,6 +2,7 @@ package policy_manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -102,6 +103,12 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 		return evidences, resultErr
 	}
 
+	evaluation, err := p.policyEvaluation(policyPath, data)
+	if err != nil {
+		p.logger.Error("Failed to record what the policy evaluation used", "error", err)
+		return evidences, err
+	}
+
 	activities = append(activities, &proto.Activity{
 		Title:       "Compile Results",
 		Description: "Using the output from policy execution, compile the resulting output to Observations and Findings, marking any violations, risks, and other OSCAL-familiar data",
@@ -126,6 +133,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 			resultErr = errors.Join(resultErr, err)
 			continue
 		}
+		evidence.PolicyEvaluation = evaluation
 
 		if len(result.Violations) == 0 {
 			evidence.Title = *result.Title
@@ -166,6 +174,23 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 	}
 
 	return evidences, resultErr
+}
+
+// policyEvaluation records what an evaluation depended on, for the agent to upload as
+// artifacts: the bundle path and the input and policy data as JSON. The API, not the plugin,
+// canonicalises and hashes them.
+func (p *PolicyProcessor) policyEvaluation(policyPath string, data interface{}) (*proto.PolicyEvaluation, error) {
+	input, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode input data: %w", err)
+	}
+	evaluation := &proto.PolicyEvaluation{PolicyPath: policyPath, Input: input}
+	if len(p.policyData) > 0 {
+		if evaluation.PolicyData, err = json.Marshal(p.policyData); err != nil {
+			return nil, fmt.Errorf("encode policy data: %w", err)
+		}
+	}
+	return evaluation, nil
 }
 
 func validateNewEvidence(result Result) error {

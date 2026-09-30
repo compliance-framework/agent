@@ -18,17 +18,12 @@ type ApiHelper interface {
 	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
-type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
+// MaxApiHelperMessageBytes bounds one message from a plugin to the agent. Evidence is
+// streamed one per message, so this bounds a single evidence, whose PolicyEvaluation may
+// carry a large input such as a whole cluster; gRPC's 4 MiB default is too small for that.
+const MaxApiHelperMessageBytes = 256 << 20
 
-func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
-	_, err := m.client.CreateEvidence(ctx, &proto.CreateEvidenceRequest{
-		Evidence: evidence,
-	})
-	if err != nil {
-		hclog.Default().Error("Error adding result", "error", err)
-	}
-	return err
-}
+type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
 
 func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
 	_, err := m.client.UpsertRiskTemplates(ctx, &proto.UpsertRiskTemplatesRequest{
@@ -115,14 +110,19 @@ type GRPCClient struct {
 	broker *plugin.GRPCBroker
 }
 
-func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
+// newApiHelperGRPCServer serves a to plugins.
+func newApiHelperGRPCServer(a ApiHelper, opts ...grpc.ServerOption) *grpc.Server {
 	apiHelperServer := &GRPCApiHelperServer{}
 	apiHelperServer.SetImpl(a)
 
+	s := grpc.NewServer(append(opts, grpc.MaxRecvMsgSize(MaxApiHelperMessageBytes))...)
+	proto.RegisterApiHelperServer(s, apiHelperServer)
+	return s
+}
+
+func (m *GRPCClient) startAPIServer(a ApiHelper) uint32 {
 	serverFunc := func(opts []grpc.ServerOption) *grpc.Server {
-		s := grpc.NewServer(opts...)
-		proto.RegisterApiHelperServer(s, apiHelperServer)
-		return s
+		return newApiHelperGRPCServer(a, opts...)
 	}
 
 	apiServerID := m.broker.NextId()
