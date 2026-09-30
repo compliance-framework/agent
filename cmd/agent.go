@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -27,19 +28,18 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/compliance-framework/agent/internal"
+	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
-	"github.com/fsnotify/fsnotify"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -166,6 +166,11 @@ const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 const daemonCronStopTimeout = 30 * time.Second
+
+// reloadDrainTimeout bounds how long in-flight plugin runs may finish when a new
+// configuration replaces the running one (R33). SIGTERM keeps daemonCronStopTimeout.
+var reloadDrainTimeout = 5 * time.Minute
+
 const agentEvidenceErrorArtifactMaxBytes = 1024 * 1024
 
 type pluginRunStatus string
@@ -201,13 +206,13 @@ with plugins to ensure continuous compliance.`,
 	}
 
 	agentCmd.Flags().CountP("verbose", "v", "Enable verbose output")
-	viper.BindPFlag("verbose", agentCmd.Flags().Lookup("verbose"))
-
 	agentCmd.Flags().BoolP("daemon", "d", false, "Specify to run as a long running daemon")
-	viper.BindPFlag("daemon", agentCmd.Flags().Lookup("daemon"))
 
 	agentCmd.Flags().StringP("config", "c", "", "Location of config file")
 	agentCmd.MarkFlagRequired("config")
+
+	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID, remote config cache, inline policies); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
+	agentCmd.Flags().String("instance-id", "", "Pin this instance's UUID (not persisted); overrides CCF_INSTANCE_ID")
 
 	return agentCmd
 }
@@ -296,64 +301,84 @@ func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPl
 // It will read the configuration file, and then run the agent. Various command line flags can
 // be used to override the config file.
 func agentRunner(cmd *cobra.Command, args []string) error {
-	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
-	if err != nil {
-		return err
-	}
-
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent",
 		Output: os.Stdout,
 		Level:  hclog.Debug,
 	})
 
-	agentRun := NewAgentRunner()
-
-	ctx, configCancel := context.WithCancel(context.Background())
-	defer configCancel()
-
-	watcher := viper.New()
-	watcher.SetConfigFile(configPath)
-	if err := watcher.ReadInConfig(); err != nil {
+	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
+	if err != nil {
 		return err
 	}
-	watcher.OnConfigChange(func(in fsnotify.Event) {
-		// We want to wait for any running agent processes to finish first.
-		logger.Debug("config file changed", "path", in.Name)
-		configCancel()
-	})
-	watcher.WatchConfig()
 
-	// For the daemon, we run the agent continuously.
-	// It will exit as soon as the config changes, and then start again with new configs set.
-	for {
-		ctx, configCancel = context.WithCancel(context.Background())
-		base, err := loadBase(cmd, configPath)
-		if err != nil {
-			logger.Error("Error loading new config", "error", err)
-			panic(err)
-		}
-		config, err := toRuntime(base.declared, nil, base.skip)
-		if err != nil {
-			logger.Error("Error loading new config", "error", err)
-			panic(err)
-		}
-		agentRun.UpdateConfig(config)
-		err = agentRun.Run(ctx)
+	stateDir, stateDirSource, err := stateDirFrom(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	idOverride, err := instanceIDOverride(cmd)
+	if err != nil {
+		return err
+	}
+	store := agentstate.Open(stateDir, logger)
+	id, persisted := store.InstanceID(idOverride)
+	// R52: the default state dir depends on the absolute config path, so moving the config
+	// file silently creates a new instance. Say where state lives.
+	logger.Info("Agent state", "state_dir", stateDir, "state_dir_source", stateDirSource, "instance_id", id.String(), "instance_id_persisted", persisted)
 
-		if err != nil {
-			logger.Error("Error running agent", "error", err)
-			os.Exit(1)
-		}
+	ar := NewAgentRunner(WithInstanceID(id))
+	rc := newReconciler(cmd, configPath, store, ar, logger)
 
-		if !config.Daemon {
-			break
-		}
+	active, err := rc.startup(context.Background())
+	if err != nil {
+		// An unusable local configuration at startup exits 1, as it always has.
+		return err
 	}
 
-	configCancel()
+	rootCtx, stopLoop := context.WithCancel(context.Background())
+	defer stopLoop()
+	if active.runtime.Daemon {
+		defer rc.watchFile()()
+		go rc.loop(rootCtx)
+	}
 
-	return nil
+	return rc.run(active, func(ctx context.Context, cfg *agentConfig) error {
+		ar.UpdateConfig(cfg)
+		return ar.Run(ctx)
+	})
+}
+
+// stateDirFrom resolves the state directory: --state-dir, then CCF_STATE_DIR, then the
+// default derived from the absolute config path (R31). It also returns where it came from.
+func stateDirFrom(cmd *cobra.Command, configPath string) (dir string, source string, err error) {
+	if flag := cmd.Flags().Lookup("state-dir"); flag != nil && strings.TrimSpace(flag.Value.String()) != "" {
+		dir, err = filepath.Abs(strings.TrimSpace(flag.Value.String()))
+		return dir, "flag", err
+	}
+	if env := strings.TrimSpace(os.Getenv("CCF_STATE_DIR")); env != "" {
+		dir, err = filepath.Abs(env)
+		return dir, "env", err
+	}
+	dir, err = agentstate.DefaultDir(configPath)
+	return dir, "default(config-path)", err
+}
+
+// instanceIDOverride returns --instance-id or CCF_INSTANCE_ID. An override that is not a
+// UUID is an error: silently ignoring it would register a different instance.
+func instanceIDOverride(cmd *cobra.Command) (string, error) {
+	value, source := "", ""
+	if flag := cmd.Flags().Lookup("instance-id"); flag != nil && strings.TrimSpace(flag.Value.String()) != "" {
+		value, source = strings.TrimSpace(flag.Value.String()), "--instance-id"
+	} else if env := strings.TrimSpace(os.Getenv("CCF_INSTANCE_ID")); env != "" {
+		value, source = env, "CCF_INSTANCE_ID"
+	}
+	if value == "" {
+		return "", nil
+	}
+	if _, err := uuid.Parse(value); err != nil {
+		return "", fmt.Errorf("%s must be a UUID: %w", source, err)
+	}
+	return value, nil
 }
 
 type AgentRunner struct {
@@ -371,22 +396,49 @@ type AgentRunner struct {
 	downloadGroup        singleflight.Group
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
+	sendHeartbeatFunc    func(ctx context.Context, instanceID uuid.UUID) error
 
 	pluginRunMu                   sync.RWMutex
 	pluginRuns                    map[string]pluginRunRecord
 	firstAgentEvidenceSendStarted bool
+
+	// instanceID is this agent instance's stable ID (R31); set once at construction.
+	instanceID uuid.UUID
+
+	// protocolCache maps a plugin source to the protocol version its OCI annotations
+	// declared. It survives reloads so a registry outage during a reload cannot silently
+	// turn a v2 plugin into v1 (R32).
+	protocolCacheMu sync.Mutex
+	protocolCache   map[string]int32
 }
 
-func NewAgentRunner() *AgentRunner {
-	return &AgentRunner{
+// AgentRunnerOption configures an AgentRunner.
+type AgentRunnerOption func(*AgentRunner)
+
+// WithInstanceID sets the instance ID the heartbeat and config reports use.
+func WithInstanceID(id uuid.UUID) AgentRunnerOption {
+	return func(ar *AgentRunner) { ar.instanceID = id }
+}
+
+func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
+	ar := &AgentRunner{
 		pluginLocations:     map[string]string{},
 		policyLocations:     map[string]string{},
 		activePluginClients: map[*plugin.Client]struct{}{},
 		pluginRuns:          map[string]pluginRunRecord{},
 		fetchAnnotations:    internal.GetAnnotations,
 		httpClient:          http.DefaultClient,
+		instanceID:          uuid.New(),
+		protocolCache:       map[string]int32{},
 	}
+	for _, opt := range opts {
+		opt(ar)
+	}
+	return ar
 }
+
+// InstanceID returns the instance ID.
+func (ar *AgentRunner) InstanceID() uuid.UUID { return ar.instanceID }
 
 func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 	logger := hclog.New(&hclog.LoggerOptions{
@@ -394,9 +446,14 @@ func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 		Output: os.Stdout,
 		Level:  hclog.Level(config.logVerbosity()),
 	})
-	client := ar.buildAPIClient(config, logger)
 
 	ar.stateMu.Lock()
+	// Reuse the SDK client when the api block is unchanged, so its token cache survives
+	// overlay reloads.
+	client := ar.apiClient
+	if client == nil || ar.config == nil || !reflect.DeepEqual(ar.config.ApiConfig, config.ApiConfig) {
+		client = ar.buildAPIClient(config, logger)
+	}
 	ar.config = config
 	ar.logger = logger
 	ar.apiClient = client
@@ -910,23 +967,40 @@ func (ar *AgentRunner) Run(ctx context.Context) error {
 	}
 	logger.Debug("Pessimistically downloading plugins and policies worked successfully. Starting the agent.")
 
-	if config.Daemon == true {
-		ar.runDaemon(ctx)
-		return nil
+	if config.Daemon {
+		return ar.runDaemon(ctx)
 	}
 
 	return ar.runAllPlugins(ctx)
 }
 
 func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
+	ar.resolveProtocolsFor(ctx, ar.getConfig(), ar.getLogger())
+}
+
+// resolveProtocolsFor sets the protocol version of every implicit-protocol OCI plugin in config
+// from its annotations, consulting protocolCache first. Only a cache miss fetches annotations.
+func (ar *AgentRunner) resolveProtocolsFor(ctx context.Context, config *agentConfig, logger hclog.Logger) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if config == nil {
+		return
+	}
+	if logger == nil {
+		logger = hclog.NewNullLogger()
+	}
 
-	config := ar.getConfig()
-	logger := ar.getLogger()
 	for pluginName, pluginConfig := range config.Plugins {
 		if pluginConfig == nil || pluginConfig.protocolSet || !internal.IsOCI(pluginConfig.Source) {
+			continue
+		}
+
+		ar.protocolCacheMu.Lock()
+		cached, hit := ar.protocolCache[pluginConfig.Source]
+		ar.protocolCacheMu.Unlock()
+		if hit {
+			pluginConfig.ProtocolVersion = cached
 			continue
 		}
 
@@ -952,12 +1026,17 @@ func (ar *AgentRunner) resolvePluginProtocols(ctx context.Context) {
 			}
 
 			pluginConfig.ProtocolVersion = protocolVersion
+			ar.protocolCacheMu.Lock()
+			ar.protocolCache[pluginConfig.Source] = protocolVersion
+			ar.protocolCacheMu.Unlock()
 		}()
 	}
 }
 
-// Should never return, either handles any error or panics.
-func (ar *AgentRunner) runDaemon(ctx context.Context) {
+// runDaemon runs the plugin crons until ctx is cancelled (a reload: in-flight runs drain for
+// up to reloadDrainTimeout, R33) or the process receives SIGINT/SIGTERM (exit). Setup errors
+// are returned rather than exiting the process.
+func (ar *AgentRunner) runDaemon(ctx context.Context) error {
 	logger := ar.getLogger()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -966,18 +1045,18 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 	agentCron, err := ar.setupCron(ctx)
 	if err != nil {
 		logger.Error("Error setting up agent cron", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	heartbeatCron, err := ar.setupHeartbeatCron(ctx)
 	if err != nil {
 		logger.Error("Error setting up heartbeat", "error", err)
-		os.Exit(1)
+		return err
 	}
 	agentEvidenceCron, err := ar.setupAgentEvidenceCron(ctx)
 	if err != nil {
 		logger.Error("Error setting up agent evidence", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	// Start the cron and notify readiness
@@ -1006,18 +1085,19 @@ func (ar *AgentRunner) runDaemon(ctx context.Context) {
 		ar.closePluginClients()
 		logger.Debug("Exiting")
 		os.Exit(0)
+		return nil
 	case <-ctx.Done():
 		logger.Debug("received cancel signal to return from daemon")
 		logger.Debug("Stopping crons")
 		agentCronStopCtx := agentCron.Stop()
 		heartbeatCronStopCtx := heartbeatCron.Stop()
 		agentEvidenceCronStopCtx := agentEvidenceCron.Stop()
-		if !waitForCronStop(daemonCronStopTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
-			logger.Warn("Timed out waiting for cron jobs to stop before plugin cleanup", "timeout", daemonCronStopTimeout)
+		if !waitForCronStop(reloadDrainTimeout, agentCronStopCtx, heartbeatCronStopCtx, agentEvidenceCronStopCtx) {
+			logger.Warn("Timed out waiting for in-flight plugin runs to drain before reload", "timeout", reloadDrainTimeout)
 		}
 		logger.Debug("Shutting down plugins")
 		ar.closePluginClients()
-		return
+		return nil
 	}
 }
 
@@ -1095,9 +1175,13 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	staticAgentUUID := uuid.New()
+	staticAgentUUID := ar.instanceID
+	sendHeartbeat := ar.SendHeartbeat
+	if ar.sendHeartbeatFunc != nil {
+		sendHeartbeat = ar.sendHeartbeatFunc
+	}
 	_, err := c.AddFunc(fmt.Sprintf("%d * * * * *", staggeredSeconds), func() {
-		err := ar.SendHeartbeat(ctx, staticAgentUUID)
+		err := sendHeartbeat(ctx, staticAgentUUID)
 		if err != nil {
 			logger.Error("Failed to send heartbeat", "error", err, "uuid", staticAgentUUID.String())
 		}
@@ -1150,6 +1234,9 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 	if ar.runPluginFunc != nil {
 		runPlugin = ar.runPluginFunc
 	}
+	// Plugin runs are not cut short by a reload: runDaemon stops the cron and lets in-flight
+	// runs drain for up to reloadDrainTimeout (R33) before killing the plugin processes.
+	jobCtx := context.WithoutCancel(ctx)
 
 	for pluginName, pluginConfig := range config.Plugins {
 		currentPluginName := pluginName
@@ -1164,14 +1251,14 @@ func (ar *AgentRunner) setupCron(ctx context.Context) (*cron.Cron, error) {
 		jobLogger := logger.With("plugin", currentPluginName, "schedule", schedule)
 		job := cron.NewChain(cron.SkipIfStillRunning(cronLogger{logger: jobLogger})).Then(cron.FuncJob(func() {
 			ar.markPluginRunStarted(currentPluginName)
-			err := runPlugin(ctx, currentPluginName, currentPluginConfig)
+			err := runPlugin(jobCtx, currentPluginName, currentPluginConfig)
 			ar.markPluginRunFinished(currentPluginName, err)
 			if err != nil {
 				// TODO how will we handle these errors ?
 				jobLogger.Error("Error running plugin", "error", err, "protocol_version", currentPluginConfig.ProtocolVersion)
 			}
 			if ar.reserveFirstAgentEvidenceSend() {
-				if evidenceErr := ar.SendAgentRunEvidence(ctx); evidenceErr != nil {
+				if evidenceErr := ar.SendAgentRunEvidence(jobCtx); evidenceErr != nil {
 					ar.releaseFirstAgentEvidenceSend()
 					jobLogger.Error("Failed to send agent run evidence", "error", evidenceErr)
 				}
@@ -1685,10 +1772,15 @@ func safePluginErrorFilename(pluginName string) string {
 
 func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, func(), error) {
 	// We're a host! Start by launching the plugin process.
+	cmd := exec.Command(path)
+	// Plugins get the host environment minus the agent's own API credentials (R26); go-plugin
+	// would otherwise append the whole environment.
+	cmd.Env = pluginEnviron(os.Environ())
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
 		Plugins:          runner.PluginMap,
-		Cmd:              exec.Command(path),
+		Cmd:              cmd,
+		SkipHostEnv:      true,
 		Logger:           logger,
 		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 	})
@@ -1786,6 +1878,72 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// pluginEnviron returns environ without the variables whose name starts with CCF_API_AUTH_
+// (case-insensitive), so plugins never see the agent's API credentials (R26).
+func pluginEnviron(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "CCF_API_AUTH_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// Prefetch downloads every plugin and (non-inline) policy source of cfg and resolves plugin
+// protocol versions, WITHOUT touching the running configuration's pluginLocations or
+// policyLocations. The reconciler calls it before cancelling the running configuration, so a
+// download failure never tears down a working agent (prepare-then-cancel, R32).
+func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
+	logger := ar.getLogger()
+	if logger == nil {
+		logger = hclog.NewNullLogger()
+	}
+	platform := v1.Platform{
+		Architecture: runtime.GOARCH,
+		OS:           runtime.GOOS,
+	}
+	pluginSources := map[string]struct{}{}
+	policySources := map[string]struct{}{}
+	for _, pluginConfig := range cfg.Plugins {
+		pluginSources[pluginConfig.Source] = struct{}{}
+		for _, policy := range pluginConfig.Policies {
+			if _, inline := cfg.inlinePolicyDirs[string(policy)]; inline {
+				continue
+			}
+			policySources[string(policy)] = struct{}{}
+		}
+	}
+	for _, source := range sortedSetKeys(pluginSources) {
+		if _, err := ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform)); err != nil {
+			return fmt.Errorf("download plugin %s: %w", source, err)
+		}
+	}
+	ar.resolveProtocolsFor(ctx, cfg, logger)
+	for _, source := range sortedSetKeys(policySources) {
+		if _, err := ar.downloadPolicy(ctx, source, logger); err != nil {
+			return fmt.Errorf("download policy %s: %w", source, err)
+		}
+	}
+	return nil
+}
+
+// downloadPolicy fetches one policy source into the shared policy cache.
+func (ar *AgentRunner) downloadPolicy(ctx context.Context, source string, logger hclog.Logger) (string, error) {
+	return ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func platformDownloadKey(platform v1.Platform) string {

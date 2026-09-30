@@ -38,7 +38,7 @@ proto-gen: ## Generate objects from proto definitions
 ##@ Test
 .PHONY: test
 test:  ## Run tests
-	@if ! go test ./... -coverprofile cover.out -v; then \
+	@if ! go test ./... -race -coverprofile cover.out -v; then \
 		$(WARN) "Tests failed"; \
 		exit 1; \
 	fi ; \
