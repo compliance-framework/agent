@@ -183,38 +183,42 @@ func TestCreateEvidenceRetriesTemporaryFailures(t *testing.T) {
 	assert.Contains(t, api.evidence[0], "policy-artifacts")
 }
 
-func TestCreateEvidenceHoldsBackOnlyTheFailedEvaluation(t *testing.T) {
+// artifactsOf returns each sent evidence's policy-artifacts by title, nil where it has none.
+func artifactsOf(api *fakeAPI) map[string]any {
+	out := map[string]any{}
+	for _, e := range api.evidence {
+		out[e["title"].(string)] = e["policy-artifacts"]
+	}
+	return out
+}
+
+func TestCreateEvidenceFallsBackWhenArtifactsCannotBeStored(t *testing.T) {
 	good := writeBundle(t, "good")
 	bad := writeBundle(t, "bad")
 
 	for name, tc := range map[string]struct {
-		statuses        []int
-		allowed         []string
-		wantUploads     int
-		wantErrContains string
+		statuses    []int
+		allowed     []string
+		wantUploads int
 	}{
-		"server keeps failing": {
-			statuses:        []int{500, 500, 500},
-			allowed:         []string{good, bad},
-			wantUploads:     3 + 2,
-			wantErrContains: "500",
+		"server keeps failing after retries": {
+			statuses:    []int{500, 500, 500},
+			allowed:     []string{good, bad},
+			wantUploads: 3 + 2,
 		},
 		"content rejected is not retried": {
-			statuses:        []int{http.StatusBadRequest},
-			allowed:         []string{good, bad},
-			wantUploads:     1 + 2,
-			wantErrContains: "400",
+			statuses:    []int{http.StatusBadRequest},
+			allowed:     []string{good, bad},
+			wantUploads: 1 + 2,
 		},
 		"too large is not retried": {
-			statuses:        []int{http.StatusRequestEntityTooLarge},
-			allowed:         []string{good, bad},
-			wantUploads:     1 + 2,
-			wantErrContains: "413",
+			statuses:    []int{http.StatusRequestEntityTooLarge},
+			allowed:     []string{good, bad},
+			wantUploads: 1 + 2,
 		},
 		"path not given to the plugin": {
-			allowed:         []string{good},
-			wantUploads:     2,
-			wantErrContains: "not one of the plugin's policy bundles",
+			allowed:     []string{good},
+			wantUploads: 2,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -226,13 +230,26 @@ func TestCreateEvidenceHoldsBackOnlyTheFailedEvaluation(t *testing.T) {
 				evidenceFor("bad", &proto.PolicyEvaluation{PolicyPath: bad, Input: []byte(`{"n":1}`)}),
 				evidenceFor("good", &proto.PolicyEvaluation{PolicyPath: good, Input: []byte(`{"n":2}`)}),
 			})
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.wantErrContains)
-			assert.Contains(t, err.Error(), bad, "the error names the failed evaluation")
-			assert.Equal(t, []string{"good"}, sentTitles(api), "only the failed evaluation's evidence is held back")
+			require.NoError(t, err, "evidence is never lost because its artifacts could not be stored")
+
+			assert.Equal(t, []string{"bad", "good"}, sentTitles(api), "all evidence is sent")
+			sent := artifactsOf(api)
+			assert.Nil(t, sent["bad"], "evidence whose artifacts failed is sent without digests, as before")
+			assert.NotNil(t, sent["good"], "other evaluations keep their digests")
 			assert.Len(t, api.uploads, tc.wantUploads)
 		})
 	}
+}
+
+func TestCreateEvidenceRetriesBeforeFallingBack(t *testing.T) {
+	bundle := writeBundle(t, "a")
+	api := &fakeAPI{artifactStatuses: []int{http.StatusServiceUnavailable, http.StatusTooManyRequests}}
+	helper := newTestHelper(t, api, bundle)
+
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
+		evidenceFor("one", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
+	}))
+	assert.NotNil(t, artifactsOf(api)["one"], "a temporary failure that clears on retry keeps the evidence replayable")
 }
 
 // TestNewPluginEvidenceDecodesUnderAnOldAgent decodes evidence carrying a PolicyEvaluation

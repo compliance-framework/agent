@@ -44,16 +44,20 @@ includes it and rebuilding, because `GenerateResults` runs inside the plugin's o
 | Rebuilt | New | Old | Evidence as before, without digests; the agent logs a warning and checks the API again every 10 minutes |
 | Rebuilt | New | New | Artifacts stored; evidence carries digests |
 
-## Storage failures are strict
+## When artifacts cannot be stored
 
-When the API supports artifacts but storing an evaluation's artifacts fails, the agent
-holds back that evaluation's evidence and returns an error naming it. Evidence from other
-evaluations in the same call is still sent, and the next scheduled run tries again.
+Evidence is never lost because its artifacts could not be stored. If storing an
+evaluation's artifacts fails, the agent sends that evaluation's evidence as before, without
+digests, and logs a warning with the reason. That evidence cannot be played back. Other
+evaluations in the same call keep their digests.
 
-- Server errors (5xx), rate limiting (429) and network errors are retried up to three
-  times with a short backoff.
-- Rejections are not retried: content the API cannot read (400), an artifact over the API's
-  `CCF_ARTIFACT_MAX_BYTES` (413), or a policy path the agent did not give the plugin.
+- Server errors (5xx), rate limiting (429) and network errors are retried up to three times
+  with a short backoff first, so a temporary failure usually still ends in replayable
+  evidence.
+- Failures that retrying cannot fix fall back straight away: content the API cannot read
+  (400), an artifact over the API's `CCF_ARTIFACT_MAX_BYTES` (413), a bundle that cannot be
+  archived, a policy path the agent did not give the plugin, or a stream reference to an
+  evaluation that was never sent.
 
 ## Message size
 

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -134,7 +135,7 @@ func TestAgentForwardsEvidenceAsItArrives(t *testing.T) {
 	assert.Contains(t, api.evidence[1], "policy-artifacts", "a reference gets the digests of the evaluation it names")
 }
 
-func TestAgentRejectsAReferenceToAnUnsentEvaluation(t *testing.T) {
+func TestAgentSendsAReferenceToAnUnsentEvaluationWithoutArtifacts(t *testing.T) {
 	api := &fakeAPI{}
 	client := dialServer(t, newApiHelperGRPCServer(newTestHelper(t, api)))
 
@@ -143,28 +144,34 @@ func TestAgentRejectsAReferenceToAnUnsentEvaluation(t *testing.T) {
 	require.NoError(t, stream.Send(&proto.CreateEvidenceStreamRequest{Evidence: evidenceFor("orphan", &proto.PolicyEvaluation{Id: "9"})}))
 	require.NoError(t, stream.Send(&proto.CreateEvidenceStreamRequest{Evidence: evidenceFor("plain", nil)}))
 	_, err = stream.CloseAndRecv()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "was not sent")
-	assert.Equal(t, []string{"plain"}, sentTitles(api))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"orphan", "plain"}, sentTitles(api))
+	assert.Nil(t, artifactsOf(api)["orphan"])
+	assert.Empty(t, api.uploads)
 }
 
-// TestStreamHoldsBackOnlyTheFailedEvaluation runs strict storage end to end through the
-// plugin's client, the stream and the agent.
-func TestStreamHoldsBackOnlyTheFailedEvaluation(t *testing.T) {
+// TestStreamFallsBackForAFailedEvaluation runs the fallback end to end through the plugin's
+// client, the stream and the agent.
+func TestStreamFallsBackForAFailedEvaluation(t *testing.T) {
 	good := writeBundle(t, "good")
 	bad := writeBundle(t, "bad")
-	api := &fakeAPI{artifactStatuses: []int{400}}
+	api := &fakeAPI{artifactStatuses: []int{http.StatusRequestEntityTooLarge}}
 	client := dialServer(t, newApiHelperGRPCServer(newTestHelper(t, api, good, bad)))
 
 	badEvaluation := &proto.PolicyEvaluation{PolicyPath: bad, Input: []byte(`{"n":1}`)}
 	goodEvaluation := &proto.PolicyEvaluation{PolicyPath: good, Input: []byte(`{"n":2}`)}
-	err := client.CreateEvidence(context.Background(), []*proto.Evidence{
+	require.NoError(t, client.CreateEvidence(context.Background(), []*proto.Evidence{
 		evidenceFor("bad-1", badEvaluation),
 		evidenceFor("good-1", goodEvaluation),
 		evidenceFor("bad-2", badEvaluation),
 		evidenceFor("good-2", goodEvaluation),
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), bad)
-	assert.Equal(t, []string{"good-1", "good-2"}, sentTitles(api))
+	}))
+
+	assert.Equal(t, []string{"bad-1", "good-1", "bad-2", "good-2"}, sentTitles(api))
+	sent := artifactsOf(api)
+	assert.Nil(t, sent["bad-1"])
+	assert.Nil(t, sent["bad-2"], "the failed evaluation is not retried for its later evidence")
+	assert.NotNil(t, sent["good-1"])
+	assert.NotNil(t, sent["good-2"])
+	assert.Len(t, api.uploads, 1+2, "one rejected bundle upload, then the good evaluation's bundle and input")
 }

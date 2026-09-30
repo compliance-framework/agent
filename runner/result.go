@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 
 	"github.com/compliance-framework/agent/runner/proto"
@@ -58,17 +57,17 @@ func (h *apiHelper) CreateEvidence(ctx context.Context, evidence []*proto.Eviden
 
 // NewEvidenceSender returns a sender that handles each evidence as it arrives: for an
 // evaluation not seen before it stores the artifacts, then it sends the evidence with their
-// digests. Only the digests are kept, never the evaluation's data. Storage is strict: an
-// evaluation whose artifacts cannot be stored has its evidence held back, and Close returns
-// the error, while other evidence is still sent. If the API does not support artifacts,
-// evidence is sent as before, without digests.
+// digests. Only the digests are kept, never the evaluation's data. If an evaluation's
+// artifacts cannot be stored (for example an input over the API's size limit, or still
+// failing after retries), or the API does not support artifacts, its evidence is sent as
+// before, without digests: it cannot be played back, but it is never lost.
 func (h *apiHelper) NewEvidenceSender(ctx context.Context) EvidenceSender {
 	return &apiEvidenceSender{h: h, ctx: ctx, evaluations: map[string]evaluationOutcome{}}
 }
 
 type evaluationOutcome struct {
+	// refs are the stored artifacts' digests, or nil if the evidence goes without them.
 	refs *types.PolicyArtifacts
-	err  error
 }
 
 type apiEvidenceSender struct {
@@ -76,21 +75,18 @@ type apiEvidenceSender struct {
 	ctx         context.Context
 	evaluations map[string]evaluationOutcome
 
-	heldBack    int
-	storeErr    error
-	sendErr     error
-	unsupported bool
+	notReplayable int
+	sendErr       error
+	unsupported   bool
 }
 
 func (s *apiEvidenceSender) Send(e *proto.Evidence) {
 	var refs *types.PolicyArtifacts
 	if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
-		outcome := s.outcome(evaluation)
-		if outcome.err != nil {
-			s.heldBack++
-			return
+		refs = s.outcome(evaluation).refs
+		if refs == nil {
+			s.notReplayable++
 		}
-		refs = outcome.refs
 	}
 	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs)); err != nil {
 		s.sendErr = errors.Join(s.sendErr, err)
@@ -105,7 +101,8 @@ func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluati
 
 	var outcome evaluationOutcome
 	if isReference(evaluation) {
-		outcome.err = unknownEvaluation(evaluation.GetId())
+		s.h.logger.Warn("Sending evidence without policy artifacts; it cannot be played back",
+			"error", unknownEvaluation(evaluation.GetId()))
 	} else {
 		refs, err := s.h.artifacts.storeEvaluation(s.ctx, evaluation)
 		switch {
@@ -115,23 +112,21 @@ func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluati
 				s.h.logger.Warn("The API does not support policy artifacts; evidence is sent without them and cannot be played back. Upgrade the API.")
 			}
 		case err != nil:
-			outcome.err = fmt.Errorf("store policy artifacts for %s: %w", evaluation.GetPolicyPath(), err)
+			s.h.logger.Warn("Could not store policy artifacts; sending the evaluation's evidence without them, so it cannot be played back",
+				"policy_path", evaluation.GetPolicyPath(), "error", err)
 		default:
 			outcome.refs = refs
 		}
-	}
-	if outcome.err != nil {
-		s.storeErr = errors.Join(s.storeErr, outcome.err)
 	}
 	s.evaluations[key] = outcome
 	return outcome
 }
 
 func (s *apiEvidenceSender) Close() error {
-	if s.storeErr != nil {
-		s.h.logger.Error("Holding back evidence whose policy artifacts could not be stored", "evidence_held_back", s.heldBack, "error", s.storeErr)
+	if s.notReplayable > 0 && !s.unsupported {
+		s.h.logger.Warn("Sent evidence without policy artifacts", "evidence_not_replayable", s.notReplayable)
 	}
-	return errors.Join(s.sendErr, s.storeErr)
+	return s.sendErr
 }
 
 // toSdk converts evidence for the API, merging agent, config and finding labels, and
