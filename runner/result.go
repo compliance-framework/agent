@@ -17,6 +17,8 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 	artifacts   *artifactUploader
+	// evidenceProps are appended to every evidence the plugin creates.
+	evidenceProps []types.Property
 }
 
 type ApiHelperOption func(*apiHelper)
@@ -28,6 +30,15 @@ func WithPolicyPaths(paths []string) ApiHelperOption {
 		for _, path := range paths {
 			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
 		}
+	}
+}
+
+// WithEvidenceProps appends props to every evidence the plugin sends, unless the evidence
+// already carries a prop with the same (ns, name). The agent uses it to stamp the applied
+// remote configuration revision (R38).
+func WithEvidenceProps(props ...types.Property) ApiHelperOption {
+	return func(h *apiHelper) {
+		h.evidenceProps = append(h.evidenceProps, props...)
 	}
 }
 
@@ -142,7 +153,25 @@ func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts) types.
 		labels[k] = v
 	}
 	evid.Labels = labels
+	evid.Props = mergeProps(evid.Props, h.evidenceProps)
 	return *evid
+}
+
+// mergeProps appends each extra prop unless one with the same (ns, name) already exists.
+func mergeProps(props []types.Property, extra []types.Property) []types.Property {
+	for _, p := range extra {
+		exists := false
+		for _, q := range props {
+			if q.Ns == p.Ns && q.Name == p.Name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			props = append(props, p)
+		}
+	}
+	return props
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {

@@ -147,7 +147,7 @@ func TestReconciler_InvalidEditKeepsRunning(t *testing.T) {
 	if err := os.WriteFile(path, []byte("daemon: true\nplugins: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rc.reconcileFile(context.Background())
+	rc.reconcile(context.Background(), triggerFile)
 	expectNoStart(t, rec, 200*time.Millisecond)
 	if pf.callCount() != 1 {
 		t.Fatalf("an invalid file must not be prefetched, got %d calls", pf.callCount())
@@ -162,13 +162,13 @@ func TestReconciler_ValidEditCancelsOnce(t *testing.T) {
 	if err := os.WriteFile(path, []byte(configWithSchedule("*/5 * * * *")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rc.reconcileFile(context.Background())
+	rc.reconcile(context.Background(), triggerFile)
 	cfg := waitStarted(t, rec)
 	if got := *cfg.Plugins["ssh"].Schedule; got != "*/5 * * * *" {
 		t.Fatalf("new run has schedule %q", got)
 	}
 	// The same content again is not a change.
-	rc.reconcileFile(context.Background())
+	rc.reconcile(context.Background(), triggerFile)
 	expectNoStart(t, rec, 200*time.Millisecond)
 	if rec.runCount() != 2 {
 		t.Fatalf("expected exactly one reload, got %d runs", rec.runCount())
@@ -184,7 +184,7 @@ func TestReconciler_PrefetchFailureDoesNotCancel(t *testing.T) {
 	if err := os.WriteFile(path, []byte(configWithSchedule("*/5 * * * *")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rc.reconcileFile(context.Background())
+	rc.reconcile(context.Background(), triggerFile)
 	expectNoStart(t, rec, 200*time.Millisecond)
 }
 
@@ -202,7 +202,7 @@ func TestReconciler_RunFailureFallsBackToPrevious(t *testing.T) {
 	if err := os.WriteFile(path, []byte(configWithSchedule("*/5 * * * *")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rc.reconcileFile(context.Background())
+	rc.reconcile(context.Background(), triggerFile)
 	if got := *waitStarted(t, rec).Plugins["ssh"].Schedule; got != "*/5 * * * *" {
 		t.Fatalf("expected the new config to be tried, got %q", got)
 	}
@@ -212,12 +212,9 @@ func TestReconciler_RunFailureFallsBackToPrevious(t *testing.T) {
 }
 
 func TestReconciler_RapidFileEventsRace(t *testing.T) {
-	old := fileDebounce
-	fileDebounce = 5 * time.Millisecond
-	t.Cleanup(func() { fileDebounce = old })
-
 	rc, _, path := newTestReconciler(t, configWithSchedule("* * * * *"))
 	rec := newRunRecorder()
+	rc.debounce = 5 * time.Millisecond
 	startReconciler(t, rc, rec)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

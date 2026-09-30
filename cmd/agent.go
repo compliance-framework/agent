@@ -165,6 +165,12 @@ const AgentPolicyDir = ".compliance-framework/policies"
 const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
+
+// CCFPropNamespace is the OSCAL prop namespace of CCF props.
+const CCFPropNamespace = "https://compliance-framework.github.io/ns"
+
+// configRevisionPropName stamps evidence with the applied remote configuration revision (R38).
+const configRevisionPropName = "agent-config-revision"
 const daemonCronStopTimeout = 30 * time.Second
 
 // reloadDrainTimeout bounds how long in-flight plugin runs may finish when a new
@@ -328,6 +334,7 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 
 	ar := NewAgentRunner(WithInstanceID(id))
 	rc := newReconciler(cmd, configPath, store, ar, logger)
+	rc.instanceID = id
 
 	active, err := rc.startup(context.Background())
 	if err != nil {
@@ -1360,7 +1367,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 				"auth_enabled", hasAPIAuth(config),
 				"client_id", apiClientID(config),
 			)
-			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths))
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths), runner.WithEvidenceProps(configRevisionProps(config)...))
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
 			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1491,7 +1498,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths))
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths), runner.WithEvidenceProps(configRevisionProps(config)...))
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1523,16 +1530,39 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	)
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
-	err := client.Heartbeat.Create(heartbeatCtx, sdktypes.Heartbeat{
-		UUID:      staticAgentUUID,
-		CreatedAt: time.Now().UTC(),
-	})
+	err := client.Heartbeat.Create(heartbeatCtx, buildHeartbeat(config, staticAgentUUID, time.Now().UTC()))
 	if err != nil {
 		logger.Error("Error sending heartbeat via SDK", "error", err, "uuid", staticAgentUUID.String())
 		return err
 	}
 	logger.Info("Successfully sent heartbeat to server", "uuid", staticAgentUUID.String())
 	return nil
+}
+
+// configRevisionProps returns the evidence prop naming the applied overlay revision, or nil
+// when the agent runs the file only (R38).
+func configRevisionProps(config *agentConfig) []sdktypes.Property {
+	if config == nil || config.sync.AppliedRevision <= 0 {
+		return nil
+	}
+	return []sdktypes.Property{{
+		Ns:    CCFPropNamespace,
+		Name:  configRevisionPropName,
+		Value: strconv.FormatInt(config.sync.AppliedRevision, 10),
+	}}
+}
+
+// buildHeartbeat builds the heartbeat body. When remote configuration is not off it carries
+// the applied revision (0 when running the file only, never null) and the effective digest,
+// which lets the API create the instance row (R11, R45).
+func buildHeartbeat(config *agentConfig, id uuid.UUID, now time.Time) sdktypes.Heartbeat {
+	hb := sdktypes.Heartbeat{UUID: id, CreatedAt: now}
+	if config != nil && config.sync.Mode != "" && config.sync.Mode != agentconfig.ModeOff {
+		rev := config.sync.AppliedRevision
+		hb.ConfigRevision = &rev
+		hb.ConfigDigest = config.sync.Digest
+	}
+	return hb
 }
 
 type agentEvidenceCreateRequest struct {
@@ -1643,6 +1673,7 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 			End:         now,
 			Expires:     expires,
 			Links:       links,
+			Props:       configRevisionProps(config),
 			Status: sdktypes.ObjectiveStatus{
 				Reason:  reason,
 				Remarks: remarks,

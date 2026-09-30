@@ -99,3 +99,24 @@ func TestWithPluginSelectorLabelAppendsWhenMissing(t *testing.T) {
 		t.Fatalf("expected plugin selector label to be appended, got %#v", got[1])
 	}
 }
+
+func TestMergePropsAppendsUnlessSameNsAndName(t *testing.T) {
+	existing := []types.Property{
+		{Ns: "https://compliance-framework.github.io/ns", Name: "agent-config-revision", Value: "plugin-set"},
+		{Name: "other", Value: "x"},
+	}
+	extra := []types.Property{
+		{Ns: "https://compliance-framework.github.io/ns", Name: "agent-config-revision", Value: "7"},
+		{Ns: "https://example.test/ns", Name: "agent-config-revision", Value: "7"},
+	}
+	got := mergeProps(existing, extra)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 props, got %#v", got)
+	}
+	if got[0].Value != "plugin-set" {
+		t.Fatalf("an existing (ns, name) must win, got %#v", got[0])
+	}
+	if got[2].Ns != "https://example.test/ns" {
+		t.Fatalf("a different namespace must be appended, got %#v", got[2])
+	}
+}
