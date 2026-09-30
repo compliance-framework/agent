@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -296,6 +299,56 @@ func TestCheck_CompileAndBuiltins(t *testing.T) {
 			t.Fatal("a package outside the manifest roots must be rejected")
 		}
 	})
+}
+
+// TestCheck_DeniedBuiltinNeverExecutes is the D17/§8 regression: a denied builtin reachable
+// from authored Rego (or called by a vendor test) must never run on the agent host, not even
+// while the revision is being rejected.
+func TestCheck_DeniedBuiltinNeverExecutes(t *testing.T) {
+	var hits atomic.Int32
+	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer probe.Close()
+
+	vendor := map[string]string{
+		"lib/net.rego": "package ccf_libs.net\n\nfetch(u) := http.send({\"method\": \"GET\", \"url\": u})\n",
+		"banner.rego":  vendorBanner,
+	}
+
+	t.Run("authored test through a vendor helper is rejected before tests run", func(t *testing.T) {
+		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
+			"x_test.rego": "package compliance_framework.x_test\n\nimport data.ccf_libs.net\n\ntest_x if { net.fetch(\"" + probe.URL + "/exfil?d=secret\") }\n",
+		}})
+		errs := errorsOf(check(m, nil), agentconfig.SeverityError)
+		if len(errs) == 0 || !strings.Contains(PolicyErrors(errs).Error(), "forbidden builtin http.send") {
+			t.Fatalf("expected the forbidden builtin error, got %+v", errs)
+		}
+	})
+
+	t.Run("vendor test calling http.send is sandboxed", func(t *testing.T) {
+		withTest := map[string]string{
+			"lib/net_test.rego": "package ccf_libs.net_test\n\nimport data.ccf_libs.net\n\ntest_fetch if { net.fetch(\"" + probe.URL + "/vendor\") }\n\ntest_direct if { http.send({\"method\": \"GET\", \"url\": \"" + probe.URL + "/direct\"}) }\n",
+		}
+		for k, v := range vendor {
+			withTest[k] = v
+		}
+		m := materialize(t, withTest, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
+			"x.rego": "package compliance_framework.x\n\nr := 1\n",
+		}})
+		res := check(m, nil)
+		if errs := errorsOf(res, agentconfig.SeverityError); len(errs) != 0 {
+			t.Fatalf("vendor tests must only warn, got errors %+v", errs)
+		}
+		if warns := errorsOf(res, agentconfig.SeverityWarning); len(warns) != 2 {
+			t.Fatalf("expected both vendor tests to fail as warnings, got %+v", res)
+		}
+	})
+
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("the probe server received %d request(s); a denied builtin executed during Check", n)
+	}
 }
 
 func TestCheck_Tests(t *testing.T) {

@@ -38,6 +38,8 @@ type CheckInput struct {
 //  2. denied builtins (R19, R20): any policyeval.DeniedBuiltins ref reachable from an authored
 //     rule through the compiled rule graph — including `with f as http.send` — is an error;
 //  3. tests: a failing authored _test.rego test is an error, a failing vendor test a warning.
+//     Tests never run when step 2 found a denied builtin, and they run sandboxed: a denied
+//     builtin can never execute on the agent host (D17, HLD §8).
 //
 // The parse-level checks (regocheck) run once per bundle before materialization.
 func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
@@ -81,9 +83,15 @@ func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 		return out
 	}
 
-	// 2. Transitive denied builtins.
-	for _, h := range deniedReachable(compiler, in.PolicyDir, in.Authored) {
+	// 2. Transitive denied builtins. The revision is rejected, so the tests (which would
+	// execute the denied builtin) never run.
+	hits := deniedReachable(compiler, in.PolicyDir, in.Authored)
+	for _, h := range hits {
 		add(agentconfig.SeverityError, h.loc, "forbidden builtin %s is reachable from authored rule %s", h.name, h.from)
+	}
+	if len(hits) > 0 {
+		agentconfig.SortPolicyErrors(out)
+		return out
 	}
 
 	// 3. Tests.
@@ -201,10 +209,12 @@ func runTests(ctx context.Context, in CheckInput, bundleData map[string]any, mod
 	testCtx, cancel := context.WithTimeout(ctx, TestTimeout)
 	defer cancel()
 	store := inmem.NewFromObject(mergePolicyData(bundleData, in.PolicyData))
+	sandboxed, stubs, caps := sandboxTestModules(modules)
 	ch, err := tester.NewRunner().
-		SetCompiler(ast.NewCompiler()).
+		SetCompiler(ast.NewCompiler().WithCapabilities(caps)).
+		AddCustomBuiltins(stubs).
 		SetStore(store).
-		SetModules(modules).
+		SetModules(sandboxed).
 		SetTimeout(TestTimeout).
 		RunTests(testCtx, nil)
 	if err != nil {
@@ -233,6 +243,54 @@ func runTests(ctx context.Context, in CheckInput, bundleData map[string]any, mod
 		out = append(out, agentconfig.PolicyError{Bundle: in.Bundle, Message: prefixPlugin(in.Plugin, fmt.Sprintf("tests timed out after %s", TestTimeout)), Severity: agentconfig.SeverityError})
 	}
 	return out
+}
+
+// deniedStubPrefix names the stand-ins for denied builtins in sandboxed test runs.
+const deniedStubPrefix = "ccf_denied_builtin."
+
+// sandboxTestModules returns copies of modules in which every denied builtin ref (a call,
+// `with ... as <denied>`, any position) is rewritten to a stub builtin that always errors,
+// the stubs, and capabilities without the denied builtins (policyeval.SandboxCapabilities)
+// plus the stubs. A denied builtin therefore can never execute during tests: whatever the
+// rewrite misses fails to compile instead. Vendor modules that merely reference a denied
+// builtin off the authored path still compile, and their tests fail (as warnings).
+func sandboxTestModules(modules map[string]*ast.Module) (map[string]*ast.Module, []*tester.Builtin, *ast.Capabilities) {
+	caps := policyeval.SandboxCapabilities()
+	stubNames := map[string]ast.Ref{}
+	var stubs []*tester.Builtin
+	for _, name := range policyeval.DeniedBuiltins {
+		decl, ok := ast.BuiltinMap[name]
+		if !ok {
+			continue
+		}
+		stubName := deniedStubPrefix + strings.ReplaceAll(name, ".", "_")
+		stubDecl := &ast.Builtin{Name: stubName, Decl: decl.Decl}
+		caps.Builtins = append(caps.Builtins, stubDecl)
+		stubNames[name] = ast.MustParseRef(stubName)
+		denied := name
+		stubs = append(stubs, &tester.Builtin{
+			Decl: stubDecl,
+			Func: rego.FunctionDyn(&rego.Function{Name: stubName, Decl: decl.Decl}, func(rego.BuiltinContext, []*ast.Term) (*ast.Term, error) {
+				return nil, fmt.Errorf("%s is not available in inline policy tests", denied)
+			}),
+		})
+	}
+
+	out := make(map[string]*ast.Module, len(modules))
+	for path, mod := range modules {
+		cp := mod.Copy()
+		res, err := ast.TransformRefs(cp, func(ref ast.Ref) (ast.Value, error) {
+			if stub, ok := stubNames[ref.String()]; ok {
+				return stub.Copy(), nil
+			}
+			return ref, nil
+		})
+		if m, ok := res.(*ast.Module); ok && err == nil {
+			cp = m
+		}
+		out[path] = cp
+	}
+	return out, stubs, caps
 }
 
 func prefixPlugin(plugin, msg string) string {
