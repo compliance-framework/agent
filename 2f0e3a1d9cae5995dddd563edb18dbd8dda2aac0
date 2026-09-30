@@ -14,3 +14,6 @@ lisa-design:
 - Inline materialization needs a writable state dir (failed/internal otherwise). If a vendor tree has both root data.yaml/yml and data.json and `data` is set, they are merged yaml-then-json-then-data into data.json.
 - Evidence prop agent-config-revision is only added when AppliedRevision > 0 (revision 0 = empty overlay / file only). Namespace constant CCFPropNamespace is defined in the agent (the SDK exports none).
 - Not implemented (deferred): the end-to-end test with a fake v2 plugin binary receiving the materialized dir in Init/Eval; evidence-v3 BundleIndex provenance (conditional on evidence-v3 G1, not on main).
+
+lisa-selfreview:
+- pass 1 (in progress when handed back; not yet fixed): (a) reconcile(): when the applied overlay is remembered-rejected for the current base (file edit conflicting with the overlay), every poll re-prepares it (cheap rejections, but policy-errors re-run materialize/OPA checks each tick) — fix: in reconcile, if target != nil && rc.rememberedRejected(target) { maybeReport; return } (keeps last-known-good per LLD G3.4). (b) cmd/config.go baseFromViper: `bundles == nil && v.IsSet("policy_bundles")` misfires for a yaml/json/toml file with `policy_bundles:` null — restrict the check to unsupported extensions. An independent reviewer subagent pass was still running.
