@@ -335,6 +335,9 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	ar := NewAgentRunner(WithInstanceID(id))
 	rc := newReconciler(cmd, configPath, store, ar, logger)
 	rc.instanceID = id
+	rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
+		return ar.downloadPolicy(ctx, source, logger)
+	}
 
 	active, err := rc.startup(context.Background())
 	if err != nil {
@@ -1447,6 +1450,10 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 
 	policyPaths := make([]string, 0)
 	for _, inputBundle := range plugin.Policies {
+		if dir, ok := config.inlinePolicyDirs[string(inputBundle)]; ok {
+			policyPaths = append(policyPaths, dir)
+			continue
+		}
 		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
 		if err != nil {
 			return err
@@ -1898,6 +1905,11 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	for source := range policySources {
+		// Inline bundles were materialized by the reconciler; they are never downloaded.
+		if dir, ok := config.inlinePolicyDirs[source]; ok {
+			ar.policyLocations[source] = dir
+			continue
+		}
 		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
 
 		if err != nil {
@@ -1965,6 +1977,9 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 
 // downloadPolicy fetches one policy source into the shared policy cache.
 func (ar *AgentRunner) downloadPolicy(ctx context.Context, source string, logger hclog.Logger) (string, error) {
+	if logger == nil {
+		logger = hclog.NewNullLogger()
+	}
 	return ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
 }
 

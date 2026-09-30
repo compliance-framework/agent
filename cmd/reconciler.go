@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/compliance-framework/agent/internal/agentstate"
+	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/fsnotify/fsnotify"
@@ -172,7 +173,12 @@ type reconciler struct {
 	newRemote func(agentconfig.Config) remoteAPI
 	// lookupEnv resolves ${env:NAME} placeholders (a test seam).
 	lookupEnv func(string) (string, bool)
-	now       func() time.Time
+	// resolvePolicy returns the policy root of an OCI or local policy source (downloading it
+	// into the shared cache); it serves inline bundles' extends and the report inventory.
+	resolvePolicy inlinepolicy.Resolver
+	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir").
+	inventoryMemo map[string]agentconfig.PolicyBundleReport
+	now           func() time.Time
 
 	mu        sync.Mutex // guards active, pending, cancelRun
 	active    *candidate
@@ -217,6 +223,8 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		lookupEnv:  os.LookupEnv,
 		now:        time.Now,
 		loggedOnce: map[string]bool{},
+
+		inventoryMemo: map[string]agentconfig.PolicyBundleReport{},
 	}
 }
 
@@ -351,14 +359,6 @@ func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 	rc.maybeReport(ctx, active, rc.lastOutcome)
 	rc.afterStartup(active)
 	return active, nil
-}
-
-// afterStartup is the G3b hook (inline bundle GC).
-func (rc *reconciler) afterStartup(_ *candidate) {}
-
-// prepareInline is the G3b hook (materialize and check inline policy bundles).
-func (rc *reconciler) prepareInline(_ context.Context, _ agentconfig.Config, _ map[string]string) (inlineResult, *applyError) {
-	return inlineResult{}, nil
 }
 
 // ladder lists the startup targets in order; nil is the file only.
@@ -505,6 +505,9 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	}
 	if err := rc.runner.Prefetch(ctx, runtime); err != nil {
 		return nil, failed(agentconfig.ReasonDownloadFailed, err)
+	}
+	if rcfg.Mode != agentconfig.ModeOff {
+		inline.reports = append(inline.reports, rc.sourceReports(ctx, runtime)...)
 	}
 
 	// The digest is over the UNRESOLVED form with the same masking as the reported effective
