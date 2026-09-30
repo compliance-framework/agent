@@ -18,12 +18,22 @@ message UpsertSubjectTemplatesRequest {
   repeated SubjectTemplate SubjectTemplates = 1;
 }
 
+// CreateEvidenceStreamRequest carries one evidence. A stream sends each evaluation's
+// PolicyEvaluation in full once, with an Id; later evidence from the same evaluation carries
+// a PolicyEvaluation with only that Id.
+message CreateEvidenceStreamRequest {
+  Evidence Evidence = 1;
+}
+
 message CreateEvidenceResponse {}
 message UpsertRiskTemplatesResponse {}
 message UpsertSubjectTemplatesResponse {}
 
 service ApiHelper {
   rpc CreateEvidence(CreateEvidenceRequest) returns (CreateEvidenceResponse);
+  // CreateEvidenceStream sends evidence one message at a time, so there is no limit on the
+  // whole call and the agent handles each evidence as it arrives.
+  rpc CreateEvidenceStream(stream CreateEvidenceStreamRequest) returns (CreateEvidenceResponse);
   rpc UpsertRiskTemplates(UpsertRiskTemplatesRequest) returns (UpsertRiskTemplatesResponse);
   rpc UpsertSubjectTemplates(UpsertSubjectTemplatesRequest) returns (UpsertSubjectTemplatesResponse);
 }

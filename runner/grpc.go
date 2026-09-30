@@ -18,22 +18,12 @@ type ApiHelper interface {
 	UpsertSubjectTemplates(context.Context, []*proto.SubjectTemplate) error
 }
 
-// MaxApiHelperMessageBytes bounds one message from a plugin to the agent. Each evidence in a
-// CreateEvidence call carries its evaluation's input and policy data, so a call can be far
-// larger than gRPC's 4 MiB default.
+// MaxApiHelperMessageBytes bounds one message from a plugin to the agent. Evidence is
+// streamed one per message, so this bounds a single evidence, whose PolicyEvaluation may
+// carry a large input such as a whole cluster; gRPC's 4 MiB default is too small for that.
 const MaxApiHelperMessageBytes = 256 << 20
 
 type GRPCApiHelperClient struct{ client proto.ApiHelperClient }
-
-func (m *GRPCApiHelperClient) CreateEvidence(ctx context.Context, evidence []*proto.Evidence) error {
-	_, err := m.client.CreateEvidence(ctx, &proto.CreateEvidenceRequest{
-		Evidence: evidence,
-	})
-	if err != nil {
-		hclog.Default().Error("Error adding result", "error", err)
-	}
-	return err
-}
 
 func (m *GRPCApiHelperClient) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
 	_, err := m.client.UpsertRiskTemplates(ctx, &proto.UpsertRiskTemplatesRequest{

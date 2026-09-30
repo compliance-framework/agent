@@ -16,10 +16,16 @@ The API does all canonicalisation and hashing; see its `docs/artifacts.md`.
 
 1. `GenerateResults` attaches a `PolicyEvaluation` to each evidence: the policy path, and
    the input and policy data as JSON. Plugins call it exactly as before.
-2. The plugin sends the evidence with `CreateEvidence`, as before.
-3. The agent groups the evidence by evaluation. For each evaluation it archives the policy
-   bundle, uploads the bundle, input and policy data once, and sends the evidence with the
-   digests the API returns. The raw data is never forwarded with the evidence.
+2. The plugin sends the evidence with `CreateEvidence`, as before. Underneath, the plugin's
+   client streams it to the agent one evidence per message (`CreateEvidenceStream`). Each
+   evaluation's data is sent in full once per stream; later evidence from the same
+   evaluation carries only its Id. Against an agent that predates the stream, the client
+   falls back to the single `CreateEvidence` call.
+3. The agent handles each evidence as it arrives. For an evaluation it has not seen in the
+   stream, it archives the policy bundle and uploads the bundle, input and policy data, and
+   keeps only the digests the API returns. It then sends the evidence to the API with those
+   digests, before the next message arrives. The raw data is never forwarded with the
+   evidence, and the agent never holds the whole batch in memory.
 
 The agent only reads bundles at the policy paths it gave that plugin. It remembers what it
 has already uploaded, so unchanged content is not uploaded again on later runs.
@@ -34,7 +40,7 @@ includes it and rebuilding, because `GenerateResults` runs inside the plugin's o
 | Plugin | Agent | API | Result |
 | --- | --- | --- | --- |
 | Not rebuilt | Any | Any | Evidence as before, without digests |
-| Rebuilt | Old | Any | Evidence as before, without digests: the old agent ignores the `PolicyEvaluation` field |
+| Rebuilt | Old | Any | Evidence as before, without digests: the plugin falls back to the single call, and the old agent ignores the `PolicyEvaluation` field |
 | Rebuilt | New | Old | Evidence as before, without digests; the agent logs a warning and checks the API again every 10 minutes |
 | Rebuilt | New | New | Artifacts stored; evidence carries digests |
 
@@ -51,5 +57,7 @@ evaluations in the same call is still sent, and the next scheduled run tries aga
 
 ## Message size
 
-Each evidence in a `CreateEvidence` call carries its evaluation's input and policy data, so
-plugin-to-agent messages may be up to 256 MiB, above gRPC's 4 MiB default.
+Because evidence is streamed, there is no limit on a whole call. The limit is per message:
+one evidence, whose `PolicyEvaluation` may carry a large input such as a whole cluster, may
+be up to 256 MiB, above gRPC's 4 MiB default. Each evaluation's data crosses once however
+many evidence records it produces.

@@ -1344,7 +1344,10 @@ type PolicyEvaluation struct {
 	// The input data, as JSON.
 	Input []byte `protobuf:"bytes,2,opt,name=Input,proto3" json:"Input,omitempty"`
 	// The policy data, as JSON. Empty when none is configured.
-	PolicyData    []byte `protobuf:"bytes,3,opt,name=PolicyData,proto3" json:"PolicyData,omitempty"`
+	PolicyData []byte `protobuf:"bytes,3,opt,name=PolicyData,proto3" json:"PolicyData,omitempty"`
+	// Identifies the evaluation within one CreateEvidenceStream. Set by the stream client; a
+	// PolicyEvaluation with only an Id refers to one sent earlier in the same stream.
+	Id            string `protobuf:"bytes,4,opt,name=Id,proto3" json:"Id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1398,6 +1401,13 @@ func (x *PolicyEvaluation) GetPolicyData() []byte {
 		return x.PolicyData
 	}
 	return nil
+}
+
+func (x *PolicyEvaluation) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 type ThreatRef struct {
@@ -2230,7 +2240,7 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\b_RemarksB\n" +
 	"\n" +
 	"\b_ExpiresB\x13\n" +
-	"\x11_PolicyEvaluation\"h\n" +
+	"\x11_PolicyEvaluation\"x\n" +
 	"\x10PolicyEvaluation\x12\x1e\n" +
 	"\n" +
 	"PolicyPath\x18\x01 \x01(\tR\n" +
@@ -2238,7 +2248,8 @@ const file_runner_proto_types_proto_rawDesc = "" +
 	"\x05Input\x18\x02 \x01(\fR\x05Input\x12\x1e\n" +
 	"\n" +
 	"PolicyData\x18\x03 \x01(\fR\n" +
-	"PolicyData\"k\n" +
+	"PolicyData\x12\x0e\n" +
+	"\x02Id\x18\x04 \x01(\tR\x02Id\"k\n" +
 	"\tThreatRef\x12\x16\n" +
 	"\x06System\x18\x01 \x01(\tR\x06System\x12\x1e\n" +
 	"\n" +

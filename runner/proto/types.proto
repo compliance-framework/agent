@@ -207,6 +207,9 @@ message PolicyEvaluation {
   bytes Input = 2;
   // The policy data, as JSON. Empty when none is configured.
   bytes PolicyData = 3;
+  // Identifies the evaluation within one CreateEvidenceStream. Set by the stream client; a
+  // PolicyEvaluation with only an Id refers to one sent earlier in the same stream.
+  string Id = 4;
 }
 
 message ThreatRef {

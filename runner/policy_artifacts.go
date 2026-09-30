@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -57,51 +58,19 @@ func newArtifactUploader(client *sdk.Client) *artifactUploader {
 	}
 }
 
-// evaluationKey identifies an evaluation by what it depended on. Evidence from one
-// evaluation arrives over gRPC as separate copies, so identity is by content.
-func evaluationKey(e *proto.PolicyEvaluation) [sha256.Size]byte {
+// evaluationKey identifies an evaluation: by its stream Id when it has one, otherwise by
+// what it depended on, since evidence from one evaluation sent in a batch arrives over gRPC
+// as separate copies.
+func evaluationKey(e *proto.PolicyEvaluation) string {
+	if id := e.GetId(); id != "" {
+		return "id:" + id
+	}
 	h := sha256.New()
 	for _, part := range [][]byte{[]byte(e.GetPolicyPath()), e.GetInput(), e.GetPolicyData()} {
 		_, _ = fmt.Fprintf(h, "%d:", len(part))
 		_, _ = h.Write(part)
 	}
-	var key [sha256.Size]byte
-	copy(key[:], h.Sum(nil))
-	return key
-}
-
-// storeEvaluations uploads the artifacts of every distinct evaluation in evidence. It
-// returns the digests per evaluation, and an error per evaluation whose artifacts could
-// not be stored. If the API does not support artifacts, it returns no digests and no
-// errors, so the evidence is sent as before.
-func (u *artifactUploader) storeEvaluations(ctx context.Context, evidence []*proto.Evidence) (map[[sha256.Size]byte]*types.PolicyArtifacts, map[[sha256.Size]byte]error, bool) {
-	refs := map[[sha256.Size]byte]*types.PolicyArtifacts{}
-	failed := map[[sha256.Size]byte]error{}
-
-	for _, e := range evidence {
-		evaluation := e.GetPolicyEvaluation()
-		if evaluation == nil {
-			continue
-		}
-		key := evaluationKey(evaluation)
-		if _, done := refs[key]; done {
-			continue
-		}
-		if _, done := failed[key]; done {
-			continue
-		}
-
-		stored, err := u.storeEvaluation(ctx, evaluation)
-		if errors.Is(err, errArtifactsUnsupported) {
-			return nil, nil, true
-		}
-		if err != nil {
-			failed[key] = fmt.Errorf("store policy artifacts for %s: %w", evaluation.GetPolicyPath(), err)
-			continue
-		}
-		refs[key] = stored
-	}
-	return refs, failed, false
+	return "content:" + hex.EncodeToString(h.Sum(nil))
 }
 
 func (u *artifactUploader) storeEvaluation(ctx context.Context, evaluation *proto.PolicyEvaluation) (*types.PolicyArtifacts, error) {

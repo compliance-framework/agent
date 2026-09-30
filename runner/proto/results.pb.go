@@ -161,6 +161,53 @@ func (x *UpsertSubjectTemplatesRequest) GetSubjectTemplates() []*SubjectTemplate
 	return nil
 }
 
+// CreateEvidenceStreamRequest carries one evidence. A stream sends each evaluation's
+// PolicyEvaluation in full once, with an Id; later evidence from the same evaluation carries
+// a PolicyEvaluation with only that Id.
+type CreateEvidenceStreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Evidence      *Evidence              `protobuf:"bytes,1,opt,name=Evidence,proto3" json:"Evidence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEvidenceStreamRequest) Reset() {
+	*x = CreateEvidenceStreamRequest{}
+	mi := &file_runner_proto_results_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEvidenceStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEvidenceStreamRequest) ProtoMessage() {}
+
+func (x *CreateEvidenceStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_runner_proto_results_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEvidenceStreamRequest.ProtoReflect.Descriptor instead.
+func (*CreateEvidenceStreamRequest) Descriptor() ([]byte, []int) {
+	return file_runner_proto_results_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateEvidenceStreamRequest) GetEvidence() *Evidence {
+	if x != nil {
+		return x.Evidence
+	}
+	return nil
+}
+
 type CreateEvidenceResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -169,7 +216,7 @@ type CreateEvidenceResponse struct {
 
 func (x *CreateEvidenceResponse) Reset() {
 	*x = CreateEvidenceResponse{}
-	mi := &file_runner_proto_results_proto_msgTypes[3]
+	mi := &file_runner_proto_results_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -181,7 +228,7 @@ func (x *CreateEvidenceResponse) String() string {
 func (*CreateEvidenceResponse) ProtoMessage() {}
 
 func (x *CreateEvidenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_results_proto_msgTypes[3]
+	mi := &file_runner_proto_results_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -194,7 +241,7 @@ func (x *CreateEvidenceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEvidenceResponse.ProtoReflect.Descriptor instead.
 func (*CreateEvidenceResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_results_proto_rawDescGZIP(), []int{3}
+	return file_runner_proto_results_proto_rawDescGZIP(), []int{4}
 }
 
 type UpsertRiskTemplatesResponse struct {
@@ -205,7 +252,7 @@ type UpsertRiskTemplatesResponse struct {
 
 func (x *UpsertRiskTemplatesResponse) Reset() {
 	*x = UpsertRiskTemplatesResponse{}
-	mi := &file_runner_proto_results_proto_msgTypes[4]
+	mi := &file_runner_proto_results_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -217,7 +264,7 @@ func (x *UpsertRiskTemplatesResponse) String() string {
 func (*UpsertRiskTemplatesResponse) ProtoMessage() {}
 
 func (x *UpsertRiskTemplatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_results_proto_msgTypes[4]
+	mi := &file_runner_proto_results_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -230,7 +277,7 @@ func (x *UpsertRiskTemplatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertRiskTemplatesResponse.ProtoReflect.Descriptor instead.
 func (*UpsertRiskTemplatesResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_results_proto_rawDescGZIP(), []int{4}
+	return file_runner_proto_results_proto_rawDescGZIP(), []int{5}
 }
 
 type UpsertSubjectTemplatesResponse struct {
@@ -241,7 +288,7 @@ type UpsertSubjectTemplatesResponse struct {
 
 func (x *UpsertSubjectTemplatesResponse) Reset() {
 	*x = UpsertSubjectTemplatesResponse{}
-	mi := &file_runner_proto_results_proto_msgTypes[5]
+	mi := &file_runner_proto_results_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -253,7 +300,7 @@ func (x *UpsertSubjectTemplatesResponse) String() string {
 func (*UpsertSubjectTemplatesResponse) ProtoMessage() {}
 
 func (x *UpsertSubjectTemplatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_runner_proto_results_proto_msgTypes[5]
+	mi := &file_runner_proto_results_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -266,7 +313,7 @@ func (x *UpsertSubjectTemplatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertSubjectTemplatesResponse.ProtoReflect.Descriptor instead.
 func (*UpsertSubjectTemplatesResponse) Descriptor() ([]byte, []int) {
-	return file_runner_proto_results_proto_rawDescGZIP(), []int{5}
+	return file_runner_proto_results_proto_rawDescGZIP(), []int{6}
 }
 
 var File_runner_proto_results_proto protoreflect.FileDescriptor
@@ -280,12 +327,15 @@ const file_runner_proto_results_proto_rawDesc = "" +
 	"\vPackageName\x18\x01 \x01(\tR\vPackageName\x129\n" +
 	"\rRiskTemplates\x18\x02 \x03(\v2\x13.proto.RiskTemplateR\rRiskTemplates\"c\n" +
 	"\x1dUpsertSubjectTemplatesRequest\x12B\n" +
-	"\x10SubjectTemplates\x18\x01 \x03(\v2\x16.proto.SubjectTemplateR\x10SubjectTemplates\"\x18\n" +
+	"\x10SubjectTemplates\x18\x01 \x03(\v2\x16.proto.SubjectTemplateR\x10SubjectTemplates\"J\n" +
+	"\x1bCreateEvidenceStreamRequest\x12+\n" +
+	"\bEvidence\x18\x01 \x01(\v2\x0f.proto.EvidenceR\bEvidence\"\x18\n" +
 	"\x16CreateEvidenceResponse\"\x1d\n" +
 	"\x1bUpsertRiskTemplatesResponse\" \n" +
-	"\x1eUpsertSubjectTemplatesResponse2\x9f\x02\n" +
+	"\x1eUpsertSubjectTemplatesResponse2\xfc\x02\n" +
 	"\tApiHelper\x12M\n" +
-	"\x0eCreateEvidence\x12\x1c.proto.CreateEvidenceRequest\x1a\x1d.proto.CreateEvidenceResponse\x12\\\n" +
+	"\x0eCreateEvidence\x12\x1c.proto.CreateEvidenceRequest\x1a\x1d.proto.CreateEvidenceResponse\x12[\n" +
+	"\x14CreateEvidenceStream\x12\".proto.CreateEvidenceStreamRequest\x1a\x1d.proto.CreateEvidenceResponse(\x01\x12\\\n" +
 	"\x13UpsertRiskTemplates\x12!.proto.UpsertRiskTemplatesRequest\x1a\".proto.UpsertRiskTemplatesResponse\x12e\n" +
 	"\x16UpsertSubjectTemplates\x12$.proto.UpsertSubjectTemplatesRequest\x1a%.proto.UpsertSubjectTemplatesResponseB\tZ\a./protob\x06proto3"
 
@@ -301,33 +351,37 @@ func file_runner_proto_results_proto_rawDescGZIP() []byte {
 	return file_runner_proto_results_proto_rawDescData
 }
 
-var file_runner_proto_results_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_runner_proto_results_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_runner_proto_results_proto_goTypes = []any{
 	(*CreateEvidenceRequest)(nil),          // 0: proto.CreateEvidenceRequest
 	(*UpsertRiskTemplatesRequest)(nil),     // 1: proto.UpsertRiskTemplatesRequest
 	(*UpsertSubjectTemplatesRequest)(nil),  // 2: proto.UpsertSubjectTemplatesRequest
-	(*CreateEvidenceResponse)(nil),         // 3: proto.CreateEvidenceResponse
-	(*UpsertRiskTemplatesResponse)(nil),    // 4: proto.UpsertRiskTemplatesResponse
-	(*UpsertSubjectTemplatesResponse)(nil), // 5: proto.UpsertSubjectTemplatesResponse
-	(*Evidence)(nil),                       // 6: proto.Evidence
-	(*RiskTemplate)(nil),                   // 7: proto.RiskTemplate
-	(*SubjectTemplate)(nil),                // 8: proto.SubjectTemplate
+	(*CreateEvidenceStreamRequest)(nil),    // 3: proto.CreateEvidenceStreamRequest
+	(*CreateEvidenceResponse)(nil),         // 4: proto.CreateEvidenceResponse
+	(*UpsertRiskTemplatesResponse)(nil),    // 5: proto.UpsertRiskTemplatesResponse
+	(*UpsertSubjectTemplatesResponse)(nil), // 6: proto.UpsertSubjectTemplatesResponse
+	(*Evidence)(nil),                       // 7: proto.Evidence
+	(*RiskTemplate)(nil),                   // 8: proto.RiskTemplate
+	(*SubjectTemplate)(nil),                // 9: proto.SubjectTemplate
 }
 var file_runner_proto_results_proto_depIdxs = []int32{
-	6, // 0: proto.CreateEvidenceRequest.Evidence:type_name -> proto.Evidence
-	7, // 1: proto.UpsertRiskTemplatesRequest.RiskTemplates:type_name -> proto.RiskTemplate
-	8, // 2: proto.UpsertSubjectTemplatesRequest.SubjectTemplates:type_name -> proto.SubjectTemplate
-	0, // 3: proto.ApiHelper.CreateEvidence:input_type -> proto.CreateEvidenceRequest
-	1, // 4: proto.ApiHelper.UpsertRiskTemplates:input_type -> proto.UpsertRiskTemplatesRequest
-	2, // 5: proto.ApiHelper.UpsertSubjectTemplates:input_type -> proto.UpsertSubjectTemplatesRequest
-	3, // 6: proto.ApiHelper.CreateEvidence:output_type -> proto.CreateEvidenceResponse
-	4, // 7: proto.ApiHelper.UpsertRiskTemplates:output_type -> proto.UpsertRiskTemplatesResponse
-	5, // 8: proto.ApiHelper.UpsertSubjectTemplates:output_type -> proto.UpsertSubjectTemplatesResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	7, // 0: proto.CreateEvidenceRequest.Evidence:type_name -> proto.Evidence
+	8, // 1: proto.UpsertRiskTemplatesRequest.RiskTemplates:type_name -> proto.RiskTemplate
+	9, // 2: proto.UpsertSubjectTemplatesRequest.SubjectTemplates:type_name -> proto.SubjectTemplate
+	7, // 3: proto.CreateEvidenceStreamRequest.Evidence:type_name -> proto.Evidence
+	0, // 4: proto.ApiHelper.CreateEvidence:input_type -> proto.CreateEvidenceRequest
+	3, // 5: proto.ApiHelper.CreateEvidenceStream:input_type -> proto.CreateEvidenceStreamRequest
+	1, // 6: proto.ApiHelper.UpsertRiskTemplates:input_type -> proto.UpsertRiskTemplatesRequest
+	2, // 7: proto.ApiHelper.UpsertSubjectTemplates:input_type -> proto.UpsertSubjectTemplatesRequest
+	4, // 8: proto.ApiHelper.CreateEvidence:output_type -> proto.CreateEvidenceResponse
+	4, // 9: proto.ApiHelper.CreateEvidenceStream:output_type -> proto.CreateEvidenceResponse
+	5, // 10: proto.ApiHelper.UpsertRiskTemplates:output_type -> proto.UpsertRiskTemplatesResponse
+	6, // 11: proto.ApiHelper.UpsertSubjectTemplates:output_type -> proto.UpsertSubjectTemplatesResponse
+	8, // [8:12] is the sub-list for method output_type
+	4, // [4:8] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_runner_proto_results_proto_init() }
@@ -342,7 +396,7 @@ func file_runner_proto_results_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runner_proto_results_proto_rawDesc), len(file_runner_proto_results_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
