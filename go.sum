@@ -70,8 +70,8 @@ github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK3
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/compliance-framework/api v0.20.0-rc1 h1:Q6+K27TtQzSj/ZPjLm9qS12ndtTHF+e7RmhcAlJVjvY=
-github.com/compliance-framework/api v0.20.0-rc1/go.mod h1:R0MBpd7m1rFeZIYB6kAm0u8o7vEjzMUGYIVeDRxr6Ao=
+github.com/compliance-framework/api v0.20.0-rc2 h1:TULpI4xzpb9YQiSmdXczPi4WgpGDXO/PI/a0vrPix88=
+github.com/compliance-framework/api v0.20.0-rc2/go.mod h1:R0MBpd7m1rFeZIYB6kAm0u8o7vEjzMUGYIVeDRxr6Ao=
 github.com/compliance-framework/gooci v0.0.6 h1:61N3igJyGdSO5hYD4ODgQ6YhzixbK6mMCzsNLyigBQ4=
 github.com/compliance-framework/gooci v0.0.6/go.mod h1:vbiRPS2mbxW2VIKhpkOOK6uftKjv9l3fYOr3m+ufwZA=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
