@@ -1,0 +1,2 @@
+lisa-design:
+- SUPERSEDES the earlier pin note: api is now pinned to v0.19.1-0.20260930153743-9a512a6f0176 (PR #465 head 9a512a6, which merged api main incl. #464). go build/vet/test -race pass with GOWORK=off; the go.work workaround is no longer needed. OPA v1.14.1 and go-containerregistry v0.21.2 unchanged.
