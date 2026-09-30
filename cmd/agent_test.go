@@ -17,10 +17,12 @@ import (
 
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	hplugin "github.com/hashicorp/go-plugin"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -186,15 +188,8 @@ plugins:
 				t.Fatalf("Error reading config: %v", err)
 			}
 
-			config := &agentConfig{}
-			err = v.Unmarshal(config)
-			if err != nil {
-				t.Fatalf("Error unmarshalling config: %v", err)
-			}
-			markExplicitPluginProtocols(v, config)
-			updateAllPluginProtocols(config)
-
-			if err = config.validate(); (err == nil) != test.valid {
+			_, err = baseFromViper(AgentCmd(), v, []byte(test.configYamlContent), "yaml")
+			if (err == nil) != test.valid {
 				t.Errorf("Expected validity of config to be %v, got %v", test.valid, err)
 			}
 		})
@@ -340,17 +335,12 @@ plugins:
 				t.Fatalf("Error reading config: %v", err)
 			}
 
-			config, err := mergeConfig(AgentCmd(), v)
-			if err != nil {
-				t.Fatalf("Error merging config: %v", err)
-			}
-
-			err = config.validate()
+			_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
 			if err == nil {
 				t.Fatal("expected validate to fail when only one api auth env var is set")
 			}
-			if err.Error() != "api auth requires both client_id and client_secret when configured" {
-				t.Fatalf("expected validate error %q, got %q", "api auth requires both client_id and client_secret when configured", err.Error())
+			if err.Error() != "/api/auth: api auth requires both client_id and client_secret when configured" {
+				t.Fatalf("expected validate error %q, got %q", "/api/auth: api auth requires both client_id and client_secret when configured", err.Error())
 			}
 		})
 	}
@@ -452,17 +442,12 @@ func TestMergeConfig_RejectsUnsupportedExplicitProtocolVersion(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	config, err := mergeConfig(AgentCmd(), v)
-	if err != nil {
-		t.Fatalf("Error merging config: %v", err)
-	}
-
-	err = config.validate()
+	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for unsupported protocol version")
 	}
 
-	expected := "plugin plugin-with-invalid-version has unsupported protocol_version=100; supported values are 1 and 2"
+	expected := "/plugins/plugin-with-invalid-version/protocol_version: must be 1 or 2 (0 or unset = auto)"
 	if err.Error() != expected {
 		t.Fatalf("Expected error %q, got %q", expected, err.Error())
 	}
@@ -476,12 +461,7 @@ func TestMergeConfig_RejectsExplicitZeroProtocolVersion(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	config, err := mergeConfig(AgentCmd(), v)
-	if err != nil {
-		t.Fatalf("Error merging config: %v", err)
-	}
-
-	err = config.validate()
+	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for explicit zero protocol version")
 	}
@@ -500,17 +480,12 @@ func TestMergeConfig_RejectsNullPluginConfiguration(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	config, err := mergeConfig(AgentCmd(), v)
-	if err != nil {
-		t.Fatalf("Error merging config: %v", err)
-	}
-
-	err = config.validate()
+	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for null plugin configuration")
 	}
 
-	expected := "plugin null-plugin has null configuration"
+	expected := "/plugins/null-plugin: plugin \"null-plugin\" has no configuration"
 	if err.Error() != expected {
 		t.Fatalf("Expected error %q, got %q", expected, err.Error())
 	}
@@ -2056,7 +2031,7 @@ func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
 	config := &agentConfig{
 		ApiConfig: &apiConfig{Url: "http://localhost:8080"},
 	}
-	if err := config.validate(); err != nil {
+	if err := validateRuntimeForTest(config); err != nil {
 		t.Fatalf("expected no-plugin config to be valid: %v", err)
 	}
 	if !config.agentEvidenceEnabled() {
@@ -2074,9 +2049,34 @@ func TestAgentEvidenceConfigDefaultsAndValidation(t *testing.T) {
 	}
 
 	config.AgentEvidence = &agentEvidenceConfig{Interval: "not-a-duration"}
-	if err := config.validate(); err == nil {
+	if err := validateRuntimeForTest(config); err == nil {
 		t.Fatalf("expected invalid interval to fail validation")
 	}
+}
+
+// mergeConfig decodes the declared config from v and converts it to the runtime form without
+// validating it (the old mergeConfig contract, kept for these tests).
+func mergeConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
+	declared, err := declaredFromViper(cmd, v)
+	if err != nil {
+		return nil, err
+	}
+	return toRuntime(declared, nil, nil)
+}
+
+// validateRuntimeForTest validates the declared equivalent of a runtime config.
+func validateRuntimeForTest(config *agentConfig) error {
+	declared := agentconfig.Config{Daemon: config.Daemon, Verbosity: config.Verbosity}
+	if config.ApiConfig != nil {
+		declared.API = &agentconfig.APIConfig{URL: config.ApiConfig.Url}
+		if config.ApiConfig.Auth != nil {
+			declared.API.Auth = &agentconfig.APIAuth{ClientID: config.ApiConfig.Auth.ClientID, ClientSecret: config.ApiConfig.Auth.ClientSecret}
+		}
+	}
+	if config.AgentEvidence != nil {
+		declared.AgentEvidence = &agentconfig.EvidenceConfig{Enabled: config.AgentEvidence.Enabled, EmitOnRunCompletion: config.AgentEvidence.EmitOnRunCompletion, Interval: config.AgentEvidence.Interval}
+	}
+	return declared.Validate()
 }
 
 func newTestAgentConfig(baseURL string, auth *apiAuthConfig) *agentConfig {

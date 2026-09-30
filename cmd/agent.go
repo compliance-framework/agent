@@ -13,7 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -28,6 +28,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/runner"
+	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
@@ -37,7 +38,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
-	"github.com/open-policy-agent/opa/rego"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/sync/singleflight"
@@ -78,50 +78,36 @@ type agentEvidenceConfig struct {
 	Interval            string `mapstructure:"interval,omitempty"`
 }
 
+// agentConfig is the RUNTIME form of the configuration, built from the declared form
+// (agentconfig.Config) by toRuntime. It is immutable once handed to AgentRunner.UpdateConfig,
+// except for the protocol resolution AgentRunner.Run performs on its own copy.
 type agentConfig struct {
 	Daemon        bool                    `mapstructure:"daemon"`
 	Verbosity     int32                   `mapstructure:"verbosity"`
 	ApiConfig     *apiConfig              `mapstructure:"api"`
 	Plugins       map[string]*agentPlugin `mapstructure:"plugins"`
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
+
+	// inlinePolicyDirs maps "inline:<name>" policy entries to their materialized directory.
+	inlinePolicyDirs map[string]string
+	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
+	sync syncMeta
+	// remote is the normalized remote_config block.
+	remote agentconfig.RemoteConfig
 }
 
-// logVerbosity reverses our verbosity "increase" to hclog's reversed "decrease."
-// 1 for us means INFO. 1 for hclog means trace.
-// 3 for us means TRACE. 3 for hclog means INFO.
-// You can see hclog's verbosity here: https://github.com/hashicorp/go-hclog/blob/cb8687c9c619227eac510d0a76d23997fb6667d3/logger.go#L25
+// syncMeta describes the applied remote configuration.
+type syncMeta struct {
+	AppliedRevision int64  // 0 when running the file only
+	Digest          string // agentconfig.Digest of the effective declared config
+	Mode            string // remote_config.mode
+}
+
+// logVerbosity maps our verbosity "increase" onto hclog's levels: our 0/1/2 = Info/Debug/Trace,
+// i.e. hclog.Level(Info - v). See hclog's levels here:
+// https://github.com/hashicorp/go-hclog/blob/cb8687c9c619227eac510d0a76d23997fb6667d3/logger.go#L25
 func (ac *agentConfig) logVerbosity() int32 {
 	return int32(hclog.Info) - ac.Verbosity
-}
-
-func (ac *agentConfig) validate() error {
-	if err := ac.ApiConfig.validate(); err != nil {
-		return err
-	}
-
-	if _, err := ac.agentEvidenceInterval(); err != nil {
-		return err
-	}
-
-	for name, pluginConfig := range ac.Plugins {
-		if pluginConfig == nil {
-			return fmt.Errorf("plugin %s has null configuration", name)
-		}
-
-		if pluginConfig.ProtocolVersion == 0 {
-			if pluginConfig.protocolSet {
-				return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
-			}
-
-			continue
-		}
-
-		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
-			return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
-		}
-	}
-
-	return nil
 }
 
 func (ac *agentConfig) agentEvidenceEnabled() bool {
@@ -155,28 +141,6 @@ func (ac *agentConfig) agentEvidenceInterval() (time.Duration, error) {
 	}
 
 	return interval, nil
-}
-
-func (ac *apiConfig) validate() error {
-	if ac == nil {
-		return fmt.Errorf("no api config specified in config")
-	}
-
-	if strings.TrimSpace(ac.Url) == "" {
-		return fmt.Errorf("api url must be configured")
-	}
-
-	if ac.hasPartialAuth() {
-		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
-	}
-
-	if ac.hasAuth() {
-		if _, err := uuid.Parse(strings.TrimSpace(ac.Auth.ClientID)); err != nil {
-			return fmt.Errorf("api auth client_id must be a valid UUID")
-		}
-	}
-
-	return nil
 }
 
 func (ac *apiConfig) hasAuth() bool {
@@ -246,91 +210,6 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.MarkFlagRequired("config")
 
 	return agentCmd
-}
-
-func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, error) {
-	// For now, we are reading from a file. This will probably be updated to a remote source soon.
-
-	// Daemon has a default false value, which will override all values passed through Viper.
-	// We need to check whether it was actually passed `Changed()`, and then merge its value into our config.
-	if cmd.Flags().Changed("daemon") {
-		isDaemon, err := cmd.Flags().GetBool("daemon")
-		if err != nil {
-			return nil, err
-		}
-
-		err = fileConfig.MergeConfigMap(map[string]interface{}{
-			"daemon": isDaemon,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if cmd.Flags().Changed("verbose") {
-		verbosity, err := cmd.Flags().GetCount("verbose")
-		if err != nil {
-			return nil, err
-		}
-		err = fileConfig.MergeConfigMap(map[string]interface{}{
-			"verbosity": verbosity,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	config := &agentConfig{}
-	err := fileConfig.Unmarshal(config)
-
-	if err != nil {
-		return nil, err
-	}
-
-	markExplicitPluginProtocols(fileConfig, config)
-	updateAllPluginProtocols(config)
-
-	return config, nil
-}
-
-func bindAgentEnv(config *viper.Viper) error {
-	for key, envVar := range map[string]string{
-		"api.auth.client_id":     "CCF_API_AUTH_CLIENT_ID",
-		"api.auth.client_secret": "CCF_API_AUTH_CLIENT_SECRET",
-	} {
-		if err := config.BindEnv(key, envVar); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
-	rawPlugins := fileConfig.GetStringMap("plugins")
-	for name, rawPlugin := range rawPlugins {
-		pluginConfig, ok := config.Plugins[name]
-		if rawPlugin == nil {
-			if config.Plugins == nil {
-				config.Plugins = map[string]*agentPlugin{}
-			}
-			if !ok {
-				config.Plugins[name] = nil
-			}
-			continue
-		}
-
-		if !ok || pluginConfig == nil {
-			continue
-		}
-
-		pluginMap, ok := rawPlugin.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		_, pluginConfig.protocolSet = pluginMap["protocol_version"]
-	}
 }
 
 func updateAllPluginProtocols(agentConfig *agentConfig) {
@@ -412,45 +291,13 @@ func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPl
 	return err
 }
 
-func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
-	err := v.ReadInConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	config, err := mergeConfig(cmd, v)
-	if err != nil {
-		return nil, err
-	}
-
-	err = config.validate()
-	if err != nil {
-		return nil, err
-	}
-	return config, nil
-}
-
 // Main the entrypoint for the `agent` command
 //
 // It will read the configuration file, and then run the agent. Various command line flags can
 // be used to override the config file.
 func agentRunner(cmd *cobra.Command, args []string) error {
-	configPath := cmd.Flag("config").Value.String()
-
-	if !path.IsAbs(configPath) {
-		workDir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		configPath = path.Join(workDir, configPath)
-	}
-
-	v := viper.New()
-	v.SetConfigFile(configPath)
-	v.SetEnvPrefix("CCF")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-	if err := bindAgentEnv(v); err != nil {
+	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
+	if err != nil {
 		return err
 	}
 
@@ -465,18 +312,28 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	ctx, configCancel := context.WithCancel(context.Background())
 	defer configCancel()
 
-	v.OnConfigChange(func(in fsnotify.Event) {
+	watcher := viper.New()
+	watcher.SetConfigFile(configPath)
+	if err := watcher.ReadInConfig(); err != nil {
+		return err
+	}
+	watcher.OnConfigChange(func(in fsnotify.Event) {
 		// We want to wait for any running agent processes to finish first.
 		logger.Debug("config file changed", "path", in.Name)
 		configCancel()
 	})
-	v.WatchConfig()
+	watcher.WatchConfig()
 
 	// For the daemon, we run the agent continuously.
 	// It will exit as soon as the config changes, and then start again with new configs set.
 	for {
 		ctx, configCancel = context.WithCancel(context.Background())
-		config, err := loadConfig(cmd, v)
+		base, err := loadBase(cmd, configPath)
+		if err != nil {
+			logger.Error("Error loading new config", "error", err)
+			panic(err)
+		}
+		config, err := toRuntime(base.declared, nil, base.skip)
 		if err != nil {
 			logger.Error("Error loading new config", "error", err)
 			panic(err)
@@ -518,8 +375,6 @@ type AgentRunner struct {
 	pluginRunMu                   sync.RWMutex
 	pluginRuns                    map[string]pluginRunRecord
 	firstAgentEvidenceSendStarted bool
-
-	queryBundles []*rego.Rego
 }
 
 func NewAgentRunner() *AgentRunner {
