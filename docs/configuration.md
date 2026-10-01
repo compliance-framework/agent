@@ -289,65 +289,58 @@ policy_bundles:
   involved, or changes one of the bundles involved) and warnings when they come from the file (R34), even under an
   overlay that changes something else. Replace the source with the inline bundle
   instead of listing both.
-- **Overrides and evidence streams (R75, R82).** Inherited and overridden vendor modules keep their evidence
-  stream automatically: while materializing a bundle that `extends` a source, the agent appends
-  `policy_id := "<extends plugin-path>/<file>"` (or the vendor package's own `policy_id`, when it declares one) to
-  every non-test `compliance_framework.*` module that continues a vendor file and whose package declares no
-  `policy_id`: a module inherited unchanged, or an override at the same path that keeps the vendor module's `package`.
-  An explicit `policy_id` always wins. A package with more than one non-test module in the bundle is skipped with a
-  `policy-id-continuity-skipped` warning (one `policy_id` rule would name a single file for all of them); declare it
-  yourself in one module. The materialized tree, its digest, its artifact and the report's `files[]` include the
-  appended line; `extends.files[]` keeps the vendor's own hashes. A changed `package` is a `policy-package-changed`
-  warning; an explicit `policy_id` that does not continue the vendor stream is a `policy-stream-forked` warning,
-  which names the `policy_id` that would continue it.
-- **Path shadowing (prototype; takes precedence over the R82 `policy_id` above).** Plugins seed evidence UUIDs from
-  the policy path *string* they receive, so a plugin that keeps receiving the vendor's path keeps the vendor's
-  streams, whatever agent library it was built with. When a bundle `extends` a source whose plugin path is relative
-  and ends in `policies/` (every OCI source, e.g.
+- **Path shadowing (R83): inline bundles keep the vendor's evidence streams.** Plugins seed evidence UUIDs from the
+  policy path *string* they receive, so a plugin that keeps receiving the vendor's path keeps the vendor's streams,
+  whatever agent library it was built with. When a bundle `extends` a source whose plugin path is relative and ends
+  in `policies/` (every OCI source, e.g.
   `.compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.2.0/policies`), plugins receive the
   bundle **at that exact path**, and each plugin that uses such a bundle runs in its own **view**,
   `<state>/views/<plugin>/<hash>/`, as its working directory (the plugin binary is started by absolute path). In
   the view, the path's parent is a symlink to the bundle's content-addressed directory (whose `policies/` is real:
   OPA loads nothing from a symlinked root), and every other entry of the agent's working directory is mirrored as a
-  symlink, so every other relative path resolves as it does for the agent. The tree gets **no** continuity
-  `policy_id`: inherited and overridden modules continue the vendor streams through the path alone, new modules
-  start their own path-based streams, deleted ones stop. `plugin-path` (and `extends.plugin-path`) report the
-  vendor path; `_policy_source` says `inline:<bundle>` (also for plugins that send no policy evaluations, from
-  their `_policy_path` label) and evaluation-time artifacts are read through the view, i.e. from the bundle's
-  tree. Views are content-addressed (a new revision is a new view, nothing is swapped under a running plugin) and
-  garbage-collected with the inline trees. A bundle is **not** shadowed, and falls back to R82, when its `extends`
-  path is absolute (or not a `policies/` tree), when a plugin using it also loads the source itself (reported as
-  `duplicate-policy-identity` as before) or another bundle extending the same source, when another relative policy
-  path of the plugin cannot be represented in a view (e.g. a single-component path such as `policies`), or without
-  symlinks. A plugin running in a view sees its working directory as the view: files it creates there (rather than
-  through a mirrored directory) stay in the view and are removed with it.
+  symlink, so every other relative path resolves as it does for the agent. Inherited modules, and overrides that
+  keep the vendor module's `package`, continue the vendor streams through the path alone; new modules start their
+  own path-based streams, deleted ones stop. `_policy_source` says `inline:<bundle>` (also for plugins that send no
+  policy evaluations, from their `_policy_path` label) and evaluation-time artifacts are read through the view, i.e.
+  from the bundle's tree. Views are content-addressed (a new revision is a new view, nothing is swapped under a
+  running plugin) and garbage-collected with the inline trees.
+- **Bundles that are not shadowed (R88)** are given to plugins at their own path under `_inline` (below), so their
+  modules start path-based streams. That happens when the `extends` path is absolute (or not a `policies/` tree),
+  when a plugin using the bundle also loads the source itself (reported as `duplicate-policy-identity` as before) or
+  another bundle extending the same source, when another relative policy path of the plugin cannot be represented in
+  a view (e.g. a single-component path such as `policies`), or without symlinks. The agent logs why.
+- **Overrides and evidence streams (R75).** The agent compares what plugins will seed each module of an `extends`
+  bundle with against the vendor module at the same path. A changed `package` is a `policy-package-changed` warning.
+  An override that does not continue the vendor stream (an own `policy_id`, a dropped vendor `policy_id`, or any
+  override of a bundle that is not shadowed) is a `policy-stream-forked` warning, which names the vendor's
+  `policy_id` when it has one; the inherited modules of a bundle that is not shadowed get one such warning for the
+  bundle. A module keeps the stream of a vendor module that declares a `policy_id` wherever it is loaded from, as
+  long as it keeps that `policy_id`.
+- **Plugin views (rule 1).** A plugin running in a view sees its working directory as the view: files it creates
+  there (rather than through a mirrored directory) stay in the view and are removed with it.
   **Plugin contract:** plugins must not rely on creating new files or directories relative to their working
-  directory; use absolute paths or `os.TempDir()`. Such entries are the plugin's (rule 1): they stay in the plugin's
-  view and are removed with it. If the agent's working directory later gets an entry with the same name, the plugin
-  keeps its own (and does not see the agent's); the agent logs one warning per view and name, and never fails the
-  plugin's run or the configuration's activation over it. The one exception is the shadowed path's link itself (the
-  parent of the vendor path), which is the agent's: a real entry there means the plugin replaced the link, so
-  activation and the plugin's run fail with an error naming it (the previous configuration keeps running), and the
-  agent does not remove it; deleting the view directory rebuilds it.
+  directory; use absolute paths or `os.TempDir()`. Such entries are the plugin's: if the agent's working directory
+  later gets an entry with the same name, the plugin keeps its own (and does not see the agent's); the agent logs one
+  warning per view and name, and never fails the plugin's run or the configuration's activation over it. The one
+  exception is the shadowed path's link itself (the parent of the vendor path), which is the agent's: a real entry
+  there means the plugin replaced the link, so **that plugin's runs fail** with an error naming it, until the entry
+  is removed (deleting the view directory rebuilds it). Activation only logs it, so the configuration and the other
+  plugins keep running, and a restart does not fail on it either. The agent never removes the entry.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
-- **Where bundles live (R67, R82).** Inline bundles are never downloaded. Each revision of a bundle is a write-once
-  directory under the state directory named by its tree digest, `<state>/inline/<bundle>/<digest>/policies/`, but
-  plugins always receive the same relative path, `.compliance-framework/policies/inline/<bundle>/policies` (relative
-  to the agent's working directory, like an OCI source's path): `.compliance-framework/policies/inline/<bundle>` is a
-  symlink the agent swaps atomically to the running revision's directory, between two configuration runs (never
-  while a plugin of the previous configuration runs). Evidence UUIDs are seeded with the policy file path, so an
-  unchanged package keeps its evidence identity across edits of the bundle, and a new module's stream does not
-  depend on the state directory. Two agents that share a working directory and use the same bundle name would swap
-  the same link: run one agent per working directory. On a file system without symlinks (Windows without the
-  privilege), plugins receive the digest directory itself and evidence identity changes with each revision.
-  Directories no running, pending or fallback configuration uses are garbage-collected, never the one the link
-  points to; trees and `current` links of the earlier `<state>/inline/<bundle>/current/bundle` layout are removed.
-- **Plugin paths (R77).** Each `policy-bundles[]` entry of the configuration report carries `plugin-path`, the exact
-  path string the agent passes plugins for that source: the stable path for an inline bundle, and the path the
-  agent extracted an OCI source to, or a local source as configured. It is what a continuity `policy_id` is built
-  from. An inline bundle's `extends` also carries `plugin-path` (R78), the same path the source would get if a plugin
-  loaded it directly, so continuity ids use `extends.plugin-path` once the bundle has replaced the source everywhere.
+- **Where bundles live (R67).** Inline bundles are never downloaded. Each revision of a bundle is a write-once
+  directory under the state directory named by its tree digest, `<state>/inline/<bundle>/<digest>/policies/`. A
+  bundle that is not shadowed always reaches plugins at the same relative path,
+  `.compliance-framework/policies/_inline/<bundle>/policies` (relative to the agent's working directory, like an OCI
+  source's path; the leading `_` keeps it apart from the OCI cache, whose repository paths start with `[a-z0-9]`):
+  `.compliance-framework/policies/_inline/<bundle>` is a symlink the agent swaps atomically to the running revision's
+  directory, between two configuration runs (never while a plugin of the previous configuration runs). Evidence UUIDs
+  are seeded with the policy file path, so an unchanged module keeps its evidence identity across edits of the
+  bundle, and does not depend on the state directory. Two agents that share a working directory and use the same
+  bundle name would swap the same link: run one agent per working directory. On a file system without symlinks
+  (Windows without the privilege), plugins receive the digest directory itself and evidence identity changes with
+  each revision. Directories no running, pending or fallback configuration uses are garbage-collected, never the one
+  the link points to.
 - **Sources for the UI (R62).** Outside mode `off`, the agent uploads every policy tree it reports (each inline
   bundle, the tree it extends, and each OCI or local source a plugin uses) as a policy bundle artifact, and reports
   its `artifact-digest` next to the tree digest, so the UI can show and pre-fill vendor sources. These are the same
@@ -359,9 +352,8 @@ policy_bundles:
 ### Policy identity (`policy_id`, R74)
 
 Plugins seed each evidence UUID with the policy's package, its file (the plugin path joined with the module's path in
-the bundle) and their `_policy_path` label (the plugin path). So moving a policy (an override in an inline bundle, a
-new OCI tag, a renamed bundle, a moved state directory) starts a new evidence stream. A module may declare its
-identity instead:
+the bundle) and their `_policy_path` label (the plugin path). So moving a policy (a new OCI tag, a renamed bundle, a
+bundle that is not shadowed) starts a new evidence stream. A module may declare its identity instead:
 
 ```rego
 package compliance_framework.ssh_deny_password_auth
@@ -377,11 +369,10 @@ policy_id := "ssh-deny-password-auth"
   minus the module's bundle-relative path when it ends in `/<path>`, else the `policy_id` itself. A `policy_id` that
   names the module's own location seeds as if it had none. Evidence keeps its real `_policy_path` label and gains
   `_policy_id`.
-- **Continue a stream** with `policy_id := "<plugin-path>/<file>"`, the literal concatenation of the report's
-  `plugin-path`, a `/` and the file (not a cleaned join): the old location reproduces the old UUID, so an override
-  keeps writing to the vendor policy's stream. The UI pre-fills it from the report's `plugin-path`. Because the
-  `plugin-path` is kept as is, this also works for a local source configured with a non-clean path such as
-  `./policies` or `policies/` (`"./policies/<file>"`, `"policies//<file>"`).
+- **Continue a stream** with `policy_id := "<plugin path>/<file>"`, the literal concatenation of the path plugins
+  receive for the source, a `/` and the file (not a cleaned join): the old location reproduces the old UUID. This
+  also works for a local source configured with a non-clean path such as `./policies` or `policies/`
+  (`"./policies/<file>"`, `"policies//<file>"`). Shadowed bundles need none of this.
 - **A stable stream**: any other `policy_id` (for example `<bundle>/<file>`) does not depend on where the bundle
   lives.
 - `policy_id` must be `policy_id := "<literal>"`, declared once per package, at most 512 characters
@@ -389,31 +380,26 @@ policy_id := "ssh-deny-password-auth"
 
 | Change | Evidence stream |
 |---|---|
-| override a policy, keeping its `policy_id` (or the continuity `policy_id`) | the same stream |
+| override a policy in a shadowed bundle, keeping its `package` and `policy_id` | the same stream |
 | `delete` the policy | the stream stops receiving evidence |
 | revert the override | the same stream |
 | a new policy | a new stream, from its `policy_id` |
 | publish it into a real bundle with the same `policy_id` | the same stream |
 | change the overridden module's `package` | a new stream (`policy-package-changed`) |
 
-**Plugins must be rebuilt.** Plugins seed evidence with the `policy-manager` they embed, so `policy_id` only takes
-effect for plugins built on an agent library that includes it (agent ≥ v0.9.0, `pluginlib.MinInlinePolicy`).
+**`policy_id` needs a rebuilt plugin.** Plugins seed evidence with the `policy-manager` they embed, so an authored
+`policy_id` only takes effect for plugins built on an agent library that includes it (agent ≥ v0.9.0,
+`pluginlib.MinPolicyID`). Path shadowing needs no rebuild.
 
-### Plugin compatibility (R76, R79, relaxed by path shadowing)
+### Plugin compatibility (R76, R88)
 
 The agent reads each plugin's agent library version from the binary's Go build info, without starting it, and
-reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`). With path shadowing,
-`inline-policies` is `supported` for every known library version (each bundle is checked against it, below) and
-`unknown` when the version is unknown; `unsupported` is no longer reported.
+reports it as `plugins[]` (`name`, `source`, `lib-version`). Inline bundles work with every plugin build; two
+constructs depend on the library:
 
-- **Shadowed bundles and bundles without `extends` work with any plugin build**: continuity comes from the path.
-- **Bundles that extend a source but are not shadowed** (absolute `extends` path, a plugin that also loads the
-  source, no symlinks) keep the vendor streams only through the continuity `policy_id`, which needs agent ≥ v0.9.0
-  (`pluginlib.MinInlinePolicy`). For an older plugin an overlay that introduces such a bundle is rejected with
-  `plugin-lib-inline-unsupported`; the running configuration keeps running.
 - **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
   `violation[{...}] if { ... }`: an overlay-introduced authored module that uses them for such a plugin is rejected
-  with `plugin-lib-violation-set-unsupported`, with that fix.
+  with `plugin-lib-violation-set-unsupported`, with that fix. The running configuration keeps running.
 - **An authored `policy_id`** is ignored by plugins older than v0.9.0 (the module's stream follows its path):
   `plugin-lib-policy-id-unsupported` warning.
 - **Unknown versions and file-defined bundles only warn** (R34): a `replace`d or `(devel)` build, a pseudo-version

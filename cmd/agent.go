@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,8 +97,9 @@ type agentConfig struct {
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 
 	// inlinePolicyDirs maps "inline:<name>" policy entries to the path plugins receive: the
-	// bundle's stable path (.compliance-framework/policies/inline/<name>/policies, R82), which
-	// the reconciler points at inlineTrees before each run (R67).
+	// extends source's path for a shadowed bundle (resolved in the plugin's view), else the
+	// bundle's stable path (.compliance-framework/policies/_inline/<name>/policies), which the
+	// reconciler points at inlineTrees before each run (R67).
 	inlinePolicyDirs map[string]string
 	// inlineTrees maps "inline:<name>" policy entries to their materialized, content-addressed
 	// tree (inlinepolicy.Materialized.Dir).
@@ -1955,18 +1958,24 @@ func safePluginErrorFilename(pluginName string) string {
 	return b.String() + "-error.txt"
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32, workDir string) (runner.RunnerV2, func(), error) {
-	// We're a host! Start by launching the plugin process. The binary is started by its
-	// absolute path: a relative one would resolve against workDir.
+// pluginCommand is the command that starts the plugin binary at path in workDir ("" for the
+// agent's own working directory). The binary is started by its absolute path, since a
+// relative one would resolve against workDir: a plugin that receives a shadowed inline
+// bundle runs in its view (path shadowing). Plugins get the host environment minus the
+// agent's own API credentials (R26); go-plugin would otherwise append the whole environment.
+func pluginCommand(path, workDir string) *exec.Cmd {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
 	cmd := exec.Command(path)
-	// A plugin that receives a shadowed inline bundle runs in its view (path shadowing).
 	cmd.Dir = workDir
-	// Plugins get the host environment minus the agent's own API credentials (R26); go-plugin
-	// would otherwise append the whole environment.
 	cmd.Env = pluginEnviron(os.Environ())
+	return cmd
+}
+
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32, workDir string) (runner.RunnerV2, func(), error) {
+	// We're a host! Start by launching the plugin process.
+	cmd := pluginCommand(path, workDir)
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
 		Plugins:          runner.PluginMap,
@@ -2110,13 +2119,13 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 			policySources[string(policy)] = struct{}{}
 		}
 	}
-	for _, source := range sortedSetKeys(pluginSources) {
+	for _, source := range slices.Sorted(maps.Keys(pluginSources)) {
 		if _, err := ar.downloadPlugin(ctx, source, logger); err != nil {
 			return &downloadError{source: source, err: err}
 		}
 	}
 	ar.resolveProtocolsFor(ctx, cfg, logger)
-	for _, source := range sortedSetKeys(policySources) {
+	for _, source := range slices.Sorted(maps.Keys(policySources)) {
 		if _, err := ar.downloadPolicy(ctx, source, logger); err != nil {
 			return &downloadError{source: source, policy: true, err: err}
 		}
@@ -2181,15 +2190,6 @@ func (ar *AgentRunner) downloadPolicy(ctx context.Context, source string, logger
 		logger = hclog.NewNullLogger()
 	}
 	return ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
-}
-
-func sortedSetKeys(set map[string]struct{}) []string {
-	keys := make([]string, 0, len(set))
-	for k := range set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func platformDownloadKey(platform v1.Platform) string {

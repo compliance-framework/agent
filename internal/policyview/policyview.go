@@ -1,40 +1,23 @@
 // Package policyview builds per-plugin working directories ("views") in which a plugin sees
 // an inline policy bundle at the exact relative path of the source the bundle extends (path
-// shadowing, prototype).
+// shadowing; see docs/configuration.md and ADR 0003). A plugin that keeps receiving the
+// vendor's path string keeps the vendor's evidence streams, whatever agent library it was
+// built with:
 //
-// Plugins seed evidence UUIDs from the path string the agent passes them (policy-manager:
-// policy_file = <path>/<file>, label _policy_path = <path>). A plugin that keeps receiving the
-// vendor's path string therefore keeps the vendor's evidence streams, whatever agent library
-// it was built with. A view makes that path string resolve to the inline bundle's tree:
+//	<view>/.compliance-framework/policies/<repo>/<tag>           -> <inline store>/<bundle>/<digest>   (symlink)
+//	<view>/.compliance-framework/policies/<repo>/<tag>/policies  (real dir, inside the tree)
 //
-//	<view>/.compliance-framework/policies/<repo>/<tag>        -> <inline store>/<bundle>/<digest>   (symlink)
-//	<view>/.compliance-framework/policies/<repo>/<tag>/policies                                      (real dir, inside the tree)
+// The link sits at the path's parent because OPA loads nothing from a symlinked root. Every
+// other entry of the agent's working directory is mirrored into the view's real directories
+// as a symlink, so other relative paths resolve as they do for the agent.
 //
-// The plugin process is started with the view as its working directory. The link sits at
-// the path's parent, never at the leaf, because OPA's bundle loader loads nothing from a
-// symlinked root directory but resolves a symlink earlier in the path like any other.
+// Ownership (rule 1): view directories and shadow links are the agent's. A real entry where
+// a mirror link would go was created by the plugin: Ensure keeps it, warns once and carries
+// on. A real entry at a shadow link's own path is a conflict (*LinkConflictError).
 //
-// Every other entry of the agent's working directory is mirrored into the view: each real
-// directory of the view (the ancestors of the links) holds a symlink to every entry of the
-// same directory in the agent's working directory that is not itself a view directory or a
-// link. So every other relative path the plugin receives, or opens on its own, resolves as
-// it does for the agent (reading and writing through the mirrored links), except new
-// entries the plugin creates directly in a view directory, which stay in the view.
-//
-// Ownership (rule 1): the view directories and the shadow links are the agent's; any real
-// (non-symlink) entry Ensure finds where it would put a mirror link was created by the
-// plugin and is the plugin's. Ensure keeps it untouched (the plugin keeps seeing its own
-// entry rather than the working directory's), warns once per view and name, and carries
-// on: a plugin-owned entry never fails a run. A real entry at a shadow link's own path is a
-// genuine conflict (the plugin would not see the bundle there), and Ensure fails with a
-// *LinkConflictError. Plugin-owned entries go away with their view (GC), which never
-// follows links.
-//
-// A view is content-addressed by its links and base: a new bundle revision is a new view, so
-// nothing is ever swapped under a running plugin. Ensure is idempotent and only adds missing
-// mirror links, so it can run before every plugin run.
-//
-// The package is a leaf: it imports only the standard library.
+// Views are content-addressed by base and links, so a new bundle revision is a new view and
+// nothing is swapped under a running plugin; Ensure is idempotent. The package imports only
+// the standard library.
 package policyview
 
 import (
@@ -42,6 +25,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -199,7 +183,7 @@ func DirFor(root, plugin, base string, links map[string]string) string {
 	}
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "%d:%s\n", len(base), base)
-	keys := sortedKeys(links)
+	keys := slices.Sorted(maps.Keys(links))
 	for _, k := range keys {
 		_, _ = fmt.Fprintf(h, "%d:%s=%d:%s\n", len(k), k, len(links[k]), links[k])
 	}
@@ -217,12 +201,12 @@ func (v View) Ensure() error {
 	}
 	dirs := viewDirs(v.Links)
 	var errs []error
-	for _, d := range sortedKeys(dirs) {
+	for _, d := range slices.Sorted(maps.Keys(dirs)) {
 		if err := os.MkdirAll(filepath.Join(v.Dir, filepath.FromSlash(d)), 0o755); err != nil {
 			return fmt.Errorf("view %s: %w", v.Dir, err)
 		}
 	}
-	for _, link := range sortedKeys(v.Links) {
+	for _, link := range slices.Sorted(maps.Keys(v.Links)) {
 		err := ensureSymlink(filepath.Join(v.Dir, filepath.FromSlash(link)), v.Links[link])
 		if errors.Is(err, errNotSymlink) {
 			err = &LinkConflictError{View: v.Dir, Link: link}
@@ -231,7 +215,7 @@ func (v View) Ensure() error {
 			errs = append(errs, err)
 		}
 	}
-	for _, d := range sortedKeys(dirs) {
+	for _, d := range slices.Sorted(maps.Keys(dirs)) {
 		entries, err := os.ReadDir(filepath.Join(v.Base, filepath.FromSlash(d)))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -393,13 +377,4 @@ func forgetWarnings(dir string) {
 		}
 		return true
 	})
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }

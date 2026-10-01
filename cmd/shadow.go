@@ -3,27 +3,28 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
 
-// Path shadowing (prototype). A plugin keeps an evidence stream exactly when it receives the
-// same policy path string (policy-manager seeds evidence UUIDs from it). So an inline bundle
-// that extends a source is given to plugins at the source's own plugin path, and the plugin
-// runs in a per-plugin view (internal/policyview) in which that path resolves to the
-// bundle's tree. Inherited and overridden modules then keep the vendor streams with any
-// plugin build, and no continuity policy_id is needed (R82's injection remains the fallback).
+// Path shadowing (R83). Plugins seed evidence UUIDs from the policy path string they
+// receive, so an inline bundle that extends a source is given to plugins at the source's own
+// path, and each such plugin runs in a view (internal/policyview) where that path resolves to
+// the bundle's tree: inherited and overridden modules keep the vendor's streams with any
+// plugin build.
 //
 // A bundle is shadowed when its extends source's plugin path is shadowable (relative, ending
 // in policies/: every OCI source) and every enabled plugin that uses it can be given a view:
-// the plugin does not also load the source itself or another bundle shadowing the same path,
-// and every other relative path it receives can still be resolved in the view. Otherwise the
-// bundle falls back to R82 (relative inline path plus continuity policy_id), and loading it
-// next to its source is reported by the R75 identity checks as before.
+// it does not also load the source or another bundle on the same path, and its other
+// relative paths still resolve in the view. Otherwise plugins receive the bundle at its own
+// path under inlineLinksDir and its modules start path-based streams (R88; OverrideStreams
+// warns).
 
 // shadowPlan is what prepareInline decided about shadowing, with the policy paths each
 // plugin receives for its non-inline entries (resolved once, reused for the views).
@@ -54,7 +55,7 @@ func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Co
 		return plan
 	}
 	extendsPath := map[string]string{}
-	for _, name := range sortedBoolKeys(refs) {
+	for _, name := range slices.Sorted(maps.Keys(refs)) {
 		b := resolved.PolicyBundles[name]
 		if b == nil || b.Extends == nil {
 			continue
@@ -71,7 +72,7 @@ func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Co
 		plan.shadow[name] = true
 	}
 
-	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
+	for _, pluginName := range slices.Sorted(maps.Keys(resolved.Plugins)) {
 		p := resolved.Plugins[pluginName]
 		if p == nil || !p.IsEnabled() {
 			continue
@@ -117,7 +118,7 @@ func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Co
 	}
 	for changed := true; changed; {
 		changed = false
-		for _, pluginName := range sortedMapKeys(plan.plugins) {
+		for _, pluginName := range slices.Sorted(maps.Keys(plan.plugins)) {
 			sp := plan.plugins[pluginName]
 			var shadowed, others []string
 			byPath := map[string][]string{}
@@ -155,16 +156,16 @@ func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Co
 			}
 		}
 	}
-	for _, name := range sortedMapKeys(plan.reasons) {
+	for _, name := range slices.Sorted(maps.Keys(plan.reasons)) {
 		if rc.logOnce("shadow\x00" + name + "\x00" + plan.reasons[name]) {
-			rc.logger.Info("Inline bundle is not shadowed; plugins receive it at its own path, with continuity policy_ids", "bundle", name, "reason", plan.reasons[name])
+			rc.logger.Info("Inline bundle is not shadowed; plugins receive it at its own path, so its modules start new evidence streams", "bundle", name, "reason", plan.reasons[name])
 		}
 	}
 	return plan
 }
 
-// fallbackInlinePath is the path plugins receive for an inline bundle that is not shadowed
-// (R82), or "" (an absolute tree directory, unaffected by views) without symlinks.
+// fallbackInlinePath is the path plugins receive for an inline bundle that is not shadowed,
+// or "" (an absolute tree directory, unaffected by views) without symlinks.
 func (rc *reconciler) fallbackInlinePath(name string) string {
 	l := rc.inlineLayout()
 	if !inlinepolicy.SymlinksSupported(l.Links) {
@@ -191,7 +192,7 @@ func (rc *reconciler) buildViews(plan shadowPlan, materialized map[string]*inlin
 	if err != nil {
 		return nil, err
 	}
-	for _, pluginName := range sortedMapKeys(plan.plugins) {
+	for _, pluginName := range slices.Sorted(maps.Keys(plan.plugins)) {
 		sp := plan.plugins[pluginName]
 		var shadowed, others []string
 		targets := map[string]string{} // plugin path -> the directory holding the tree

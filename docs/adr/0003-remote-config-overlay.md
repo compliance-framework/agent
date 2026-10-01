@@ -88,50 +88,55 @@ with different identities) stays a warning. For an `extends` bundle, an override
 replaces by the seeds plugins would compute from the extends source's path and the bundle's path: a changed
 `package` is `policy-package-changed`, any other difference `policy-stream-forked` (warnings).
 
-### Plugin library gate (R76, R79)
+### Path shadowing (R83, R88)
 
-What a plugin can do with a policy depends on the `policy-manager` compiled into it, not on the running agent. The
-agent reads the `github.com/compliance-framework/agent` version from each plugin binary with
-`debug/buildinfo.ReadFile` (memoized by path, size and modification time) after prefetch, and gates inline policies on
-`pluginlib.MinInlinePolicy` (v0.9.0 final, R81, superseding R80: v0.8.0 and v0.8.1 were released without R74;
-versions compare as plain semver, so v0.9.0 release candidates are older than the minimum; update the constant before
-tagging if agent#95 ships in a different release). We chose a hard gate over per-feature warnings because a plugin that ignores `policy_id` silently
-forks every overridden stream, and one older than v0.7.1 crashes on set-form violations. Only overlay-introduced
-inline policies are rejected; file bundles and unknown versions (a `replace` or devel build, which local development
-relies on) warn. A pseudo-version counts as its base tag, since an untagged commit after v0.8.x or a v0.9.0 RC may not contain R74.
-
-### Path shadowing (prototype)
-
-Instead of making every plugin honour a continuity `policy_id` (R74/R82, which needs plugins rebuilt on agent ≥
-v0.9.0), a bundle that extends a relative source is given to plugins at the source's own path, and the plugin runs
-with a per-plugin view directory as its working directory (`internal/policyview`), in which that path's parent links
-to the bundle's tree and everything else mirrors the agent's working directory. Evidence identity is then the vendor's
-by construction, for every plugin build. The agent resolves every relative policy path of such a plugin through its
-view (artifact uploads, source props). R82's `policy_id` remains the fallback where a view cannot represent the paths
-(absolute `extends`, a plugin loading the source and the bundle together), and the R79 gate only applies there.
+A plugin seeds evidence UUIDs from the policy path string it receives, so a bundle that extends a relative source is
+given to plugins at the source's own path, and the plugin runs with a per-plugin view directory as its working
+directory (`internal/policyview`), in which that path's parent links to the bundle's tree and everything else mirrors
+the agent's working directory. Evidence identity is then the vendor's by construction, for every plugin build. The
+agent resolves every relative policy path of such a plugin through its view (artifact uploads, source props). We
+rejected the alternative of appending a continuity `policy_id` to every module that continues a vendor file (R82): it
+only worked for plugins rebuilt on agent ≥ v0.9.0 and gave added modules two identities depending on the shadowing
+decision. Where a view cannot represent the paths (absolute `extends`, a plugin loading the source and the bundle
+together, no symlinks) the bundle is given to plugins at its own `_inline` path and its modules start path-based
+streams, with `policy-stream-forked` warnings.
 Risk: a plugin that relies on its working directory sees the view (mirrored, so reads and writes inside existing
 directories still reach the agent's; new top-level files stay in the view).
 Plugin contract (rule 1): plugins must not rely on creating new files relative to their working directory (use
 absolute paths or `os.TempDir()`); such entries stay in the plugin's view and are removed with it. A real
 (non-symlink) entry in a view is plugin-owned: when the agent's working directory later gets the same name, the
 view keeps the plugin's entry instead of mirroring the agent's, warns once per view and name, and never fails a run
-or an activation. Only the shadow link is agent-owned: a real entry at its path is a conflict that fails activation
-and the run with a clear error and is not removed (falling back to R82 there would need the bundle re-materialized
-with continuity `policy_id`s, which is decided before materializing, so the previous configuration keeps running
-instead). View GC removes whole views, plugin-owned entries included, and never follows links.
+or an activation. Only the shadow link is agent-owned: a real entry at its path is a conflict that fails that
+plugin's runs with a clear error and is not removed. Activation only logs it: views are content-addressed and
+survive restarts, so failing the configuration over one plugin's view would stop every plugin and could crash-loop
+the agent at startup. View GC removes whole views, plugin-owned entries included, and never follows links.
+
+### Plugin library checks (R76, R88)
+
+What a plugin can do with a policy depends on the `policy-manager` compiled into it, not on the running agent. The
+agent reads the `github.com/compliance-framework/agent` version from each plugin binary with
+`debug/buildinfo.ReadFile` (memoized by path, size and modification time) after prefetch and reports it
+(`lib-version`). Shadowing makes inline bundles work with every build, so there is no gate: an overlay-introduced
+set-form `violation contains` for a plugin older than v0.7.1 is rejected (that `policy-manager` panics on it), and
+an authored `policy_id` for a plugin older than `pluginlib.MinPolicyID` (v0.9.0 final; v0.8.0 and v0.8.1 were
+released without R74) is a warning. File bundles and unknown versions (a `replace` or devel build, which local
+development relies on) only warn. Versions compare as semver and a pseudo-version counts as its base tag, so
+release candidates and untagged commits before the minimum are older.
 
 ### Stable inline paths (R67)
 
 `policy-manager` seeds evidence UUIDs with the policy file path. Materialized bundles stay write-once,
-content-addressed directories (`<state>/inline/<name>/<digest>/policies`), but plugins receive
-`.compliance-framework/policies/inline/<name>/policies` (R82; `<state>/inline/<name>/current/bundle` before), where
-`.compliance-framework/policies/inline/<name>` is a symlink swapped with an atomic rename. The symlink is an intermediate path component on purpose: OPA's bundle
-loader does not descend into a symlinked root directory and would silently load nothing. The run loop swaps it only
+content-addressed directories (`<state>/inline/<name>/<digest>/policies`), but plugins receive a bundle that is not
+shadowed at `.compliance-framework/policies/_inline/<name>/policies`, where `.compliance-framework/policies/_inline/<name>`
+is a symlink swapped with an atomic rename. The path is relative, like an OCI source's, so it does not depend on the
+state directory, and `_inline` cannot collide with the OCI cache next to it (repository path components start with
+`[a-z0-9]`). The symlink is an intermediate path component on purpose: OPA's bundle loader does not descend into a
+symlinked root directory and would silently load nothing. The run loop swaps it only
 between two configuration runs, after the reload drain, and on a fallback; a plugin run therefore sees one tree from
 start to end, and its API helper resolves the path when the run starts, so evidence artifacts are the tree the run
 evaluated. The candidate identity still hashes the digest directories, so any tree change restarts the plugins. GC and
 the swap share a lock; GC keeps the trees of the running, pending, starting and fallback candidates and whatever
-`current` points to.
+the bundle's link points to.
 
 ### One channel for policy sources (R62)
 

@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
@@ -98,7 +100,7 @@ func (m loadedModule) where() string {
 // here is skipped (prefetch reports it).
 func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig.Config, skip map[string]string, materialized map[string]*inlinepolicy.Materialized, origin policyOrigin) []agentconfig.PolicyError {
 	var out []agentconfig.PolicyError
-	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
+	for _, pluginName := range slices.Sorted(maps.Keys(resolved.Plugins)) {
 		p := resolved.Plugins[pluginName]
 		if p == nil || !p.IsEnabled() {
 			continue
@@ -191,7 +193,7 @@ func identityProblems(pluginName string, modules []loadedModule, severity func(a
 			}
 		}
 	}
-	for _, pkg := range sortedMapKeys(samePackage) {
+	for _, pkg := range slices.Sorted(maps.Keys(samePackage)) {
 		if identityPackages[pkg] {
 			continue
 		}

@@ -34,7 +34,7 @@ func TestShadowable(t *testing.T) {
 
 func TestPlan(t *testing.T) {
 	links, err := Plan([]string{oci}, []string{
-		".compliance-framework/policies/inline/custom/policies",                                         // R82 inline path
+		".compliance-framework/policies/_inline/custom/policies",                                        // a bundle that is not shadowed
 		".compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.1.0/policies", // another tag: a mirrored sibling
 		"/etc/ccf/policies", // absolute: unaffected
 	})
@@ -63,7 +63,7 @@ func TestEnsure(t *testing.T) {
 	}
 	mk(oci+"/vendor.rego", "vendor")
 	mk(".compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.1.0/policies/old.rego", "old")
-	mk(".compliance-framework/policies/inline/custom/policies/x.rego", "inline")
+	mk(".compliance-framework/policies/_inline/custom/policies/x.rego", "inline")
 	mk("config.yml", "cfg")
 	target := filepath.Join(t.TempDir(), "b", "0123")
 	require.NoError(t, os.MkdirAll(filepath.Join(target, "policies"), 0o755))
@@ -86,7 +86,7 @@ func TestEnsure(t *testing.T) {
 	_, err := os.Stat(filepath.Join(v.Dir, oci, "vendor.rego"))
 	assert.True(t, os.IsNotExist(err), "the vendor tree is hidden")
 	assert.Equal(t, "old", read(".compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.1.0/policies/old.rego"))
-	assert.Equal(t, "inline", read(".compliance-framework/policies/inline/custom/policies/x.rego"))
+	assert.Equal(t, "inline", read(".compliance-framework/policies/_inline/custom/policies/x.rego"))
 	assert.Equal(t, "cfg", read("config.yml"), "other entries of the working directory are mirrored")
 	info, err := os.Lstat(filepath.Join(v.Dir, oci))
 	require.NoError(t, err)

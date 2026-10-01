@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
-	"github.com/compliance-framework/api/pkg/policyeval"
-	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 // vendorTree writes files under a new directory and returns a resolver serving it.
@@ -55,14 +53,8 @@ func readFile(t *testing.T, dir, p string) string {
 const vendorBanner = "package compliance_framework.banner\n\ntitle := \"Banner\"\n\nviolation contains {\"id\": \"no-banner\", \"remarks\": \"no banner\"} if not input.banner\n"
 const vendorMaxAuth = "package compliance_framework.max_auth\n\nviolation contains {\"remarks\": \"too many\"} if input.max_auth > 3\n"
 
-// withContinuity is src with the continuity policy_id the agent appends to a module at rel
-// that continues the vendor file at rel under pluginPath (R82).
-func withContinuity(src, pluginPath, rel string) string {
-	return src + "\npolicy_id := \"" + pluginPath + "/" + rel + "\"\n"
-}
-
 func TestMaterialize_R17Order(t *testing.T) {
-	vendor, resolve := vendorTree(t, map[string]string{
+	_, resolve := vendorTree(t, map[string]string{
 		"banner.rego":          vendorBanner,
 		"max_auth.rego":        vendorMaxAuth,
 		"legacy.rego":          "package compliance_framework.legacy\n",
@@ -94,24 +86,11 @@ func TestMaterialize_R17Order(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(m.Dir, "legacy.rego")); !os.IsNotExist(err) {
 		t.Fatal("deleted vendor module must be gone")
 	}
-	if got := readFile(t, m.Dir, "max_auth.rego"); got != withContinuity(b.Modules["max_auth.rego"], vendor, "max_auth.rego") {
-		t.Fatalf("override not applied, or without the continuity policy_id: %q", got)
+	if got := readFile(t, m.Dir, "max_auth.rego"); got != b.Modules["max_auth.rego"] {
+		t.Fatalf("override not applied: %q", got)
 	}
-	if got := readFile(t, m.Dir, "banner.rego"); got != withContinuity(vendorBanner, vendor, "banner.rego") {
-		t.Fatalf("inherited module changed beyond the continuity policy_id: %q", got)
-	}
-	if got := readFile(t, m.Dir, "lib/helpers.rego"); got != "package ccf_libs.helpers\n" {
-		t.Fatalf("a library package records no evidence and gets no policy_id: %q", got)
-	}
-	if got := readFile(t, m.Dir, "banner_test.rego"); got != "package compliance_framework.banner_test\n" {
-		t.Fatalf("a test module gets no policy_id: %q", got)
-	}
-	if got := readFile(t, m.Dir, "extra/new.rego"); got != b.Modules["extra/new.rego"] {
-		t.Fatalf("a new module starts its own stream and gets no policy_id: %q", got)
-	}
-	wantContinued := map[string]string{"banner.rego": vendor + "/banner.rego", "max_auth.rego": vendor + "/max_auth.rego", "nested/deep/a.rego": vendor + "/nested/deep/a.rego"}
-	if !reflect.DeepEqual(m.Continued, wantContinued) {
-		t.Fatalf("continued = %v, want %v", m.Continued, wantContinued)
+	if got := readFile(t, m.Dir, "banner.rego"); got != vendorBanner {
+		t.Fatalf("an inherited module must keep the vendor bytes: %q", got)
 	}
 	readFile(t, m.Dir, "extra/new.rego")
 	readFile(t, m.Dir, "Policies/Max.Auth.rego")
@@ -163,7 +142,7 @@ func contains(list []string, s string) bool {
 }
 
 func TestMaterialize_OverlayNullRestoresVendorModule(t *testing.T) {
-	vendor, resolve := vendorTree(t, map[string]string{"max_auth.rego": vendorMaxAuth})
+	_, resolve := vendorTree(t, map[string]string{"max_auth.rego": vendorMaxAuth})
 	base := agentconfig.Config{PolicyBundles: map[string]*agentconfig.PolicyBundle{"ssh": {
 		Extends: strptr("ghcr.io/vendor/policies:v1"),
 		Modules: map[string]string{"max_auth.rego": "package compliance_framework.max_auth\n# file override\n"},
@@ -176,7 +155,7 @@ func TestMaterialize_OverlayNullRestoresVendorModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, m.Dir, "max_auth.rego"); got != withContinuity(vendorMaxAuth, vendor, "max_auth.rego") {
+	if got := readFile(t, m.Dir, "max_auth.rego"); got != vendorMaxAuth {
 		t.Fatalf("null must restore the vendor module, got %q", got)
 	}
 }
@@ -440,36 +419,6 @@ func TestCheck_Tests(t *testing.T) {
 			t.Fatalf("expected a timeout error within bounds, got %+v after %s", res, time.Since(start))
 		}
 	})
-}
-
-// TestMergePolicyDataParity checks that the test store sees the same data a plugin evaluates.
-func TestMergePolicyDataParity(t *testing.T) {
-	m := materialize(t, map[string]string{}, &agentconfig.PolicyBundle{
-		Modules: map[string]string{"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nr := 1\n"},
-		Data:    map[string]any{"a": map[string]any{"x": 1, "y": 2}, "list": []any{1}},
-	})
-	policyData := map[string]any{"a": map[string]any{"y": 3, "z": map[string]any{"q": true}}, "list": []any{2}, "b": 5}
-	query, err := policyeval.NewFromBundlePath(m.Dir, policyData, policyeval.Options{}).PrepareForEval(context.Background(), rego.Query("x = data"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs, err := query.Eval(context.Background())
-	if err != nil || len(rs) != 1 {
-		t.Fatalf("eval: %v %v", rs, err)
-	}
-	got, _ := json.Marshal(rs[0].Bindings["x"].(map[string]any))
-	var gotMap map[string]any
-	_ = json.Unmarshal(got, &gotMap)
-	delete(gotMap, "compliance_framework")
-
-	var bundleData map[string]any
-	_ = json.Unmarshal([]byte(readFile(t, m.Dir, "data.json")), &bundleData)
-	want, _ := json.Marshal(mergePolicyData(bundleData, policyData))
-	var wantMap map[string]any
-	_ = json.Unmarshal(want, &wantMap)
-	if !reflect.DeepEqual(gotMap, wantMap) {
-		t.Fatalf("parity: policyeval sees %v, mergePolicyData gives %v", gotMap, wantMap)
-	}
 }
 
 func TestGC_KeepsActiveAndNewest(t *testing.T) {

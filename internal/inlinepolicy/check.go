@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -108,7 +109,7 @@ func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 	out = append(out, runTests(ctx, in, b.Data, modules)...)
 
 	// 4. Policy contract.
-	static, vendorSeen := staticContract(in, modules, pkgs, authoredPkgs)
+	static, vendorSeen := staticContract(in, modules, authoredPkgs)
 	out = append(out, static...)
 	if !agentconfig.HasPolicyErrors(out) {
 		out = append(out, dryRun(ctx, in, b, pkgs, authoredPkgs, vendorSeen)...)
@@ -225,7 +226,7 @@ func deniedReachable(c *ast.Compiler, root string, authored map[string]bool) []d
 		}
 	}
 
-	for _, path := range sortedKeys(c.Modules) {
+	for _, path := range slices.Sorted(maps.Keys(c.Modules)) {
 		if !authored[relPath(root, path)] {
 			continue
 		}
@@ -247,7 +248,7 @@ func runTests(ctx context.Context, in CheckInput, bundleData map[string]any, mod
 	var out []agentconfig.PolicyError
 	testCtx, cancel := context.WithTimeout(ctx, TestTimeout)
 	defer cancel()
-	store := inmem.NewFromObject(mergePolicyData(bundleData, in.PolicyData))
+	store := inmem.NewFromObject(policyeval.MergeData(bundleData, in.PolicyData))
 	sandboxed, stubs, caps := sandboxTestModules(modules)
 	ch, err := tester.NewRunner().
 		SetCompiler(ast.NewCompiler().WithCapabilities(caps)).
@@ -337,23 +338,4 @@ func prefixPlugin(plugin, msg string) string {
 		return msg
 	}
 	return fmt.Sprintf("plugin %s: %s", plugin, msg)
-}
-
-// mergePolicyData mirrors policyeval's unexported writePolicyData: nested maps merge
-// recursively, anything else replaces.
-func mergePolicyData(base, overlay map[string]any) map[string]any {
-	out := map[string]any{}
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overlay {
-		if vm, ok := v.(map[string]any); ok {
-			if bm, ok := out[k].(map[string]any); ok {
-				out[k] = mergePolicyData(bm, vm)
-				continue
-			}
-		}
-		out[k] = v
-	}
-	return out
 }

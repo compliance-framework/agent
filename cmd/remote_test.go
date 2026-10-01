@@ -188,7 +188,7 @@ func newRemoteHarness(t *testing.T, content string) *remoteHarness {
 // newReconciler builds a reconciler on the harness's files (a "restart").
 func (h *remoteHarness) newReconciler() *reconciler {
 	rc := newReconciler(AgentCmd(), h.path, agentstate.Open(filepath.Join(h.dir, "state"), nil), h.pf, nil)
-	rc.inlineLinks = filepath.Join(h.dir, "policies", "inline")
+	rc.inlineLinks = filepath.Join(h.dir, "policies", "_inline")
 	rc.newRemote = func(agentconfig.Config) remoteAPI { return h.remote }
 	rc.now = h.clock.Now
 	rc.lookupEnv = func(string) (string, bool) { return "", false }

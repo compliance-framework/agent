@@ -388,12 +388,12 @@ func resolveEnv(declared, base agentconfig.Config, lookup func(string) (string, 
 	var warnings []agentconfig.FieldError
 	work := declared
 	copied := map[string]bool{} // plugins whose Config was copied into work
-	for _, name := range sortedPluginNames(declared.Plugins) {
+	for _, name := range slices.Sorted(maps.Keys(declared.Plugins)) {
 		p := declared.Plugins[name]
 		if p == nil {
 			continue
 		}
-		for _, key := range sortedStringKeys(p.Config) {
+		for _, key := range slices.Sorted(maps.Keys(p.Config)) {
 			value := p.Config[key]
 			names := agentconfig.EnvRefs(value)
 			if len(names) == 0 || slices.ContainsFunc(names, agentconfig.IsForbiddenEnvName) {
@@ -449,15 +449,6 @@ func basePluginConfigValue(base agentconfig.Config, plugin, key string) string {
 		return p.Config[key]
 	}
 	return ""
-}
-
-func sortedStringKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 // toRuntime converts a merged, env-resolved declared config into the runtime structs.

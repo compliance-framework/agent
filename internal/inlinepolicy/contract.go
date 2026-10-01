@@ -11,6 +11,7 @@ import (
 
 	policyManager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/api/pkg/agentconfig"
+	"github.com/compliance-framework/api/pkg/agentconfig/regocheck"
 	"github.com/compliance-framework/api/pkg/policyeval"
 	"github.com/hashicorp/go-hclog"
 	"github.com/open-policy-agent/opa/v1/ast"
@@ -23,8 +24,9 @@ import (
 // the authored modules of every bundle before materialization; here the agent adds what only
 // it can see, on the materialized tree:
 //
-//   - static: policyeval.CheckContract on the packages no authored module touches (vendor
-//     debt: warnings only, R21/R34), and duplicate non-test modules in authored packages;
+//   - static: policyeval.CheckContract on the tree: every issue of the packages no authored
+//     module touches (vendor debt: warnings only, R21/R34), and duplicate non-test modules
+//     of authored packages;
 //   - dynamic: a sandboxed dry run on an empty input through policyeval's Execute and
 //     policy-manager's GetRiskTemplates, exactly the calls plugins make. Problems in a
 //     package that contains an authored module are errors (as the contract rates them);
@@ -39,7 +41,7 @@ func packagesOf(modules map[string]*ast.Module, root string) treePackages {
 	out := treePackages{}
 	for path, mod := range modules {
 		if mod != nil && mod.Package != nil {
-			out[relPath(root, path)] = strings.TrimPrefix(mod.Package.Path.String(), "data.")
+			out[relPath(root, path)] = packageOf(mod)
 		}
 	}
 	return out
@@ -92,55 +94,37 @@ func overrideHint(file string, pkgs treePackages, authored map[string]bool) stri
 	return fmt.Sprintf("%s references rules removed by the override of %s; keep the rule or add `delete: [%s]`", kind, strings.Join(quoted, ", "), file)
 }
 
-// staticContract runs the static contract check on the vendor-only packages of the tree
-// (warnings), and flags authored packages that more than one non-test module defines, which
-// regocheck cannot see because it only has the authored modules. It returns the issues and
-// the (package, code) pairs it reported for vendor packages, so the dry run does not repeat
-// them.
-func staticContract(in CheckInput, modules map[string]*ast.Module, pkgs treePackages, authoredPkgs map[string]bool) ([]agentconfig.PolicyError, map[[2]string]bool) {
-	vendor := map[string]*ast.Module{}
+// staticContract runs the static contract check: every issue of the packages no authored
+// module touches (vendor debt, warnings), and duplicate-package-module for the packages an
+// authored module is in, which regocheck cannot see because it only has the authored modules
+// (it checked the rest of the contract on them). It returns the issues and the (package,
+// code) pairs it reported for vendor packages, so the dry run does not repeat them.
+func staticContract(in CheckInput, modules map[string]*ast.Module, authoredPkgs map[string]bool) ([]agentconfig.PolicyError, map[[2]string]bool) {
+	vendor, authored := map[string]*ast.Module{}, map[string]*ast.Module{}
 	for path, mod := range modules {
-		if pkg, ok := pkgs[relPath(in.PolicyDir, path)]; ok && !authoredPkgs[pkg] {
+		if authoredPkgs[packageOf(mod)] {
+			authored[path] = mod
+		} else {
 			vendor[path] = mod
 		}
 	}
 	var out []agentconfig.PolicyError
+	add := func(issue policyeval.Issue, suffix string) {
+		e := regocheck.ToPolicyError(in.Bundle, issue)
+		e.Path = relPath(in.PolicyDir, issue.File)
+		e.Message = strings.ReplaceAll(e.Message, in.PolicyDir+string(filepath.Separator), "") + suffix
+		e.Severity = agentconfig.SeverityWarning
+		out = append(out, e)
+	}
 	seen := map[[2]string]bool{}
 	for _, issue := range policyeval.CheckContract(vendor) {
 		seen[[2]string{issue.Package, issue.Code}] = true
-		out = append(out, agentconfig.PolicyError{
-			Bundle:   in.Bundle,
-			Path:     relPath(in.PolicyDir, issue.File),
-			Row:      issue.Row,
-			Col:      issue.Col,
-			Message:  issue.Message + " (vendor package: a warning only)",
-			Severity: agentconfig.SeverityWarning,
-			Code:     issue.Code,
-		})
+		add(issue, " (vendor package: a warning only)")
 	}
-
-	for _, pkg := range sortedKeys(authoredPkgs) {
-		if !policyeval.IsPolicyPackage(pkg) {
-			continue
+	for _, issue := range policyeval.CheckContract(authored) {
+		if issue.Code == agentconfig.PolicyCodeDuplicatePackageModule {
+			add(issue, "")
 		}
-		files := pkgs.filesOf(pkg, func(f string) bool { return !policyeval.IsTestFile(f) })
-		if len(files) < 2 {
-			continue
-		}
-		at := files[0]
-		for _, f := range files {
-			if in.Authored[f] {
-				at = f
-				break
-			}
-		}
-		out = append(out, agentconfig.PolicyError{
-			Bundle:   in.Bundle,
-			Path:     at,
-			Message:  fmt.Sprintf("package %s is defined by %d non-test modules (%s); plugins record evidence for the whole package once per module", pkg, len(files), strings.Join(files, ", ")),
-			Severity: agentconfig.SeverityWarning,
-			Code:     policyeval.IssueDuplicatePackageModule,
-		})
 	}
 	return out, seen
 }
@@ -179,7 +163,7 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 			return
 		}
 		seen[key] = true
-		if code == policyeval.IssueInvalidRiskTemplate || strings.Contains(msg, "risk_templates") {
+		if code == agentconfig.PolicyCodeInvalidRiskTemplate || strings.Contains(msg, "risk_templates") {
 			riskReported[pkg] = true
 		}
 		out = append(out, agentconfig.PolicyError{
@@ -238,9 +222,9 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 			severity = agentconfig.SeverityWarning
 			code = codeEvalConflict
 		case strings.Contains(msg, "decode violation entry") || strings.Contains(msg, "unexpected violations type"):
-			code = policyeval.IssueInvalidViolation
+			code = agentconfig.PolicyCodeInvalidViolation
 		case strings.Contains(msg, "decode policy outputs") || strings.Contains(msg, "expected module outputs"):
-			code = policyeval.IssueInvalidType
+			code = agentconfig.PolicyCodeInvalidType
 		}
 		if pkg == "" {
 			// Not attributable to a package: never reject on it.
@@ -282,7 +266,7 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 					}
 					severity = agentconfig.SeverityWarning
 				}
-				if issue.Code == policyeval.IssueMissingTitle && hasRule(parsed, pkg, "title") {
+				if issue.Code == agentconfig.PolicyCodeMissingTitle && hasRule(parsed, pkg, "title") {
 					// The title depends on the input; the static check rates that a warning.
 					severity = agentconfig.SeverityWarning
 				}
@@ -306,7 +290,7 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 			// ValidateResult already reported this package's risk templates.
 			excluded[rte.Package] = true
 		} else {
-			pkg := failure(err, policyeval.IssueInvalidRiskTemplate)
+			pkg := failure(err, agentconfig.PolicyCodeInvalidRiskTemplate)
 			if pkg == "" || excluded[pkg] {
 				break
 			}
@@ -340,11 +324,11 @@ func locateEvalError(err error, root string, pkgs treePackages) (pkg, file strin
 // hasRule reports whether any module of pkg defines a rule named name.
 func hasRule(modules map[string]*ast.Module, pkg, name string) bool {
 	for _, mod := range modules {
-		if mod == nil || mod.Package == nil || strings.TrimPrefix(mod.Package.Path.String(), "data.") != pkg {
+		if packageOf(mod) != pkg {
 			continue
 		}
 		for _, rule := range mod.Rules {
-			if ref := rule.Head.Ref(); len(ref) > 0 && ref[0].Value.Compare(ast.Var(name)) == 0 {
+			if policyeval.RuleName(rule) == name {
 				return true
 			}
 		}

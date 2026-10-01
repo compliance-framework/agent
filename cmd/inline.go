@@ -3,8 +3,9 @@ package cmd
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
@@ -18,12 +19,14 @@ import (
 const inlineGCKeepPerBundle = 5
 
 // inlineLinksDir is where the stable links of inline bundles live, relative to the agent's
-// working directory like the OCI policy cache next to it, so plugins receive an inline
-// bundle as .compliance-framework/policies/inline/<name>/policies (R82).
-var inlineLinksDir = filepath.Join(AgentPolicyDir, "inline")
+// working directory like the OCI policy cache next to it, so plugins receive a bundle that
+// is not shadowed as .compliance-framework/policies/_inline/<name>/policies. The leading
+// underscore keeps it apart from the OCI cache: OCI repository path components start with
+// [a-z0-9], so no image extracts to _inline.
+var inlineLinksDir = filepath.Join(AgentPolicyDir, "_inline")
 
 // inlineLayout is where inline bundles are materialized (under the state dir, R31) and
-// where plugins receive them (R82).
+// where plugins receive them when they are not shadowed.
 func (rc *reconciler) inlineLayout() inlinepolicy.Layout {
 	links := rc.inlineLinks
 	if links == "" {
@@ -68,13 +71,12 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 		return res, nil
 	}
 
-	// Path shadowing is decided before materializing: a shadowed bundle's tree has no
-	// continuity policy_id.
+	// Path shadowing is decided before materializing: it sets the path plugins receive.
 	plan := rc.planShadowing(ctx, resolved, skip, refs)
 
 	materialized := map[string]*inlinepolicy.Materialized{}
 	var problems []agentconfig.PolicyError
-	for _, name := range sortedBoolKeys(refs) {
+	for _, name := range slices.Sorted(maps.Keys(refs)) {
 		m, err := inlinepolicy.Materialize(ctx, rc.inlineLayout(), name, resolved.PolicyBundles[name], rc.boundedResolver(),
 			inlinepolicy.Options{Shadow: plan.shadow[name]})
 		var perrs inlinepolicy.PolicyErrors
@@ -96,7 +98,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 
 	// One compile unit per (plugin, policy path) (R21): plugins with different policy_data
 	// are checked separately.
-	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
+	for _, pluginName := range slices.Sorted(maps.Keys(resolved.Plugins)) {
 		p := resolved.Plugins[pluginName]
 		if p == nil || !p.IsEnabled() {
 			continue
@@ -120,7 +122,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 			})...)
 		}
 	}
-	for _, name := range sortedMaterializedKeys(materialized) {
+	for _, name := range slices.Sorted(maps.Keys(materialized)) {
 		problems = append(problems, inlinepolicy.OverrideStreams(materialized[name])...)
 	}
 	problems = append(problems, rc.policyIdentities(ctx, resolved, skip, materialized, origin)...)
@@ -141,18 +143,17 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	res.dirs = map[string]string{}
 	res.trees = map[string]string{}
 	res.digests = map[string]string{}
-	for _, name := range sortedMaterializedKeys(materialized) {
+	for _, name := range slices.Sorted(maps.Keys(materialized)) {
 		m := materialized[name]
 		entry := agentconfig.InlineSourcePrefix + name
 		res.dirs[entry] = m.Path
 		res.trees[entry] = m.Dir
 		res.digests[entry] = m.Digest
 		res.reports = append(res.reports, agentconfig.PolicyBundleReport{
-			Source:     entry,
-			Digest:     m.Digest,
-			Extends:    m.Extends,
-			Files:      m.Files,
-			PluginPath: m.Path,
+			Source:  entry,
+			Digest:  m.Digest,
+			Extends: m.Extends,
+			Files:   m.Files,
 		})
 		res.artifacts = append(res.artifacts, artifactTree{digest: m.Digest, dir: m.Dir})
 		if m.Extends != nil {
@@ -213,13 +214,11 @@ func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) (
 	}
 	var reports []agentconfig.PolicyBundleReport
 	var trees []artifactTree
-	for _, source := range sortedSetKeys(sources) {
+	for _, source := range slices.Sorted(maps.Keys(sources)) {
 		dir, r, err := rc.sourceInventory(ctx, source)
 		if err != nil {
 			continue
 		}
-		// The resolver returns the exact path string plugins receive for the source (R77).
-		r.PluginPath = dir
 		reports = append(reports, r)
 		trees = append(trees, artifactTree{digest: r.Digest, dir: dir})
 	}
@@ -271,9 +270,11 @@ func (rc *reconciler) afterStartup(active *candidate) {
 
 // gcInline removes materialized inline bundles that none of keep, the running, pending,
 // starting or fallback candidate, nor a bundle's stable link uses, and that are not among
-// the newest inlineGCKeepPerBundle per bundle. It runs after startup and after every swap,
-// so a long-running daemon does not accumulate one directory per revision. It holds
-// inlineMu, so it never races activateInline.
+// the newest inlineGCKeepPerBundle per bundle, and the plugin views no such candidate uses.
+// It runs after startup and right after every swap, so a long-running daemon does not
+// accumulate one directory per revision; the configuration still draining after a swap is
+// the running candidate, so its trees and views are kept. It holds inlineMu, so it never
+// races activateInline.
 func (rc *reconciler) gcInline(keep ...*candidate) {
 	if !rc.store.Writable() {
 		return
@@ -305,8 +306,6 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 	if err := inlinepolicy.GC(rc.inlineLayout(), dirs, inlineGCKeepPerBundle); err != nil {
 		rc.logger.Warn("Could not clean up old inline policy bundles", "error", err)
 	}
-	// Views of no kept candidate: they are cheap to rebuild, and a plugin of an earlier
-	// configuration no longer runs (GC runs after the swap's drain).
 	if root, err := filepath.Abs(rc.viewsRoot()); err == nil {
 		if err := policyview.GC(root, views); err != nil {
 			rc.logger.Warn("Could not clean up old plugin views", "error", err)
@@ -315,8 +314,10 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 }
 
 // activateInline points the stable path of each inline bundle c uses at c's tree (R67),
-// then creates the views of the plugins that receive a shadowed bundle. Views are
-// content-addressed, so a new tree is a new view and nothing is swapped under a plugin.
+// then creates the views of the plugins that receive a shadowed bundle. A view that cannot
+// be created is only logged: pluginWorkDir ensures it again before each run of its plugin
+// and fails just that run, so one plugin's view never stops the configuration (views are
+// content-addressed and survive restarts, so failing here could crash-loop the agent).
 func (rc *reconciler) activateInline(c *candidate) error {
 	if c == nil || c.runtime == nil || len(c.runtime.inlineTrees) == 0 {
 		return nil
@@ -324,48 +325,15 @@ func (rc *reconciler) activateInline(c *candidate) error {
 	rc.inlineMu.Lock()
 	defer rc.inlineMu.Unlock()
 	var errs []error
-	for _, entry := range sortedStringKeys(c.runtime.inlineTrees) {
+	for _, entry := range slices.Sorted(maps.Keys(c.runtime.inlineTrees)) {
 		name := strings.TrimPrefix(entry, agentconfig.InlineSourcePrefix)
 		errs = append(errs, inlinepolicy.Activate(rc.inlineLayout(), name, c.runtime.inlineTrees[entry]))
 	}
-	for _, plugin := range sortedMapKeys(c.runtime.pluginViews) {
-		errs = append(errs, c.runtime.pluginViews[plugin].Ensure())
+	for _, plugin := range slices.Sorted(maps.Keys(c.runtime.pluginViews)) {
+		view := c.runtime.pluginViews[plugin]
+		if err := view.Ensure(); err != nil {
+			rc.logger.Warn("Could not prepare a plugin's view; its runs fail until it is fixed", "plugin", plugin, "view", view.Dir, "error", err)
+		}
 	}
 	return errors.Join(errs...)
-}
-
-func sortedBoolKeys(m map[string]bool) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMaterializedKeys(m map[string]*inlinepolicy.Materialized) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedPluginNames(m map[string]*agentconfig.Plugin) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedMapKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

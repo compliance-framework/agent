@@ -64,7 +64,7 @@ type candidate struct {
 	trees          []artifactTree
 	warnings       []agentconfig.FieldError  // R34 file-origin warnings
 	policyWarnings []agentconfig.PolicyError // G3b severity=warning
-	// plugins are the runtime's plugins with their agent library versions (R76, R79).
+	// plugins are the runtime's plugins with their agent library versions (R76).
 	plugins []agentconfig.PluginReport
 }
 
@@ -210,7 +210,7 @@ type reconciler struct {
 	// inlineLinks overrides inlineLinksDir, where plugins receive inline bundles (a test
 	// seam: the default is relative to the working directory).
 	inlineLinks string
-	// pluginLib reads the agent library version of a prefetched plugin source (R76, R79);
+	// pluginLib reads the agent library version of a prefetched plugin source (R76);
 	// nil skips the plugin compatibility checks and report.
 	pluginLib pluginLibFunc
 	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir"), and
@@ -808,11 +808,10 @@ func (rc *reconciler) takePending() *candidate {
 	return next
 }
 
-// start points the inline bundles' stable paths at c's trees, then records c as the running
+// start activates c's inline bundles (activateInline), then records c as the running
 // candidate and fallback as the one to fall back to. The run loop calls it only once the
-// previous configuration's run returned, so the swap never happens under a running plugin
-// (R67). starting and fallback are set together first, so GC keeps the trees of both
-// throughout (the old active stays covered until it becomes the fallback).
+// previous configuration's run returned (R67). starting and fallback are set first, so GC
+// keeps the trees of both throughout.
 func (rc *reconciler) start(c, fallback *candidate, cancel context.CancelFunc) error {
 	rc.mu.Lock()
 	rc.starting, rc.fallback = c, fallback

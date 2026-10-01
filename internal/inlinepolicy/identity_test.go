@@ -2,7 +2,6 @@ package inlinepolicy
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,8 +22,12 @@ func TestIdentities(t *testing.T) {
 		"cond.rego":     []byte("package compliance_framework.cond\n\npolicy_id := \"c\" if input.x\n"),
 		"computed.rego": []byte("package compliance_framework.computed\n\npolicy_id := concat(\"-\", [\"a\", \"b\"])\n"),
 		"lib.rego":      []byte("package ccf_libs.helpers\n\npolicy_id := \"lib\"\n"),
-		"broken.rego":   []byte("package compliance_framework.broken\n\ntitle := \n"),
-		"data.json":     []byte("{}"),
+		// Only `policy_id := "<literal>"` rules define it (policyeval.StaticPolicyIDs): a
+		// function or a set is a contract error, not a second definition.
+		"fn.rego":     []byte("package compliance_framework.fn\n\npolicy_id := \"fn-id\"\n\npolicy_id(x) := x\n"),
+		"set.rego":    []byte("package compliance_framework.set\n\npolicy_id := \"set-id\"\n\npolicy_id contains \"y\"\n"),
+		"broken.rego": []byte("package compliance_framework.broken\n\ntitle := \n"),
+		"data.json":   []byte("{}"),
 	})
 	assert.Equal(t, []ModuleIdentity{
 		{Path: "a.rego", Package: "compliance_framework.a", PolicyID: "a-id"},
@@ -32,6 +35,8 @@ func TestIdentities(t *testing.T) {
 		{Path: "b/b.rego", Package: "compliance_framework.b"},
 		{Path: "computed.rego", Package: "compliance_framework.computed"}, // only literals count
 		{Path: "cond.rego", Package: "compliance_framework.cond"},
+		{Path: "fn.rego", Package: "compliance_framework.fn", PolicyID: "fn-id"},
+		{Path: "set.rego", Package: "compliance_framework.set", PolicyID: "set-id"},
 		{Path: "twice.rego", Package: "compliance_framework.twice"}, // declared twice: none
 		{Path: "twice2.rego", Package: "compliance_framework.twice"},
 	}, ids)
@@ -49,13 +54,13 @@ func TestAuthoredSites(t *testing.T) {
 	assert.Equal(t, []Site{{Path: "set.rego", Row: 5, Col: 1}}, ids)
 }
 
-// TestOverrideStreams_R75: an override continues the vendor module's stream only with the
-// vendor's package and policy_id, or, when the vendor has none, the vendor's legacy policy
-// file as its policy_id.
+// TestOverrideStreams_R75: an override of a bundle plugins receive at its own path continues
+// the vendor module's stream only with the vendor's package and either the vendor's
+// policy_id or, when the vendor has none, the vendor's policy file as its policy_id.
 func TestOverrideStreams_R75(t *testing.T) {
 	const vendorID = "package compliance_framework.ided\n\nimport rego.v1\n\npolicy_id := \"vendor-id\"\n\ntitle := \"x\"\n"
 	dir, resolve := vendorTree(t, map[string]string{"banner.rego": vendorBanner, "max_auth.rego": vendorMaxAuth, "ided.rego": vendorID})
-	continuing := "package compliance_framework.banner\n\nimport rego.v1\n\npolicy_id := \"" + ContinuityPolicyID(dir, "banner.rego") + "\"\n\ntitle := \"Banner\"\n"
+	continuing := "package compliance_framework.banner\n\nimport rego.v1\n\npolicy_id := \"" + dir + "/banner.rego\"\n\ntitle := \"Banner\"\n"
 	cases := []struct {
 		name    string
 		modules map[string]string
@@ -63,12 +68,9 @@ func TestOverrideStreams_R75(t *testing.T) {
 	}{
 		{"continues the legacy stream", map[string]string{"banner.rego": continuing}, map[string]string{}},
 		{"keeps the vendor policy_id", map[string]string{"ided.rego": vendorID + "\n# changed\n"}, map[string]string{}},
-		// R82: the agent appends the continuity policy_id to an override without one.
-		{"no policy_id", map[string]string{"banner.rego": vendorBanner + "\n# changed\n"}, map[string]string{}},
-		{"no policy_id in a package of two modules", map[string]string{"banner.rego": vendorBanner + "\n# changed\n", "banner_more.rego": "package compliance_framework.banner\n\nmore := true\n"}, map[string]string{"banner.rego": CodePolicyStreamForked}},
+		{"no policy_id", map[string]string{"banner.rego": vendorBanner + "\n# changed\n"}, map[string]string{"banner.rego": CodePolicyStreamForked}},
 		{"changed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\npolicy_id := \"other\"\n\ntitle := \"x\"\n"}, map[string]string{"ided.rego": CodePolicyStreamForked}},
-		// R82: the agent appends the vendor package's policy_id.
-		{"removed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\ntitle := \"x\"\n"}, map[string]string{}},
+		{"removed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\ntitle := \"x\"\n"}, map[string]string{"ided.rego": CodePolicyStreamForked}},
 		{"changed package", map[string]string{"max_auth.rego": "package compliance_framework.max_auth_v2\n\ntitle := \"x\"\n"}, map[string]string{"max_auth.rego": agentconfig.PolicyCodePolicyPackageChanged}},
 		{"new module", map[string]string{"new.rego": "package compliance_framework.new\n\ntitle := \"x\"\n"}, map[string]string{}},
 	}
@@ -80,7 +82,9 @@ func TestOverrideStreams_R75(t *testing.T) {
 			for _, e := range OverrideStreams(m) {
 				require.Equal(t, agentconfig.SeverityWarning, e.Severity)
 				require.Equal(t, "b", e.Bundle)
-				got[e.Path] = e.Code
+				if e.Path != "" { // the inherited modules' warning
+					got[e.Path] = e.Code
+				}
 			}
 			assert.Equal(t, tc.want, got)
 		})
@@ -90,19 +94,16 @@ func TestOverrideStreams_R75(t *testing.T) {
 	assert.Empty(t, OverrideStreams(m), "a bundle without extends overrides nothing")
 }
 
-// TestOverrideStreams_NonCleanLocalSource_R77: for a local source configured with a
-// non-clean path, the continuity policy_id is the literal "<plugin path>/<file>", and the
-// override continues the stream; the cleaned join does not (plugins that label _policy_path
-// seed with the literal path).
-func TestOverrideStreams_NonCleanLocalSource_R77(t *testing.T) {
+// TestOverrideStreams_NonCleanLocalSource: for a local source configured with a non-clean
+// path, an authored policy_id that is the literal "<plugin path>/<file>" continues the
+// stream; the cleaned join does not (plugins label _policy_path with the literal path).
+func TestOverrideStreams_NonCleanLocalSource(t *testing.T) {
 	for _, pluginPath := range []string{"./policies", "./policies/", "policies/"} {
 		t.Run(pluginPath, func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			require.NoError(t, os.MkdirAll("policies", 0o755))
 			require.NoError(t, os.WriteFile(filepath.Join("policies", "banner.rego"), []byte(vendorBanner), 0o644))
 			resolve := func(_ context.Context, source string) (string, error) { return pluginPath, nil }
-			want := ContinuityPolicyID(pluginPath, "banner.rego")
-			assert.Equal(t, pluginPath+"/banner.rego", want, "the literal concatenation")
 
 			override := func(id string) []agentconfig.PolicyError {
 				t.Helper()
@@ -111,12 +112,11 @@ func TestOverrideStreams_NonCleanLocalSource_R77(t *testing.T) {
 				require.NoError(t, err)
 				return OverrideStreams(m)
 			}
-			assert.Empty(t, override(want), "the literal continuity policy_id continues the stream")
+			assert.Empty(t, override(pluginPath+"/banner.rego"), "the literal path continues the stream")
 
 			forked := override("policies/banner.rego")
 			require.Len(t, forked, 1, "the cleaned path seeds a different _policy_path")
 			assert.Equal(t, CodePolicyStreamForked, forked[0].Code)
-			assert.Contains(t, forked[0].Message, fmt.Sprintf("policy_id := %q", want), "the warning names the literal continuity policy_id")
 		})
 	}
 }

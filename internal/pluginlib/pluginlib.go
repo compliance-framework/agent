@@ -1,5 +1,5 @@
 // Package pluginlib reads which version of this module (the agent library) a plugin binary
-// was built with, and decides what the plugin supports (R76, R79).
+// was built with, and decides what the plugin supports (R76).
 //
 // Plugins evaluate policies with the policy-manager they embed, so what a plugin can do with
 // a policy depends on the agent library it was compiled against, not on the running agent.
@@ -26,14 +26,14 @@ const (
 	// set (`violation contains {...}`, agent#86). Older plugins expect an object
 	// (`violation[{...}] if { ... }`) and crash on a set.
 	MinViolationSet = "v0.7.1"
-	// MinInlinePolicy is the first agent library release with policy_id seeding (R74), and
-	// so the first whose plugins may use inline policy bundles (R79). It also covers
-	// MinViolationSet. R74 ships in v0.9.0 (R81, superseding R80): v0.8.0 and v0.8.1 were
-	// released without it. The minimum is the final release, so v0.9.0 release candidates
-	// and pseudo-versions based on them are older (AtLeast).
+	// MinPolicyID is the first agent library release whose policy-manager seeds evidence
+	// with an authored policy_id (R74): agent#95 ships in v0.9.0 (v0.8.0 and v0.8.1 were
+	// released without it). Older plugins ignore policy_id. The minimum is the final
+	// release, so v0.9.0 release candidates and pseudo-versions based on them are older
+	// (AtLeast). It also covers MinViolationSet.
 	//
 	// Update before tagging if agent#95 ships in a different release.
-	MinInlinePolicy = "v0.9.0"
+	MinPolicyID = "v0.9.0"
 )
 
 // Version returns the version of AgentModule the plugin binary at path was built with, or ""

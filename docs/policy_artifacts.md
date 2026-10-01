@@ -102,9 +102,10 @@ digest until they are downloaded again (a new version, a cleared cache, or a fre
 volume).
 
 The agent looks the policy source up by the exact path it gave the plugin, which is the
-path the plugin reports the evaluation under. For an inline bundle that is the bundle's
-stable path (`.compliance-framework/policies/inline/<name>/policies`, R82), so its evidence carries these props
-across revisions. A bundle an inline bundle `extends` is not on the evidence; the
+path the plugin reports the evaluation under. For an inline bundle that is the path plugins
+receive for it: the extends source's path when the bundle is shadowed (resolved through the
+plugin's view), else the bundle's stable path (`.compliance-framework/policies/_inline/<name>/policies`),
+so its evidence carries these props across revisions. A bundle an inline bundle `extends` is not on the evidence; the
 configuration report names it (`policy-bundles[].extends`).
 
 The agent owns these props: any a plugin sets itself are replaced. They are recorded whether

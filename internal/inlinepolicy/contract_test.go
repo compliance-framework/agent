@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
-	"github.com/compliance-framework/api/pkg/policyeval"
 )
 
 // The e2e repro of §13.1: the UI's Override replaced the vendor module with a skeleton, so the
@@ -68,7 +67,7 @@ func TestCheck_OverrideBreaksVendorTest_R65(t *testing.T) {
 		Modules: map[string]string{"ssh/ssh_deny_password_auth.rego": sshOverrideSkeleton},
 	})
 	errs = errorsOf(check(m, nil), agentconfig.SeverityError)
-	if len(errs) != 1 || errs[0].Code != policyeval.IssueMissingTitle || errs[0].Path != "ssh/ssh_deny_password_auth.rego" {
+	if len(errs) != 1 || errs[0].Code != agentconfig.PolicyCodeMissingTitle || errs[0].Path != "ssh/ssh_deny_password_auth.rego" {
 		t.Fatalf("expected one missing-title error on the override, got %+v", errs)
 	}
 
@@ -107,10 +106,10 @@ func TestCheck_Contract_R63(t *testing.T) {
 			"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nviolation contains v if { v := 42 }\n",
 		}})
 		res := check(m, nil)
-		if got := codes(res, "x.rego")[policyeval.IssueInvalidViolation]; got != agentconfig.SeverityError {
+		if got := codes(res, "x.rego")[agentconfig.PolicyCodeInvalidViolation]; got != agentconfig.SeverityError {
 			t.Fatalf("expected an eval error on the authored package, got %+v", res)
 		}
-		if got := codes(res, "badvendor.rego")[policyeval.IssueInvalidViolation]; got != agentconfig.SeverityWarning {
+		if got := codes(res, "badvendor.rego")[agentconfig.PolicyCodeInvalidViolation]; got != agentconfig.SeverityWarning {
 			t.Fatalf("expected a warning on the vendor package, got %+v", res)
 		}
 		n := 0
@@ -134,7 +133,7 @@ func TestCheck_Contract_R63(t *testing.T) {
 		}
 		n := 0
 		for _, e := range res {
-			if e.Path == "untitled.rego" && e.Code == policyeval.IssueMissingTitle {
+			if e.Path == "untitled.rego" && e.Code == agentconfig.PolicyCodeMissingTitle {
 				n++
 			}
 		}
@@ -156,7 +155,7 @@ func TestCheck_Contract_R63(t *testing.T) {
 		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: ext, Modules: map[string]string{
 			"x.rego": "package compliance_framework.x\n\nviolation contains {\"id\": \"x\"} if input.x\n",
 		}})
-		if got := codes(check(m, nil), "x.rego")[policyeval.IssueMissingTitle]; got != agentconfig.SeverityError {
+		if got := codes(check(m, nil), "x.rego")[agentconfig.PolicyCodeMissingTitle]; got != agentconfig.SeverityError {
 			t.Fatalf("expected a missing-title error, got %q", got)
 		}
 	})
@@ -165,7 +164,7 @@ func TestCheck_Contract_R63(t *testing.T) {
 		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: ext, Modules: map[string]string{
 			"x.rego": "package compliance_framework.x\n\ntitle := \"x\" if input.enabled\n",
 		}})
-		if got := codes(check(m, nil), "x.rego")[policyeval.IssueMissingTitle]; got != agentconfig.SeverityWarning {
+		if got := codes(check(m, nil), "x.rego")[agentconfig.PolicyCodeMissingTitle]; got != agentconfig.SeverityWarning {
 			t.Fatalf("expected a missing-title warning, got %q", got)
 		}
 	})
@@ -184,7 +183,7 @@ func TestCheck_Contract_R63(t *testing.T) {
 			"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nrisk_templates := [{\"name\": \"r\"}] if true\n",
 		}})
 		got := codes(check(m, nil), "x.rego")
-		if got[policyeval.IssueInvalidRiskTemplate] != agentconfig.SeverityError {
+		if got[agentconfig.PolicyCodeInvalidRiskTemplate] != agentconfig.SeverityError {
 			t.Fatalf("expected an invalid-risk-template error, got %v", got)
 		}
 	})
@@ -194,7 +193,7 @@ func TestCheck_Contract_R63(t *testing.T) {
 			"banner_extra.rego": "package compliance_framework.banner\n\nremarks := \"more\"\n",
 		}})
 		res := check(m, nil)
-		if got := codes(res, "banner_extra.rego")[policyeval.IssueDuplicatePackageModule]; got != agentconfig.SeverityWarning {
+		if got := codes(res, "banner_extra.rego")[agentconfig.PolicyCodeDuplicatePackageModule]; got != agentconfig.SeverityWarning {
 			t.Fatalf("expected a duplicate-package-module warning, got %+v", res)
 		}
 	})

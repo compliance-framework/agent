@@ -5,11 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
-	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/agent/internal/policyview"
 	policy_manager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/api/pkg/agentconfig"
@@ -169,24 +169,19 @@ func TestShadow_PluginReceivesTheVendorPathInItsView(t *testing.T) {
 	if raw, err := os.ReadFile(filepath.Join(shadowExtracted, "keys.rego")); err != nil || string(raw) != shadowVendor["keys.rego"] {
 		t.Fatalf("the agent's own view of the vendor tree must be untouched: %q %v", raw, err)
 	}
-	// No continuity policy_id: the path string carries the identity.
+	// The path string carries the identity: inherited modules are the vendor's bytes.
 	raw, err := os.ReadFile(filepath.Join(tree, "banner.rego"))
 	if err != nil || string(raw) != shadowVendor["banner.rego"] {
 		t.Fatalf("an inherited module must be the vendor's bytes, got %q %v", raw, err)
 	}
 
-	// Report: plugin-path is what plugins receive, the extends path too; an old library is
-	// fine, and no stream warnings.
-	inline, _ := r78Report(t, h)
-	if inline.PluginPath != shadowExtracted || inline.Extends.PluginPath != shadowExtracted {
-		t.Fatalf("plugin-path = %q, extends.plugin-path = %q", inline.PluginPath, inline.Extends.PluginPath)
-	}
-	for _, code := range []string{agentconfig.PolicyCodePluginLibInlineUnsupported, inlinepolicy.CodePolicyStreamForked, inlinepolicy.CodeContinuityPolicyIDSkipped, agentconfig.PolicyCodeDuplicatePolicyIdentity} {
+	// Report: an old library is fine, and there are no stream warnings.
+	for _, code := range []string{inlinepolicy.CodePolicyStreamForked, agentconfig.PolicyCodeDuplicatePolicyIdentity} {
 		if got := policyErrorsWithCode(r, code); len(got) != 0 {
 			t.Fatalf("unexpected %s: %+v", code, got)
 		}
 	}
-	if len(r.Plugins) != 1 || r.Plugins[0].InlinePolicies != agentconfig.InlinePoliciesSupported || r.Plugins[0].LibVersion != oldLib {
+	if len(r.Plugins) != 1 || r.Plugins[0].LibVersion != oldLib {
 		t.Fatalf("plugins report = %+v", r.Plugins)
 	}
 
@@ -279,23 +274,27 @@ func TestShadow_NewRevisionIsANewView(t *testing.T) {
 }
 
 // TestShadow_PluginAlsoLoadingTheSourceFallsBack: a plugin that loads the source and the
-// bundle together cannot be given a view; the bundle falls back to R82 (relative inline
-// path and continuity policy_id), and the duplicate is reported (R75): a warning from the
-// file, an error when the overlay introduces it.
+// bundle together cannot be given a view; plugins receive the bundle at its own path under
+// _inline, its inherited modules start new streams (policy-stream-forked), and the duplicate
+// is reported (R75): a warning from the file, an error when the overlay introduces it.
 func TestShadow_PluginAlsoLoadingTheSourceFallsBack(t *testing.T) {
 	t.Run("file", func(t *testing.T) {
 		h := shadowHarness(t, strings.Replace(shadowConfig, `policies: ["inline:ssh"]`, `policies: ["inline:ssh", "ghcr.io/vendor/policies:v1"]`, 1))
 		withPluginLib(h, "v0.9.0")
 		active := mustStartup(t, h.rc)
-		if got := active.runtime.inlinePolicyDirs["inline:ssh"]; filepath.ToSlash(got) != ".compliance-framework/policies/inline/ssh/policies" {
-			t.Fatalf("plugins receive %q, want the R82 path", got)
+		if got := active.runtime.inlinePolicyDirs["inline:ssh"]; filepath.ToSlash(got) != ".compliance-framework/policies/_inline/ssh/policies" {
+			t.Fatalf("plugins receive %q, want the bundle's own path", got)
 		}
 		if active.runtime.pluginViews["ssh"] != nil {
 			t.Fatal("no view without a shadowed bundle")
 		}
 		raw, _ := os.ReadFile(filepath.Join(active.runtime.inlineTrees["inline:ssh"], "banner.rego"))
-		if !strings.Contains(string(raw), `policy_id := "`+shadowExtracted+`/banner.rego"`) {
-			t.Fatalf("the R82 fallback appends the continuity policy_id, got %q", raw)
+		if string(raw) != shadowVendor["banner.rego"] {
+			t.Fatalf("an inherited module keeps the vendor bytes, got %q", raw)
+		}
+		forked := policyErrorsWithCode(h.remote.lastReport(t), inlinepolicy.CodePolicyStreamForked)
+		if len(forked) == 0 || forked[0].Path != "" || !strings.Contains(forked[0].Message, "inherited modules (banner.rego)") {
+			t.Fatalf("expected a policy-stream-forked warning for the inherited module, got %+v", h.remote.lastReport(t).PolicyErrors)
 		}
 		dups := policyErrorsWithCode(h.remote.lastReport(t), agentconfig.PolicyCodeDuplicatePolicyIdentity)
 		if len(dups) == 0 || dups[0].Severity != agentconfig.SeverityWarning {
@@ -320,21 +319,20 @@ func TestShadow_PluginAlsoLoadingTheSourceFallsBack(t *testing.T) {
 	})
 }
 
-// TestShadow_AbsoluteExtendsNeedsPolicyID: a bundle extending an absolute path cannot be
-// shadowed, so continuity needs the policy_id; an old plugin is rejected for it (overlay),
-// while the same plugin takes a shadowed bundle.
-func TestShadow_AbsoluteExtendsNeedsPolicyID(t *testing.T) {
+// TestShadow_AbsoluteExtendsIsNotShadowed: a bundle extending an absolute path cannot be
+// shadowed; an overlay editing it applies on an old plugin, its modules start new streams
+// (warned about) and the plugin gets no view.
+func TestShadow_AbsoluteExtendsIsNotShadowed(t *testing.T) {
 	h, _ := newInlineHarness(t) // the vendor is an absolute temp dir
-	withPluginLib(h, "v0.7.2")
+	withPluginLib(h, oldLib)
 	h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\n\ntitle := \"extra v2\"\n\nviolation[{\"id\": \"x\"}] if input.max > data.max\n"}}}}`)
 	active := mustStartup(t, h.rc)
 	r := h.remote.lastReport(t)
-	if active.overlay != nil || r.Status != agentconfig.StatusRejected {
-		t.Fatalf("expected rejection, got %s/%s", r.Status, r.Reason)
+	if active.overlay == nil || r.Status != agentconfig.StatusApplied {
+		t.Fatalf("expected applied, got %s/%s %+v", r.Status, r.Reason, r.PolicyErrors)
 	}
-	gate := rejectionErrors(r, agentconfig.PolicyCodePluginLibInlineUnsupported)
-	if len(gate) != 1 || !strings.Contains(gate[0].Message, "cannot be shadowed") || !strings.Contains(gate[0].Message, pluginlib.MinInlinePolicy) {
-		t.Fatalf("expected the policy_id gate error, got %+v", r.PolicyErrors)
+	if forked := policyErrorsWithCode(r, inlinepolicy.CodePolicyStreamForked); len(forked) != 1 || forked[0].Severity != agentconfig.SeverityWarning {
+		t.Fatalf("expected one policy-stream-forked warning for the inherited module, got %+v", r.PolicyErrors)
 	}
 	if active.runtime.pluginViews["ssh"] != nil {
 		t.Fatal("an absolute extends path gets no view")
@@ -372,63 +370,15 @@ func TestShadow_OldLibOverlay(t *testing.T) {
 		if len(set) != 1 || set[0].Path != "new.rego" {
 			t.Fatalf("expected the set-form error, got %+v", r.PolicyErrors)
 		}
-		if got := rejectionErrors(r, agentconfig.PolicyCodePluginLibInlineUnsupported); len(got) != 0 {
-			t.Fatalf("a shadowed bundle needs no policy_id gate, got %+v", got)
-		}
 	})
-}
-
-// TestLibProblems_Shadowing is the relaxed gate (overlay-introduced bundles).
-func TestLibProblems_Shadowing(t *testing.T) {
-	set := []inlinepolicy.Site{{Path: "s.rego", Row: 1, Col: 1}}
-	shadowed := &inlinepolicy.Materialized{Name: "b", Extends: &agentconfig.PolicyBundleExtendsReport{Source: "oci", PluginPath: "rel/policies"}, Shadowed: true}
-	shadowedSet := &inlinepolicy.Materialized{Name: "b", Extends: shadowed.Extends, Shadowed: true, SetViolations: set}
-	absolute := &inlinepolicy.Materialized{Name: "b", Extends: &agentconfig.PolicyBundleExtendsReport{Source: "/abs", PluginPath: "/abs"}, Continued: map[string]string{"x.rego": "/abs/x.rego"}}
-	standalone := &inlinepolicy.Materialized{Name: "b"}
-	type want struct{ gate, set string } // severity of each code, "" = none
-	for _, tc := range []struct {
-		name    string
-		version string
-		m       *inlinepolicy.Materialized
-		want    want
-	}{
-		{"shadowed, v0.1.9", oldLib, shadowed, want{}},
-		{"shadowed + set form, v0.1.9", oldLib, shadowedSet, want{set: agentconfig.SeverityError}},
-		{"shadowed + set form, v0.7.2", "v0.7.2", shadowedSet, want{}},
-		{"shadowed + set form, unknown", "", shadowedSet, want{set: agentconfig.SeverityWarning}},
-		{"standalone, v0.1.9", oldLib, standalone, want{}},
-		{"absolute extends, v0.1.9", oldLib, absolute, want{gate: agentconfig.SeverityError}},
-		{"absolute extends, v0.8.1", "v0.8.1", absolute, want{gate: agentconfig.SeverityError}},
-		{"absolute extends, unknown", "", absolute, want{gate: agentconfig.SeverityWarning}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var got want
-			for _, e := range libProblems("ssh", tc.version, []*inlinepolicy.Materialized{tc.m}, true) {
-				switch e.Code {
-				case agentconfig.PolicyCodePluginLibInlineUnsupported:
-					got.gate = e.Severity
-				case agentconfig.PolicyCodePluginLibViolationSetUnsupported:
-					got.set = e.Severity
-				}
-			}
-			if got != tc.want {
-				t.Fatalf("got %+v, want %+v", got, tc.want)
-			}
-		})
-	}
-	// The file's own bundles only warn.
-	for _, e := range libProblems("ssh", oldLib, []*inlinepolicy.Materialized{absolute, shadowedSet}, false) {
-		if e.Severity != agentconfig.SeverityWarning {
-			t.Fatalf("file-origin problems must warn: %+v", e)
-		}
-	}
 }
 
 // TestShadow_PluginOwnedViewEntries (rule 1): a plugin that creates a directory relative to
 // its working directory creates it in its view. When the agent's working directory later
 // gets the same name, the plugin keeps its own; neither activation nor the plugin's run
 // fails, and the warning is logged once. A real entry at the shadow link itself is a
-// conflict: activation and the run fail with a clear error, and the entry is left alone.
+// conflict: the plugin's run fails with a clear error, activation only logs it, and the
+// entry is left alone.
 func TestShadow_PluginOwnedViewEntries(t *testing.T) {
 	h := shadowHarness(t, shadowConfig)
 	withPluginLib(h, oldLib)
@@ -480,13 +430,172 @@ func TestShadow_PluginOwnedViewEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	var conflict *policyview.LinkConflictError
-	if err := h.rc.activateInline(active); !errors.As(err, &conflict) {
-		t.Fatalf("activation must fail with a link conflict, got %v", err)
+	if err := h.rc.activateInline(active); err != nil {
+		t.Fatalf("a view's conflict must not fail activation, got %v", err)
 	}
 	if _, err := active.runtime.pluginWorkDir("ssh"); !errors.As(err, &conflict) {
 		t.Fatalf("the run must fail with a link conflict, got %v", err)
 	}
 	if info, err := os.Lstat(link); err != nil || !info.IsDir() {
 		t.Fatalf("the conflicting entry must be left alone: %v", err)
+	}
+}
+
+// TestShadow_ViewConflictFailsOnlyThatPlugin (M1): a conflict in one plugin's view fails
+// only that plugin's runs. Activation logs it and carries on, another plugin's view is
+// still prepared, and a restart (the view is content-addressed, so the conflict persists)
+// still starts the configuration instead of exiting.
+func TestShadow_ViewConflictFailsOnlyThatPlugin(t *testing.T) {
+	config := strings.Replace(shadowConfig, `    policies: ["inline:ssh"]`, `    policies: ["inline:ssh"]
+  other:
+    source: ghcr.io/compliance-framework/plugin-other:v1
+    policies: ["inline:ssh"]`, 1)
+	h := shadowHarness(t, config)
+	withPluginLib(h, oldLib)
+	active := mustStartup(t, h.rc)
+	ssh, other := active.runtime.pluginViews["ssh"], active.runtime.pluginViews["other"]
+	if ssh == nil || other == nil || ssh.Dir == other.Dir {
+		t.Fatalf("each plugin needs its own view: %+v", active.runtime.pluginViews)
+	}
+
+	// The ssh plugin replaced its shadow link with a directory of its own.
+	link := filepath.Join(ssh.Dir, filepath.Dir(shadowExtracted))
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(link, "policies"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(other.Dir); err != nil { // and the other view must be rebuilt
+		t.Fatal(err)
+	}
+
+	var logs strings.Builder
+	h.rc.logger = hclog.New(&hclog.LoggerOptions{Output: &logs, Level: hclog.Warn})
+	if err := h.rc.activateInline(active); err != nil {
+		t.Fatalf("one plugin's view must not fail the configuration: %v", err)
+	}
+	if !strings.Contains(logs.String(), "plugin=ssh") {
+		t.Fatalf("the conflict must be logged with the plugin, got:\n%s", logs.String())
+	}
+	if _, err := os.Stat(filepath.Join(other.Dir, shadowExtracted, "keys.rego")); err != nil {
+		t.Fatalf("the other plugin's view must be prepared: %v", err)
+	}
+	if dir, err := active.runtime.pluginWorkDir("other"); err != nil || dir != other.Dir {
+		t.Fatalf("the other plugin must run: %q %v", dir, err)
+	}
+	var conflict *policyview.LinkConflictError
+	if _, err := active.runtime.pluginWorkDir("ssh"); !errors.As(err, &conflict) {
+		t.Fatalf("the conflicting plugin's run must fail with the link conflict, got %v", err)
+	}
+
+	// A restart finds the same view: the configuration still starts.
+	resolve := h.rc.resolvePolicy
+	h.rc = h.newReconciler()
+	h.rc.inlineLinks = ""
+	h.rc.resolvePolicy = resolve
+	withPluginLib(h, oldLib)
+	restarted := mustStartup(t, h.rc)
+	if restarted.runtime.pluginViews["ssh"].Dir != ssh.Dir {
+		t.Fatal("the view is content-addressed: a restart must reuse it")
+	}
+	if _, err := restarted.runtime.pluginWorkDir("ssh"); !errors.As(err, &conflict) {
+		t.Fatalf("the conflict persists for that plugin only, got %v", err)
+	}
+}
+
+// TestShadow_PlanDrops: a bundle is not shadowed for a plugin that uses a second bundle on
+// the same path, or whose other policy paths cannot be resolved in a view; plugins then
+// receive it at its own path, and the reason is logged.
+func TestShadow_PlanDrops(t *testing.T) {
+	const otherSource = "ghcr.io/vendor/other:v1"
+	for _, tc := range []struct {
+		name, from, to string
+		// otherPath is where otherSource is extracted ("" when unused).
+		otherPath, reason string
+	}{
+		{
+			name: "two bundles on one path",
+			from: "policy_bundles:\n", to: "policy_bundles:\n  ssh2:\n    extends: ghcr.io/vendor/policies:v1\n",
+			reason: "uses more than one bundle that extends " + shadowExtracted,
+		},
+		{
+			name: "a policy root in a view directory",
+			from: `policies: ["inline:ssh"]`, to: `policies: ["inline:ssh", "` + otherSource + `"]`,
+			otherPath: ".compliance-framework/policies/vendor/policies/other",
+			reason:    "cannot be given a view",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := strings.Replace(shadowConfig, tc.from, tc.to, 1)
+			if tc.otherPath == "" {
+				config = strings.Replace(config, `policies: ["inline:ssh"]`, `policies: ["inline:ssh", "inline:ssh2"]`, 1)
+			}
+			h := shadowHarness(t, config)
+			if tc.otherPath != "" {
+				if err := os.MkdirAll(tc.otherPath, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(tc.otherPath, "other.rego"), []byte("package compliance_framework.other\n\nimport rego.v1\n\ntitle := \"Other\"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				vendor := h.rc.resolvePolicy
+				h.rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
+					if source == otherSource {
+						return tc.otherPath, nil
+					}
+					return vendor(ctx, source)
+				}
+			}
+			withPluginLib(h, oldLib)
+			var logs strings.Builder
+			h.rc.logger = hclog.New(&hclog.LoggerOptions{Output: &logs, Level: hclog.Info})
+			active := mustStartup(t, h.rc)
+			if got := active.runtime.inlinePolicyDirs["inline:ssh"]; filepath.ToSlash(got) != ".compliance-framework/policies/_inline/ssh/policies" {
+				t.Fatalf("plugins receive %q, want the bundle's own path", got)
+			}
+			if active.runtime.pluginViews["ssh"] != nil {
+				t.Fatal("no view without a shadowed bundle")
+			}
+			if !strings.Contains(logs.String(), "Inline bundle is not shadowed") || !strings.Contains(logs.String(), tc.reason) {
+				t.Fatalf("the reason must be logged (%q), got:\n%s", tc.reason, logs.String())
+			}
+		})
+	}
+}
+
+// TestPluginCommand: plugins start by their absolute binary path in their working directory
+// (a view), without the agent's API credentials.
+func TestPluginCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the plugin")
+	}
+	wd := t.TempDir()
+	t.Chdir(wd)
+	if err := os.MkdirAll("bin", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("bin", "plugin"), []byte("#!/bin/sh\npwd -P\necho \"secret=$CCF_API_AUTH_CLIENT_SECRET\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CCF_API_AUTH_CLIENT_SECRET", "s3cret")
+	view := t.TempDir()
+
+	cmd := pluginCommand(filepath.Join("bin", "plugin"), view)
+	if !filepath.IsAbs(cmd.Path) || cmd.Dir != view {
+		t.Fatalf("path = %q, dir = %q; want an absolute binary path and the view", cmd.Path, cmd.Dir)
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("a relative binary path must still start in the view: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	want, _ := filepath.EvalSymlinks(view)
+	if len(lines) != 2 || lines[0] != want || lines[1] != "secret=" {
+		t.Fatalf("the plugin must run in the view without the agent's credentials, got %q (view %s)", out, want)
+	}
+
+	if cmd := pluginCommand(filepath.Join("bin", "plugin"), ""); cmd.Dir != "" {
+		t.Fatalf("without a view the plugin runs in the agent's working directory, got %q", cmd.Dir)
 	}
 }
