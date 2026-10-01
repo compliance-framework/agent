@@ -1,2 +1,8 @@
 lisa-addressed:
 - round-2 self-review pass 1: fixed all 8 findings (GC windows via start(c, fallback); writeOnce completion marker .ccf-tree; dry-run timeout -> warning; authored tests do not make a package authored; duplicate-module path; tree-changed memo; R66 wording; sortedMapKeys).
+
+lisa-selfreview:
+- round-2 pass 2 (request_changes):
+  - [low] contract.go: the GetRiskTemplates dedupe treats ANY invalid-type issue of a package as "risk templates already reported" (it may be about title/labels), hiding a real risk-template error. Track risk-template issues per package explicitly.
+  - [low] docs/configuration.md + ADR 0003: say "authored non-test module" (pass 1 changed the rule).
+  - [low] materialize.go Activate doc comment has a run-on line.
