@@ -12,11 +12,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/compliance-framework/agent/internal/policytree"
 	policyManager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -76,7 +78,7 @@ func newTestHelper(t *testing.T, api *fakeAPI, policyPaths ...string) *apiHelper
 	t.Cleanup(server.Close)
 	client := sdk.NewClient(server.Client(), &sdk.Config{BaseURL: server.URL})
 	helper := NewApiHelper(hclog.NewNullLogger(), client, map[string]string{"_agent": "test"}, "test-plugin", WithPolicyPaths(policyPaths))
-	helper.artifacts.retryDelay = time.Millisecond
+	helper.uploader.retryDelay = time.Millisecond
 	return helper
 }
 
@@ -162,7 +164,7 @@ func TestCreateEvidenceUnderAnOldAPISendsEvidenceWithoutArtifacts(t *testing.T) 
 	assert.Len(t, api.uploads, 1)
 
 	// ...but checks again later, so an upgraded API is picked up.
-	helper.artifacts.now = func() time.Time { return time.Now().Add(artifactsUnsupportedRecheck + time.Minute) }
+	helper.uploader.now = func() time.Time { return time.Now().Add(artifactsUnsupportedRecheck + time.Minute) }
 	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
 		evidenceFor("three", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
 	}))
@@ -351,4 +353,69 @@ violation contains {"id": "wget-version"} if input.wget != data.allowed_versions
 	assert.Equal(t, "sha256:"+hex.EncodeToString(inputSum[:]), refs["input-digest"])
 	assert.NotEmpty(t, refs["policy-data-digest"])
 	assert.True(t, strings.HasPrefix(refs["bundle-digest"].(string), "sha256:"))
+}
+
+// TestSharedUploaderUploadsOncePerAPI: helpers sharing the process-wide uploader do not
+// upload what another one (or the reconciler) already uploaded to the same API (R62).
+func TestSharedUploaderUploadsOncePerAPI(t *testing.T) {
+	bundle := writeBundle(t, "a")
+	api := &fakeAPI{}
+	server := httptest.NewServer(api)
+	t.Cleanup(server.Close)
+	client := sdk.NewClient(server.Client(), &sdk.Config{BaseURL: server.URL})
+	shared := NewArtifactUploader()
+
+	send := func(apiURL, title string) {
+		helper := NewApiHelper(hclog.NewNullLogger(), client, nil, "p", WithPolicyPaths([]string{bundle}), WithArtifactUploader(shared, apiURL))
+		require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
+			evidenceFor(title, &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
+		}))
+	}
+	send(server.URL, "one")
+	send(server.URL, "two")
+	assert.Len(t, api.uploads, 2, "bundle and input once for both helpers")
+
+	// The reconciler's endpoint for the same API sees them too.
+	tarball, err := policytree.TarDirectory(bundle)
+	require.NoError(t, err)
+	digest, err := shared.Endpoint(server.URL, client.Artifact).Upload(context.Background(), sdk.ArtifactMediaTypePolicyBundle, tarball)
+	require.NoError(t, err)
+	assert.NotEmpty(t, digest)
+	assert.Len(t, api.uploads, 2)
+
+	// Another API does not have them.
+	send("http://other.example", "three")
+	assert.Len(t, api.uploads, 4)
+}
+
+// TestPolicyPathIsResolvedWhenTheHelperIsCreated: the artifact of an inline bundle's stable
+// path is the tree it pointed to when the run started, even if the agent swaps it later.
+func TestPolicyPathIsResolvedWhenTheHelperIsCreated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	base := t.TempDir()
+	first, second := filepath.Join(base, "v1"), filepath.Join(base, "v2")
+	for dir, title := range map[string]string{first: "one", second: "two"} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "p.rego"), []byte("package compliance_framework.p\n\ntitle := \""+title+"\"\n"), 0o644))
+	}
+	require.NoError(t, os.Symlink("v1", filepath.Join(base, "current")))
+	stable := filepath.Join(base, "current", ".")
+
+	api := &fakeAPI{}
+	helper := newTestHelper(t, api, stable)
+
+	// The agent swaps the link after the run started.
+	require.NoError(t, os.Symlink("v2", filepath.Join(base, "next")))
+	require.NoError(t, os.Rename(filepath.Join(base, "next"), filepath.Join(base, "current")))
+
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
+		evidenceFor("one", &proto.PolicyEvaluation{PolicyPath: stable, Input: []byte(`{}`)}),
+	}))
+	tarball, err := policytree.TarDirectory(first)
+	require.NoError(t, err)
+	sum := sha256.Sum256(tarball)
+	refs := artifactsOf(api)["one"].(map[string]any)
+	assert.Equal(t, "sha256:"+hex.EncodeToString(sum[:]), refs["bundle-digest"], "the bundle must be the tree the run started with")
 }

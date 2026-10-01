@@ -16,19 +16,43 @@ type apiHelper struct {
 	client      *sdk.Client
 	agentLabels map[string]string
 	pluginName  string
-	artifacts   *artifactUploader
+	artifacts   *ArtifactEndpoint
+	// policyPaths maps each policy path the plugin was given (cleaned) to the directory it
+	// resolved to when the helper was created.
+	policyPaths map[string]string
 	// evidenceProps are appended to every evidence the plugin creates.
 	evidenceProps []types.Property
+
+	uploader *ArtifactUploader
+	apiURL   string
 }
 
 type ApiHelperOption func(*apiHelper)
 
 // WithPolicyPaths sets the policy bundle paths the plugin was given. The agent uploads only
-// these bundles as artifacts, so a plugin cannot make the agent read anything else.
+// these bundles as artifacts, so a plugin cannot make the agent read anything else. Each
+// path is resolved now: an inline bundle's stable path is a symlink the agent swaps between
+// configuration runs, and the artifact must be the tree this run evaluated.
 func WithPolicyPaths(paths []string) ApiHelperOption {
 	return func(h *apiHelper) {
 		for _, path := range paths {
-			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
+			clean := filepath.Clean(path)
+			dir := clean
+			if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+				dir = resolved
+			}
+			h.policyPaths[clean] = dir
+		}
+	}
+}
+
+// WithArtifactUploader shares the process-wide uploader (R62), so what the reconciler or
+// another plugin run already uploaded to the API at apiURL is not uploaded again. Without it
+// the helper uses an uploader of its own.
+func WithArtifactUploader(u *ArtifactUploader, apiURL string) ApiHelperOption {
+	return func(h *apiHelper) {
+		if u != nil {
+			h.uploader, h.apiURL = u, apiURL
 		}
 	}
 }
@@ -49,11 +73,19 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 		client:      client,
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
-		artifacts:   newArtifactUploader(client),
+		policyPaths: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
+	if h.uploader == nil {
+		h.uploader = NewArtifactUploader()
+	}
+	var artifacts ArtifactClient
+	if client != nil {
+		artifacts = client.Artifact
+	}
+	h.artifacts = h.uploader.Endpoint(h.apiURL, artifacts)
 	return h
 }
 
@@ -115,9 +147,9 @@ func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluati
 		s.h.logger.Warn("Sending evidence without policy artifacts; it cannot be played back",
 			"error", unknownEvaluation(evaluation.GetId()))
 	} else {
-		refs, err := s.h.artifacts.storeEvaluation(s.ctx, evaluation)
+		refs, err := s.h.storeEvaluation(s.ctx, evaluation)
 		switch {
-		case errors.Is(err, errArtifactsUnsupported):
+		case errors.Is(err, ErrArtifactsUnsupported):
 			if !s.unsupported {
 				s.unsupported = true
 				s.h.logger.Warn("The API does not support policy artifacts; evidence is sent without them and cannot be played back. Upgrade the API.")
