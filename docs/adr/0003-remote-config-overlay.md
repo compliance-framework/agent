@@ -160,7 +160,9 @@ The overlay ETag is opaque (`"r<rev>-<uuid>"`). The agent stores the raw header 
 verbatim as `If-None-Match`; it never builds one from a revision number, so a reset or recreated API can never produce
 a false 304 (R7). The cache is bound to `api.url` and `client_id`, and a rejected revision is remembered per
 (ETag, base fingerprint), never per revision number alone. A response without an ETag (a stripping proxy) is keyed by
-revision + sha256 of the overlay instead, so one rejection never blocks later revisions.
+revision + sha256 of the overlay instead, so one rejection never blocks later revisions. The remembered rejection keeps
+its status, reason, error, unsafe changes and (up to 100) policy errors, so the agent re-reports it after a restart
+and while the fetch keeps answering 304.
 
 ### File-origin tolerance (R34)
 

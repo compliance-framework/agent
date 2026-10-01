@@ -459,6 +459,8 @@ in-flight plugin runs get up to 5 minutes to finish (R33). Evidence produced und
 The agent caches the last fetched and applied overlay in `<state>/remote-config.json` (mode 0600, bound to `api.url`
 and `api.auth.client_id`), so it keeps running the last good overlay when the API is unreachable. At startup it tries,
 in order: the freshly fetched overlay, the cached applied overlay, the file alone. Only an unusable file stops the agent.
+A fetched overlay already rejected for the same file is skipped, and its rejection (with the unsafe changes and policy
+errors) is reported again, so the instance still shows as rejected after a restart.
 
 ## State directory and instance ID
 

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/compliance-framework/api/pkg/agentconfig"
 )
 
 const (
@@ -51,6 +53,10 @@ type RejectedRecord struct {
 	Status          string `json:"status"`
 	Reason          string `json:"reason"`
 	Error           string `json:"error"`
+	// Unsafe and PolicyErrors complete the outcome re-reported after a restart. They are
+	// optional: caches written before they existed load (and checksum) unchanged.
+	Unsafe       []agentconfig.Change      `json:"unsafe,omitempty"`
+	PolicyErrors []agentconfig.PolicyError `json:"policy_errors,omitempty"`
 }
 
 // Cache is the persisted remote configuration state (0600, it may hold values an admin typed).

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -695,6 +696,70 @@ func TestApply_RejectedRevisionMemory(t *testing.T) {
 	if next := h.rc.takePending(); next == nil || next.overlay == nil || next.overlay.Revision != 1 {
 		t.Fatalf("expected revision 1 to apply after the base edit, got %+v", next)
 	}
+}
+
+// TestApply_RememberedRejectionReportedAfterRestart: a restart that skips a remembered
+// rejection (the fetch answers 304) still reports it, and a later re-prepare of the applied
+// overlay (a file edit with the same fingerprint) does not clear it.
+func TestApply_RememberedRejectionReportedAfterRestart(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	mustStartup(t, h.rc)
+	h.remote.publish(2, `{"plugins":{"ssh":{"source":"ghcr.io/other/plugin:v1"}}}`)
+	h.poll(t)
+	before := h.remote.lastReport(t)
+	if before.Status != agentconfig.StatusRejected || len(before.Unsafe) == 0 {
+		t.Fatalf("expected revision 2 to be rejected with unsafe changes, got %+v", before)
+	}
+
+	assertRejected := func(t *testing.T, r agentconfig.Report) {
+		t.Helper()
+		if r.Status != agentconfig.StatusRejected || r.Reason != agentconfig.ReasonUnsafeChanges {
+			t.Fatalf("expected rejected/unsafe-changes, got %s/%s", r.Status, r.Reason)
+		}
+		if r.AttemptedRevision == nil || *r.AttemptedRevision != 2 {
+			t.Fatalf("expected attempted revision 2, got %v", r.AttemptedRevision)
+		}
+		if r.AppliedRevision == nil || *r.AppliedRevision != 1 {
+			t.Fatalf("expected applied revision 1, got %v", r.AppliedRevision)
+		}
+		if derefString(r.Error) != derefString(before.Error) {
+			t.Fatalf("expected error %q, got %q", derefString(before.Error), derefString(r.Error))
+		}
+		if !reflect.DeepEqual(r.Unsafe, before.Unsafe) {
+			t.Fatalf("expected the persisted unsafe changes %+v, got %+v", before.Unsafe, r.Unsafe)
+		}
+	}
+
+	gets, reports := h.remote.getCount(), h.remote.reportCount()
+	h.rc = h.newReconciler()
+	calls := h.pf.callCount()
+	if a := mustStartup(t, h.rc); a.overlay == nil || a.overlay.Revision != 1 {
+		t.Fatalf("expected the applied revision 1, got %+v", a.overlay)
+	}
+	if h.remote.getCount() != gets+1 || h.remote.gets[len(h.remote.gets)-1] != h.remote.etag {
+		t.Fatal("the restart must fetch conditionally (304)")
+	}
+	if h.remote.reportCount() != reports+1 {
+		t.Fatal("the restart must send a report")
+	}
+	assertRejected(t, h.remote.lastReport(t))
+	if got := h.pf.callCount() - calls; got != 1 {
+		t.Fatalf("only the applied revision may be prepared, got %d prepares", got)
+	}
+
+	h.poll(t)
+	assertRejected(t, h.remote.lastReport(t))
+
+	// A comment changes the file but not its fingerprint: the applied overlay is re-prepared
+	// and the remembered rejection stays the outcome.
+	h.writeConfig(t, remoteConfig("apply_safe", "")+"# edited\n")
+	calls = h.pf.callCount()
+	h.rc.reconcile(context.Background(), triggerFile)
+	if h.pf.callCount() == calls {
+		t.Fatal("the file edit must re-prepare the applied revision")
+	}
+	assertRejected(t, h.remote.lastReport(t))
 }
 
 func TestStartupLadder(t *testing.T) {

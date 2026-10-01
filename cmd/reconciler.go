@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,10 @@ var (
 	// timeout is a failed/download-failed, which is retried with the failed backoff.
 	prepareNetworkTimeout = 5 * time.Minute
 )
+
+// maxRememberedPolicyErrors bounds the policy errors persisted with a rejection (the cache is
+// rewritten on every fetch); the report after a restart lists at most this many.
+const maxRememberedPolicyErrors = 100
 
 // candidate is a complete, validated configuration that is ready to run. The reconciler builds
 // it BEFORE cancelling the running configuration (prepare-then-cancel, R32). It is immutable
@@ -412,6 +417,12 @@ func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 		}
 		break
 	}
+	if rej := rc.rememberedRejection(rcfg.Mode); rej != nil && outcome == nil {
+		// The ladder skipped the fetched overlay because it was rejected before the restart:
+		// report that rejection again, or the API sees an applied, never-attempted revision
+		// (pending) until a new revision is published (a 304 never re-prepares it).
+		outcome = rej
+	}
 	if outcome != nil {
 		rc.lastOutcome = outcome
 	}
@@ -476,6 +487,31 @@ func (rc *reconciler) rememberedRejected(rec *agentstate.OverlayRecord) bool {
 	return r.Revision == rec.Revision && r.OverlaySHA256 == overlayDigest(rec.Overlay)
 }
 
+// rememberedRejection is the outcome to report while the fetched overlay is remembered as
+// rejected for this base (apply modes only): the persisted rejection, with rc.attempted set to
+// its revision. nil when the fetched overlay is not remembered-rejected.
+func (rc *reconciler) rememberedRejection(mode string) *applyError {
+	if !isApplyMode(mode) || rc.cache == nil {
+		return nil
+	}
+	f, r := rc.cache.Fetched, rc.cache.Rejected
+	if f == nil || !rc.rememberedRejected(f) {
+		return nil
+	}
+	rev := f.Revision
+	rc.attempted = &rev
+	aerr := &applyError{
+		Status:       r.Status,
+		Reason:       r.Reason,
+		Unsafe:       slices.Clone(r.Unsafe),
+		PolicyErrors: slices.Clone(r.PolicyErrors),
+	}
+	if r.Error != "" {
+		aerr.Err = errors.New(r.Error)
+	}
+	return aerr
+}
+
 // recordFailure remembers a rejected revision for (overlay key, base), or starts the failed
 // backoff. A file-only candidate that fails to prepare is backed off too.
 func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *applyError) {
@@ -496,6 +532,8 @@ func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *appl
 			Status:          aerr.Status,
 			Reason:          aerr.Reason,
 			Error:           msg,
+			Unsafe:          aerr.Unsafe,
+			PolicyErrors:    aerr.PolicyErrors[:min(len(aerr.PolicyErrors), maxRememberedPolicyErrors)],
 		}
 		rc.saveCache()
 		return
@@ -967,6 +1005,9 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 		rev := target.Revision
 		rc.attempted = &rev
 	}
+	// While the fetched overlay stays rejected (a 304 never re-prepares it), it remains the
+	// attempted revision and its rejection the outcome, even when the fallback re-prepares.
+	remembered := rc.rememberedRejection(rcfg.Mode)
 	active := rc.current()
 	if rc.sameAsActive(active, target) {
 		rc.maybeReport(ctx, active, rc.lastOutcome)
@@ -997,16 +1038,16 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 		rc.cache.Applied = target
 		rc.saveCache()
 	}
-	rc.lastOutcome = nil
+	rc.lastOutcome = remembered
 	if active != nil && active.identity == cand.identity {
 		rc.logger.Debug("Trigger did not change the effective configuration; recording it without a restart", "revision", revisionForLog(target))
-		rc.maybeReport(ctx, rc.adopt(active, cand), nil)
+		rc.maybeReport(ctx, rc.adopt(active, cand), rc.lastOutcome)
 		return
 	}
 	rc.logger.Info("Applying the new configuration", "revision", revisionForLog(target))
 	rc.swap(cand)
 	rc.gcInline(rc.running(), active, cand)
-	rc.maybeReport(ctx, cand, nil)
+	rc.maybeReport(ctx, cand, rc.lastOutcome)
 }
 
 func revisionForLog(ov *agentstate.OverlayRecord) any {
