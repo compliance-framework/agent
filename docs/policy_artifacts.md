@@ -65,3 +65,17 @@ Because evidence is streamed, there is no limit on a whole call. The limit is pe
 one evidence, whose `PolicyEvaluation` may carry a large input such as a whole cluster, may
 be up to 256 MiB, above gRPC's 4 MiB default. Each evaluation's data crosses once however
 many evidence records it produces.
+
+## Plugin and policy sources
+
+Every evidence the agent sends also records where its plugin and policy bundle came from,
+as the `source` configured for each in the agent config: an OCI reference such as
+`ghcr.io/compliance-framework/plugin-apt-versions:v0.4.0`, or a local path.
+
+| Evidence prop | Value |
+| --- | --- |
+| `_plugin_source` | The plugin's configured `source` |
+| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, so the bundle is known) |
+
+The agent owns these props: any a plugin sets itself are replaced. They are recorded whether
+or not the evaluation's artifacts could be stored.

@@ -1407,9 +1407,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			}
 
 			policyPaths := make([]string, 0, len(pluginConfig.Policies))
+			policySources := make(map[string]string, len(pluginConfig.Policies))
 
 			for _, inputBundle := range pluginConfig.Policies {
-				policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
+				policyLocation := ar.policyLocations[string(inputBundle)]
+				policyPaths = append(policyPaths, policyLocation)
+				policySources[policyLocation] = string(inputBundle)
 			}
 
 			// Create a new results helper for the plugin to send results back to
@@ -1418,7 +1421,10 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 				"auth_enabled", hasAPIAuth(config),
 				"client_id", apiClientID(config),
 			)
-			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths))
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
+				runner.WithPolicyPaths(policyPaths),
+				runner.WithSources(pluginConfig.Source, policySources),
+			)
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
 			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1497,12 +1503,14 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	)
 
 	policyPaths := make([]string, 0)
+	policySources := make(map[string]string, len(plugin.Policies))
 	for _, inputBundle := range plugin.Policies {
 		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
+		policySources[policyLocation] = string(inputBundle)
 	}
 
 	platform := v1.Platform{
@@ -1549,7 +1557,10 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths))
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
+		runner.WithPolicyPaths(policyPaths),
+		runner.WithSources(plugin.Source, policySources),
+	)
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
