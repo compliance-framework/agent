@@ -3,6 +3,7 @@ package policy_manager
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -196,4 +197,30 @@ func writeModule(t *testing.T, dir, name, src string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
+}
+
+// TestPolicyIDContinuesADotSlashLocalSource: a local source configured as "./policies" is
+// passed to plugins literally, while OPA gives them the cleaned file
+// ("policies/<file>"). A policy_id of path.Join(<plugin path>, <file>) reproduces that
+// policy_file seed, so plugins that seed only with policy_file continue the stream.
+//
+// Plugins that also label _policy_path seed with the literal "./policies", which
+// policyeval.SeedPath cannot recover from a cleaned policy_id; see the round-3 notes.
+func TestPolicyIDContinuesADotSlashLocalSource(t *testing.T) {
+	t.Chdir(t.TempDir())
+	const vendor = "./policies"
+	override := filepath.Join(t.TempDir(), "inline", "b", "current", "bundle")
+	writeModule(t, vendor, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\ntitle := \"a\"\n")
+	writeModule(t, override, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\npolicy_id := \""+path.Join(vendor, "a.rego")+"\"\n\ntitle := \"a\"\n")
+
+	labels := map[string]string{"type": "local", "hostname": "web-1"}
+	generate := func(policyPath string) *proto.Evidence {
+		t.Helper()
+		processor := NewPolicyProcessor(hclog.NewNullLogger(), labels, nil, nil, nil, nil, nil, nil)
+		evidence, err := processor.GenerateResults(context.Background(), policyPath, map[string]any{})
+		require.NoError(t, err)
+		require.Len(t, evidence, 1)
+		return evidence[0]
+	}
+	assert.Equal(t, generate(vendor).UUID, generate(override).UUID)
 }

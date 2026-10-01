@@ -264,8 +264,8 @@ func (p *PolicyProcessor) newEvidence(result Result, policyPath string, activiti
 		labels[labelPolicyID] = result.Policy.ID
 	}
 	evidence := proto.Evidence{
-		UUID:   evidenceUUID.String(),
-		Labels: labels,
+		UUID:           evidenceUUID.String(),
+		Labels:         labels,
 		Start:          timestamppb.New(time.Now()),
 		End:            timestamppb.New(time.Now()),
 		Origins:        []*proto.Origin{{Actors: p.actors}},
