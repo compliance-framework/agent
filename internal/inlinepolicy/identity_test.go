@@ -2,6 +2,9 @@ package inlinepolicy
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
@@ -82,4 +85,35 @@ func TestOverrideStreams_R75(t *testing.T) {
 	m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Modules: map[string]string{"banner.rego": vendorBanner}}, resolve)
 	require.NoError(t, err)
 	assert.Empty(t, OverrideStreams(m), "a bundle without extends overrides nothing")
+}
+
+// TestOverrideStreams_NonCleanLocalSource_R77: for a local source configured with a
+// non-clean path, the continuity policy_id is the literal "<plugin path>/<file>", and the
+// override continues the stream; the cleaned join does not (plugins that label _policy_path
+// seed with the literal path).
+func TestOverrideStreams_NonCleanLocalSource_R77(t *testing.T) {
+	for _, pluginPath := range []string{"./policies", "./policies/", "policies/"} {
+		t.Run(pluginPath, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.MkdirAll("policies", 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join("policies", "banner.rego"), []byte(vendorBanner), 0o644))
+			resolve := func(_ context.Context, source string) (string, error) { return pluginPath, nil }
+			want := ContinuityPolicyID(pluginPath, "banner.rego")
+			assert.Equal(t, pluginPath+"/banner.rego", want, "the literal concatenation")
+
+			override := func(id string) []agentconfig.PolicyError {
+				t.Helper()
+				src := "package compliance_framework.banner\n\npolicy_id := \"" + id + "\"\n\ntitle := \"Banner\"\n"
+				m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("local"), Modules: map[string]string{"banner.rego": src}}, resolve)
+				require.NoError(t, err)
+				return OverrideStreams(m)
+			}
+			assert.Empty(t, override(want), "the literal continuity policy_id continues the stream")
+
+			forked := override("policies/banner.rego")
+			require.Len(t, forked, 1, "the cleaned path seeds a different _policy_path")
+			assert.Equal(t, CodePolicyStreamForked, forked[0].Code)
+			assert.Contains(t, forked[0].Message, fmt.Sprintf("policy_id := %q", want), "the warning names the literal continuity policy_id")
+		})
+	}
 }

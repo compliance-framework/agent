@@ -93,11 +93,11 @@ replaces by the seeds plugins would compute from the extends source's path and t
 What a plugin can do with a policy depends on the `policy-manager` compiled into it, not on the running agent. The
 agent reads the `github.com/compliance-framework/agent` version from each plugin binary with
 `debug/buildinfo.ReadFile` (memoized by path, size and modification time) after prefetch, and gates inline policies on
-`pluginlib.MinInlinePolicy` (v0.9.0: no release has R74 yet and v0.8.0 is being cut without it; update the constant
-if that changes). We chose a hard gate over per-feature warnings because a plugin that ignores `policy_id` silently
+`pluginlib.MinInlinePolicy` (v0.8.0 final, R80: its release candidates rc1 to rc4 predate R74, so versions compare
+as plain semver and those pre-releases are older than the minimum; lower the constant if an RC with R74 is cut). We chose a hard gate over per-feature warnings because a plugin that ignores `policy_id` silently
 forks every overridden stream, and one older than v0.7.1 crashes on set-form violations. Only overlay-introduced
 inline policies are rejected; file bundles and unknown versions (a `replace` or devel build, which local development
-relies on) warn. A pseudo-version counts as its base tag, since an untagged commit after v0.8.x may not contain R74.
+relies on) warn. A pseudo-version counts as its base tag, since an untagged commit after v0.7.x or a v0.8.0 RC may not contain R74.
 
 ### Stable inline paths (R67)
 

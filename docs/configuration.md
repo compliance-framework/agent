@@ -332,13 +332,16 @@ policy_id := "ssh-deny-password-auth"
 ```
 
 - **Without `policy_id` nothing changes**: the seed is exactly what it has always been.
-- **With one**, `policy-manager` seeds with `policyeval.SeedPath`: the `policy_file` seed is the `policy_id`, and the
-  `_policy_path` seed (when the plugin labels it) is the `policy_id` minus the module's bundle-relative path when it
-  ends in `/<path>`, else the `policy_id` itself. Evidence keeps its real `_policy_path` label and gains `_policy_id`.
-- **Continue a stream** with `policy_id := "<plugin-path>/<file>"`: the old location reproduces the old UUID, so an
-  override keeps writing to the vendor policy's stream. The UI pre-fills it from the report's `plugin-path`.
-  (A local source configured with a non-clean path such as `./policies` is the exception for plugins that label
-  `_policy_path`: their seed keeps the literal `./policies`, which a `policy_id` does not reproduce.)
+- **With one**, `policy-manager` seeds with `policyeval.SeedPath`: the `policy_file` seed is the cleaned `policy_id`
+  (as OPA cleans the policy file), and the `_policy_path` seed (when the plugin labels it) is the literal `policy_id`
+  minus the module's bundle-relative path when it ends in `/<path>`, else the `policy_id` itself. A `policy_id` that
+  names the module's own location seeds as if it had none. Evidence keeps its real `_policy_path` label and gains
+  `_policy_id`.
+- **Continue a stream** with `policy_id := "<plugin-path>/<file>"`, the literal concatenation of the report's
+  `plugin-path`, a `/` and the file (not a cleaned join): the old location reproduces the old UUID, so an override
+  keeps writing to the vendor policy's stream. The UI pre-fills it from the report's `plugin-path`. Because the
+  `plugin-path` is kept as is, this also works for a local source configured with a non-clean path such as
+  `./policies` or `policies/` (`"./policies/<file>"`, `"policies//<file>"`).
 - **A stable stream**: any other `policy_id` (for example `<bundle>/<file>`) does not depend on where the bundle
   lives.
 - `policy_id` must be `policy_id := "<literal>"`, declared once per package, at most 512 characters
@@ -354,7 +357,7 @@ policy_id := "ssh-deny-password-auth"
 | change the overridden module's `package` | a new stream (`policy-package-changed`) |
 
 **Plugins must be rebuilt.** Plugins seed evidence with the `policy-manager` they embed, so `policy_id` only takes
-effect for plugins built on an agent library that includes it (agent ≥ v0.9.0, `pluginlib.MinInlinePolicy`).
+effect for plugins built on an agent library that includes it (agent ≥ v0.8.0, `pluginlib.MinInlinePolicy`).
 
 ### Plugin compatibility (R76, R79)
 
@@ -362,10 +365,12 @@ The agent reads each plugin's agent library version from the binary's Go build i
 reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `supported`, `unsupported` or
 `unknown`).
 
-- **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
+- **Inline policies need agent ≥ v0.8.0** (the first release with `policy_id`; it also covers set-form violations).
+  The v0.8.0 release candidates (`v0.8.0-rc1` to `-rc4`) predate `policy_id` and count as older than v0.8.0, so
+  they are `unsupported`, as are pseudo-versions built after them.
   An overlay that gives an `inline:` entry to a plugin built on an older library, changes a bundle such a plugin
   uses, or moves a plugin that uses one to such a build (its `source`), is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
-  support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
+  support inline policies; upgrade the plugin to a build on agent ≥ v0.8.0"); the running configuration keeps
   running.
 - **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
   `violation[{...}] if { ... }`. An authored module that uses them for such a plugin is also named
@@ -374,8 +379,9 @@ reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `
   binary without build info. Local plugin builds therefore keep working.
 - **File-defined inline bundles only warn** (R34), and for them each authored `policy_id` the plugin would ignore is a
   `plugin-lib-policy-id-unsupported` warning ("this module starts a new evidence stream").
-- A pseudo-version counts as the tag it was built after, so a plugin built on an unreleased commit after v0.8.x is
-  `unsupported` until it moves to a v0.9.0 build (or a `replace`, which is `unknown`).
+- A pseudo-version counts as the tag it was built after: a plugin built on an unreleased commit after v0.7.x or a
+  v0.8.0 release candidate is `unsupported` until it moves to a v0.8.0 build (or a `replace`, which is `unknown`);
+  one built on a commit after v0.8.0 is `supported`.
 
 ## Remote configuration
 

@@ -118,7 +118,8 @@ change here must keep working with them.
   field compute it. Never change the seed of a policy without `policy_id`; `policy_id` changes it only through the
   API's `policyeval.SeedPath`. The golden test in `policy-manager/policy_id_test.go` pins the old UUIDs.
 - **Plugin library gate.** Inline policies need a plugin built on agent ≥ `pluginlib.MinInlinePolicy`
-  (`internal/pluginlib`). Set it to the first release that ships `policy_id` seeding.
+  (`internal/pluginlib`, v0.8.0). Set it to the first release that ships `policy_id` seeding; versions compare as
+  semver, so pre-releases of the minimum (the v0.8.0 RCs, which predate it) are older and unsupported.
 - **Storage failure doesn't drop evidence.** If artifact storage fails, the evidence is still
   sent, without digests.
 - **OCI policy bundles.** The agent evaluates the extracted `policies/` subdirectory, and that

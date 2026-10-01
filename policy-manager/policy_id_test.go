@@ -199,28 +199,39 @@ func writeModule(t *testing.T, dir, name, src string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644))
 }
 
-// TestPolicyIDContinuesADotSlashLocalSource: a local source configured as "./policies" is
-// passed to plugins literally, while OPA gives them the cleaned file
-// ("policies/<file>"). A policy_id of path.Join(<plugin path>, <file>) reproduces that
-// policy_file seed, so plugins that seed only with policy_file continue the stream.
-//
-// Plugins that also label _policy_path seed with the literal "./policies", which
-// policyeval.SeedPath cannot recover from a cleaned policy_id; see the round-3 notes.
-func TestPolicyIDContinuesADotSlashLocalSource(t *testing.T) {
-	t.Chdir(t.TempDir())
-	const vendor = "./policies"
-	override := filepath.Join(t.TempDir(), "inline", "b", "current", "bundle")
-	writeModule(t, vendor, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\ntitle := \"a\"\n")
-	writeModule(t, override, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\npolicy_id := \""+path.Join(vendor, "a.rego")+"\"\n\ntitle := \"a\"\n")
+// TestPolicyIDContinuesANonCleanLocalSource runs real bundles the way a plugin that labels
+// _policy_path does: a local source configured with a non-clean path ("./policies") is
+// passed to plugins literally, while OPA gives them the cleaned file ("policies/<file>").
+// An override in an inline bundle whose policy_id is the literal "<plugin path>/<file>"
+// (R77) reproduces both seeds (policyeval.SeedPath), so it continues the vendor stream.
+func TestPolicyIDContinuesANonCleanLocalSource(t *testing.T) {
+	for _, vendor := range []string{"./policies", "./policies/", "policies/", "policies"} {
+		t.Run(vendor, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			override := filepath.Join(t.TempDir(), "inline", "b", "current", "bundle")
+			policyID := vendor + "/a.rego"
+			writeModule(t, "policies", "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\ntitle := \"a\"\n")
+			writeModule(t, override, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\npolicy_id := \""+policyID+"\"\n\ntitle := \"a\"\n")
 
-	labels := map[string]string{"type": "local", "hostname": "web-1"}
-	generate := func(policyPath string) *proto.Evidence {
-		t.Helper()
-		processor := NewPolicyProcessor(hclog.NewNullLogger(), labels, nil, nil, nil, nil, nil, nil)
-		evidence, err := processor.GenerateResults(context.Background(), policyPath, map[string]any{})
-		require.NoError(t, err)
-		require.Len(t, evidence, 1)
-		return evidence[0]
+			generate := func(policyPath string) *proto.Evidence {
+				t.Helper()
+				processor := NewPolicyProcessor(hclog.NewNullLogger(), sshLabels(policyPath), nil, nil, nil, nil, nil, nil)
+				evidence, err := processor.GenerateResults(context.Background(), policyPath, map[string]any{})
+				require.NoError(t, err)
+				require.Len(t, evidence, 1)
+				return evidence[0]
+			}
+			legacy, overridden := generate(vendor), generate(override)
+			assert.Equal(t, vendor, legacy.Labels["_policy_path"])
+			assert.Equal(t, legacy.UUID, overridden.UUID, "the override continues the vendor stream")
+			assert.Equal(t, policyID, overridden.Labels[labelPolicyID])
+			assert.Equal(t, override, overridden.Labels["_policy_path"])
+
+			// The cleaned join reproduces the policy file but not the literal _policy_path.
+			if cleaned := path.Join(vendor, "a.rego"); cleaned != policyID {
+				writeModule(t, override, "a.rego", "package compliance_framework.a\n\nimport rego.v1\n\npolicy_id := \""+cleaned+"\"\n\ntitle := \"a\"\n")
+				assert.NotEqual(t, legacy.UUID, generate(override).UUID)
+			}
+		})
 	}
-	assert.Equal(t, generate(vendor).UUID, generate(override).UUID)
 }

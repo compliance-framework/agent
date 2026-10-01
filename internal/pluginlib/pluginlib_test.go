@@ -21,11 +21,15 @@ func TestAtLeast(t *testing.T) {
 		{"v0.1.9-0.20250101000000-abcdefabcdef", MinViolationSet, false, true}, // after v0.1.8
 		{"v0.7.2-0.20260601000000-abcdefabcdef", MinViolationSet, true, true},  // after v0.7.1
 		{"v0.7.1-0.20260501000000-abcdefabcdef", MinViolationSet, false, true}, // after v0.7.0, before v0.7.1
+		{"v0.7.1-rc1", MinViolationSet, false, true},                           // semver: before v0.7.1
+		{"v0.8.0-rc1", MinInlinePolicy, false, true},                           // the v0.8.0 release candidates predate R74 (R80)
 		{"v0.8.0-rc4", MinInlinePolicy, false, true},
-		{"v0.8.0", MinInlinePolicy, false, true},
-		{"v0.8.1-0.20261001000000-abcdefabcdef", MinInlinePolicy, false, true}, // after v0.8.0: R74 not guaranteed
+		{"v0.8.0-rc4.0.20261001000000-abcdefabcdef", MinInlinePolicy, false, true}, // after v0.8.0-rc4
+		{"v0.7.2", MinInlinePolicy, false, true},
+		{"v0.8.0", MinInlinePolicy, true, true},
+		{"v0.8.1-0.20261001000000-abcdefabcdef", MinInlinePolicy, true, true}, // after v0.8.0
+		{"v0.8.1", MinInlinePolicy, true, true},
 		{"v0.9.0-rc1", MinInlinePolicy, true, true},
-		{"v0.9.0-rc1.0.20261002000000-abcdefabcdef", MinInlinePolicy, true, true},
 		{"v0.9.0", MinInlinePolicy, true, true},
 		{"v1.0.0", MinInlinePolicy, true, true},
 		{"", MinInlinePolicy, false, false},

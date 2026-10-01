@@ -2,7 +2,6 @@ package inlinepolicy
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -110,9 +109,13 @@ func SeedOf(id ModuleIdentity, pluginPath string) (string, string) {
 
 // ContinuityPolicyID is the policy_id that makes a module at rel in a bundle continue the
 // stream of the module at rel in the policy path pluginPath when that one has no policy_id:
-// its legacy policy file, which plugins see cleaned (OPA joins the path and the file).
+// the literal pluginPath + "/" + rel (R77), not a cleaned join. policyeval.SeedPath cleans it
+// into the policy_file seed, as OPA cleans the file it gives plugins, and trims rel off the
+// raw string for the _policy_path seed, which so keeps a non-clean pluginPath such as
+// "./policies" or "policies/" as plugins label it. Compare streams with SeedOf, not by
+// comparing ids.
 func ContinuityPolicyID(pluginPath, rel string) string {
-	return path.Join(pluginPath, rel)
+	return pluginPath + "/" + rel
 }
 
 // OverrideStreams warns about authored modules of an extends bundle that replace a vendor

@@ -28,10 +28,10 @@ const (
 	MinViolationSet = "v0.7.1"
 	// MinInlinePolicy is the first agent library release with policy_id seeding (R74), and
 	// so the first whose plugins may use inline policy bundles (R79). It also covers
-	// MinViolationSet. No release has it yet: v0.8.0 is being cut from main without R74
-	// (v0.8.0-rc4 is the latest tag), so it is the next minor version, v0.9.0. Its
-	// pre-releases (v0.9.0-rc1, ...) count. Update it if R74 ships in another release.
-	MinInlinePolicy = "v0.9.0"
+	// MinViolationSet. R74 ships in v0.8.0 (R80); the v0.8.0-rc1 to -rc4 tags predate it,
+	// so the minimum is the final release and those pre-releases are older (AtLeast). If a
+	// later release candidate of v0.8.0 contains R74, lower it to that tag.
+	MinInlinePolicy = "v0.8.0"
 )
 
 // Version returns the version of AgentModule the plugin binary at path was built with, or ""
@@ -59,7 +59,8 @@ func Version(path string) (string, error) {
 // version that can be compared ("" for unknown, "(devel)", a pseudo-version with no tag
 // before it): then ok is false too. A pseudo-version counts as the tagged version it was
 // built after (v0.7.2-0.2026…-abc is v0.7.1 plus unreleased commits, which may not include
-// what min added). Pre-releases of min count as min.
+// what min added). Versions compare as semver, so pre-releases of min are older than min
+// (v0.8.0-rc4 < v0.8.0): a release candidate cut before a feature landed does not have it.
 func AtLeast(version, min string) (ok, known bool) {
 	base := version
 	if module.IsPseudoVersion(version) {
@@ -71,12 +72,7 @@ func AtLeast(version, min string) (ok, known bool) {
 	if !semver.IsValid(base) {
 		return false, false
 	}
-	// "-0" is the lowest pre-release of min, so min's release candidates count.
-	floor := min
-	if semver.Prerelease(min) == "" {
-		floor = semver.Canonical(min) + "-0"
-	}
-	return semver.Compare(base, floor) >= 0, true
+	return semver.Compare(base, min) >= 0, true
 }
 
 // Cache memoizes Version per binary. A binary is identified by its path, size and
