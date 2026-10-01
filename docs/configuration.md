@@ -362,8 +362,8 @@ reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `
 `unknown`).
 
 - **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
-  An overlay that gives an `inline:` bundle to a plugin built on an older library, or changes a bundle such a plugin
-  uses, is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
+  An overlay that gives an `inline:` bundle to a plugin built on an older library, changes a bundle such a plugin
+  uses, or moves a plugin that uses one to such a build (its `source`), is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
   support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
   running.
 - **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect

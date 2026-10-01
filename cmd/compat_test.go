@@ -174,3 +174,25 @@ func TestInlineSupport(t *testing.T) {
 		}
 	}
 }
+
+// TestCompat_OverlayMovingAnInlinePluginToAnOldBuildIsRejected_R79: the file gives the
+// plugin an inline bundle; an overlay that switches the plugin to an older build introduces
+// the incompatibility.
+func TestCompat_OverlayMovingAnInlinePluginToAnOldBuildIsRejected_R79(t *testing.T) {
+	h, _ := newInlineHarnessWith(t, strings.Replace(inlineBaseConfig, "mode: apply_safe", "mode: apply_safe\n  trusted_sources: [\"ghcr.io/compliance-framework/*\"]", 1))
+	h.rc.pluginLib = func(_ context.Context, source string) (string, error) {
+		if source == "ghcr.io/compliance-framework/plugin-ssh:v0" {
+			return "v0.7.2", nil
+		}
+		return "v0.9.0", nil
+	}
+	h.remote.publish(1, `{"plugins":{"ssh":{"source":"ghcr.io/compliance-framework/plugin-ssh:v0"}}}`)
+	active := mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	if active.overlay != nil || r.Status != agentconfig.StatusRejected {
+		t.Fatalf("moving an inline plugin to an old build must be rejected, got %s/%s %s", r.Status, r.Reason, derefString(r.Error))
+	}
+	if gate := rejectionErrors(r, agentconfig.PolicyCodePluginLibInlineUnsupported); len(gate) != 1 || !strings.Contains(gate[0].Message, "v0.7.2") {
+		t.Fatalf("expected the plugin-lib-inline-unsupported error, got %+v", r.PolicyErrors)
+	}
+}

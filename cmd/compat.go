@@ -15,8 +15,9 @@ import (
 //
 //   - inline policies need pluginlib.MinInlinePolicy, the first library that seeds evidence
 //     with policy_id (R74). An overlay that gives a plugin built on an older library an
-//     inline bundle, or changes one it uses, is rejected (plugin-lib-inline-unsupported),
-//     so the last good configuration keeps running (R79);
+//     inline bundle, changes one it uses, or moves a plugin that uses one to such a build
+//     is rejected (plugin-lib-inline-unsupported), so the last good configuration keeps
+//     running (R79);
 //   - a set-form violation (`violation contains ...`) crashes plugins older than
 //     pluginlib.MinViolationSet, which is named separately when it applies, with the fix;
 //   - inline bundles from the config file only warn (R34), and so does a library whose
@@ -88,11 +89,14 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 	return problems, reports
 }
 
-// overlayTouchesInline reports whether the overlay changed the plugin's policies or one of
-// the inline bundles it uses.
+// overlayTouchesInline reports whether the overlay brought the plugin and its inline
+// policies together: it changed the plugin's policies or source (a different plugin build),
+// or one of the inline bundles the plugin uses.
 func (rc *reconciler) overlayTouchesInline(plugin string, bundles []*inlinepolicy.Materialized, touched []string) bool {
-	if touchedByOverlay(agentconfig.Pointer("plugins", plugin, "policies"), touched) {
-		return true
+	for _, field := range []string{"policies", "source"} {
+		if touchedByOverlay(agentconfig.Pointer("plugins", plugin, field), touched) {
+			return true
+		}
 	}
 	for _, m := range bundles {
 		if touchedByOverlay(agentconfig.Pointer("policy_bundles", m.Name), touched) {

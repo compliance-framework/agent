@@ -2073,10 +2073,6 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 	if logger == nil {
 		logger = hclog.NewNullLogger()
 	}
-	platform := v1.Platform{
-		Architecture: runtime.GOARCH,
-		OS:           runtime.GOOS,
-	}
 	pluginSources := map[string]struct{}{}
 	policySources := map[string]struct{}{}
 	for _, pluginConfig := range cfg.Plugins {
@@ -2089,7 +2085,7 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 		}
 	}
 	for _, source := range sortedSetKeys(pluginSources) {
-		if _, err := ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform)); err != nil {
+		if _, err := ar.downloadPlugin(ctx, source, logger); err != nil {
 			return &downloadError{source: source, err: err}
 		}
 	}
@@ -2139,9 +2135,9 @@ func (ar *AgentRunner) ReportStartupFailure(ctx context.Context, cfg *agentConfi
 	}
 }
 
-// downloadPolicy fetches one policy source into the shared policy cache.
 // downloadPlugin returns the plugin binary of source for this platform, downloading it into
-// the shared cache when it is not there yet (as runs and Prefetch do).
+// the shared plugin cache when it is not there yet. Prefetch uses it, so the reconciler's
+// plugin library check (R76) reads the binary Prefetch fetched.
 func (ar *AgentRunner) downloadPlugin(ctx context.Context, source string, logger hclog.Logger) (string, error) {
 	if logger == nil {
 		logger = hclog.NewNullLogger()
@@ -2153,6 +2149,7 @@ func (ar *AgentRunner) downloadPlugin(ctx context.Context, source string, logger
 	return ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform))
 }
 
+// downloadPolicy fetches one policy source into the shared policy cache.
 func (ar *AgentRunner) downloadPolicy(ctx context.Context, source string, logger hclog.Logger) (string, error) {
 	if logger == nil {
 		logger = hclog.NewNullLogger()

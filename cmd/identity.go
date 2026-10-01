@@ -35,11 +35,14 @@ type loadedModule struct {
 	pluginPath string // the path the agent passes the plugin for entry
 	id         inlinepolicy.ModuleIdentity
 	authored   bool
+	// seedFile and seedPath are the module's evidence seed (policy_file, _policy_path).
+	seedFile, seedPath string
 }
 
-// seed is the module's evidence seed (policy_file, _policy_path).
-func (m loadedModule) seed() (string, string) {
-	return inlinepolicy.SeedOf(m.id, m.pluginPath)
+func newLoadedModule(entry, bundle, pluginPath string, id inlinepolicy.ModuleIdentity, authored bool) loadedModule {
+	m := loadedModule{entry: entry, bundle: bundle, pluginPath: pluginPath, id: id, authored: authored}
+	m.seedFile, m.seedPath = inlinepolicy.SeedOf(id, pluginPath)
+	return m
 }
 
 func (m loadedModule) where() string {
@@ -75,7 +78,7 @@ func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig
 				}
 				usesInline = true
 				for _, id := range m.Identities {
-					modules = append(modules, loadedModule{entry: entry, bundle: name, pluginPath: m.Path, id: id, authored: m.Authored[id.Path]})
+					modules = append(modules, newLoadedModule(entry, name, m.Path, id, m.Authored[id.Path]))
 				}
 				continue
 			}
@@ -84,7 +87,7 @@ func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig
 				continue
 			}
 			for _, id := range ids {
-				modules = append(modules, loadedModule{entry: entry, pluginPath: dir, id: id})
+				modules = append(modules, newLoadedModule(entry, "", dir, id, false))
 			}
 		}
 		if !usesInline {
@@ -179,9 +182,7 @@ func identityProblems(pluginName string, modules []loadedModule, severity func(a
 }
 
 func sameSeed(a, b loadedModule) bool {
-	af, ap := a.seed()
-	bf, bp := b.seed()
-	return af == bf && ap == bp
+	return a.seedFile == b.seedFile && a.seedPath == b.seedPath
 }
 
 // sourceIdentities resolves an OCI or local policy source and returns the path plugins
