@@ -76,3 +76,6 @@ Replies:
 **lisa implementation guidance:** **lisa implementation guidance:** Fix tests: extract the exec.Cmd construction of getRunnerInstance into pluginCommand(path, workDir) and unit-test it (absolute binary path, Dir = view, env without the agent's API credentials). Add planShadowing tests for the 'uses more than one bundle that extends' and 'cannot be given a view' (policyview.Plan fails) drops. Make cmd/compat_test.go table-driven over the scenarios R88 keeps (set form / policy_id warning / unknown lib / file origin) and delete the gate scenarios.
 
 <!-- lisa-guidance-posted -->
+
+lisa-addressed:
+- Round 6 extra (orchestrator, owner-sanctioned): per (unshadowed extends bundle, plugin) policy-stream-forked warning with planShadowing's reason (cmd/shadow.go unshadowedWarnings, inlinepolicy.UnshadowedForks); OverrideStreams only flags overrides that fork even at the source path.
