@@ -1407,12 +1407,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			}
 
 			policyPaths := make([]string, 0, len(pluginConfig.Policies))
-			policySources := make(map[string]string, len(pluginConfig.Policies))
+			policySources := make(map[string]runner.Source, len(pluginConfig.Policies))
 
 			for _, inputBundle := range pluginConfig.Policies {
 				policyLocation := ar.policyLocations[string(inputBundle)]
 				policyPaths = append(policyPaths, policyLocation)
-				policySources[policyLocation] = string(inputBundle)
+				policySources[policyLocation] = sourceOf(string(inputBundle), policyLocation)
 			}
 
 			// Create a new results helper for the plugin to send results back to
@@ -1423,7 +1423,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			)
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
 				runner.WithPolicyPaths(policyPaths),
-				runner.WithSources(pluginConfig.Source, policySources),
+				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
 			)
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
@@ -1503,14 +1503,14 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	)
 
 	policyPaths := make([]string, 0)
-	policySources := make(map[string]string, len(plugin.Policies))
+	policySources := make(map[string]runner.Source, len(plugin.Policies))
 	for _, inputBundle := range plugin.Policies {
 		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
-		policySources[policyLocation] = string(inputBundle)
+		policySources[policyLocation] = sourceOf(string(inputBundle), policyLocation)
 	}
 
 	platform := v1.Platform{
@@ -1559,7 +1559,7 @@ func (ar *AgentRunner) runPlugin(ctx context.Context, name string, plugin *agent
 	)
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
 		runner.WithPolicyPaths(policyPaths),
-		runner.WithSources(plugin.Source, policySources),
+		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
 	)
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
@@ -2002,4 +2002,10 @@ func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
 			client.Kill()
 		})
 	}
+}
+
+// sourceOf describes where a plugin or policy bundle came from, for evidence: its configured
+// source and, where known, the digest of what the agent extracted at location.
+func sourceOf(source, location string) runner.Source {
+	return runner.Source{Reference: source, Digest: internal.SourceDigest(source, location)}
 }
