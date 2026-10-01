@@ -45,12 +45,13 @@ func packagesOf(modules map[string]*ast.Module, root string) treePackages {
 	return out
 }
 
-// authoredPackages returns the packages that contain an authored module (tests included:
-// a test module adds its rules to the package plugins evaluate).
+// authoredPackages returns the packages that contain an authored non-test module. An
+// authored test alone does not make a vendor package authored: adding a test must not turn
+// the vendor's contract debt into errors.
 func (p treePackages) authoredPackages(authored map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for file, pkg := range p {
-		if authored[file] {
+		if authored[file] && !policyeval.IsTestFile(file) {
 			out[pkg] = true
 		}
 	}
@@ -126,9 +127,16 @@ func staticContract(in CheckInput, modules map[string]*ast.Module, pkgs treePack
 		if len(files) < 2 {
 			continue
 		}
+		at := files[0]
+		for _, f := range files {
+			if in.Authored[f] {
+				at = f
+				break
+			}
+		}
 		out = append(out, agentconfig.PolicyError{
 			Bundle:   in.Bundle,
-			Path:     files[1],
+			Path:     at,
 			Message:  fmt.Sprintf("package %s is defined by %d non-test modules (%s); plugins record evidence for the whole package once per module", pkg, len(files), strings.Join(files, ", ")),
 			Severity: agentconfig.SeverityWarning,
 			Code:     policyeval.IssueDuplicatePackageModule,
@@ -214,7 +222,9 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 	failure := func(err error, code string) string {
 		if ctx.Err() != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				add("", "", codeDryRunTimeout, agentconfig.SeverityError, fmt.Sprintf("the dry run timed out after %s", TestTimeout))
+				// Not attributable to authored Rego (vendor packages are evaluated too), so
+				// never a reason to reject.
+				add("", "", codeDryRunTimeout, agentconfig.SeverityWarning, fmt.Sprintf("the dry run timed out after %s; the policy contract was not fully checked", TestTimeout))
 			}
 			return ""
 		}

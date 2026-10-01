@@ -238,11 +238,21 @@ func TestMaterialize_RebuildsOldLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(version, "x.rego"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A vendor tree with a top-level bundle/ directory must not pass for the new layout.
+	if err := os.MkdirAll(filepath.Join(version, "bundle"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(version, "bundle", "other.rego"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	again, err := Materialize(context.Background(), root, "ssh", b, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, again.Dir, "x.rego"); got != b.Modules["x.rego"] {
 		t.Fatalf("the old layout was not rebuilt: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(again.Dir, "other.rego")); !os.IsNotExist(err) {
+		t.Fatal("a stale file of the old layout survived the rebuild")
 	}
 }

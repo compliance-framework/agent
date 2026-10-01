@@ -297,20 +297,25 @@ const (
 	treeDir = "bundle"
 	// currentLink is the per-bundle symlink to the active materialized directory.
 	currentLink = "current"
+	// treeMarker marks a complete materialized directory in this layout. It sits next to
+	// treeDir, outside the tree.
+	treeMarker = ".ccf-tree"
 	// Name prefixes of transient entries in a bundle directory.
 	tmpPrefix         = ".tmp-"
 	currentTmpPrefix  = ".current-"
 	symlinkProbeEntry = ".symlink-probe-"
 )
 
-// writeOnce writes files under final/bundle unless that already exists: a temp dir (dirs
-// 0755, files 0644) renamed into place. Losing a rename race reuses the winner's directory.
+// writeOnce writes files under final/bundle unless final is already complete: a temp dir
+// (dirs 0755, files 0644) with the completion marker, renamed into place. Losing a rename
+// race reuses the winner's directory.
 func writeOnce(final string, files map[string][]byte) error {
-	if info, err := os.Stat(filepath.Join(final, treeDir)); err == nil && info.IsDir() {
+	if complete(final) {
 		return nil
 	}
 	if _, err := os.Lstat(final); err == nil {
-		// A directory in an older layout (the tree directly under final): rebuild it.
+		// A directory in the layout before R67 (the tree directly under final, which may
+		// itself contain a bundle/ directory): rebuild it.
 		if err := os.RemoveAll(final); err != nil {
 			return err
 		}
@@ -335,14 +340,24 @@ func writeOnce(final string, files map[string][]byte) error {
 			return err
 		}
 	}
+	if err := os.WriteFile(filepath.Join(tmp, treeMarker), nil, 0o644); err != nil {
+		cleanup()
+		return err
+	}
 	if err := os.Rename(tmp, final); err != nil {
 		cleanup()
-		if info, statErr := os.Stat(filepath.Join(final, treeDir)); statErr == nil && info.IsDir() {
+		if complete(final) {
 			return nil
 		}
 		return err
 	}
 	return nil
+}
+
+// complete reports whether final is a materialized directory in this layout.
+func complete(final string) bool {
+	info, err := os.Stat(filepath.Join(final, treeMarker))
+	return err == nil && info.Mode().IsRegular()
 }
 
 func randomSuffix() string {

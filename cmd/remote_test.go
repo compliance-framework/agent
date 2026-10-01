@@ -207,7 +207,7 @@ func mustStartup(t *testing.T, rc *reconciler) *candidate {
 	if err != nil {
 		t.Fatalf("startup: %v", err)
 	}
-	if err := rc.start(active, func() {}); err != nil {
+	if err := rc.start(active, nil, func() {}); err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	return active
@@ -218,7 +218,7 @@ func (h *remoteHarness) poll(t *testing.T) *candidate {
 	t.Helper()
 	h.rc.reconcile(context.Background(), triggerPoll)
 	if next := h.rc.takePending(); next != nil {
-		if err := h.rc.start(next, func() {}); err != nil {
+		if err := h.rc.start(next, nil, func() {}); err != nil {
 			t.Fatalf("start: %v", err)
 		}
 	}

@@ -182,7 +182,7 @@ func (rc *reconciler) duplicatePackages(ctx context.Context, resolved agentconfi
 		if !usesInline {
 			continue
 		}
-		for _, pkg := range sortedOriginKeys(byPackage) {
+		for _, pkg := range sortedMapKeys(byPackage) {
 			origins := byPackage[pkg]
 			if len(origins) < 2 {
 				continue
@@ -200,7 +200,7 @@ func (rc *reconciler) duplicatePackages(ctx context.Context, resolved agentconfi
 				Path:     at.file,
 				Severity: agentconfig.SeverityWarning,
 				Code:     codeDuplicatePolicyPackage,
-				Message: fmt.Sprintf("plugin %s: package %s is defined in more than one of its policy paths (%s), so the plugin records its evidence more than once; replace the extended source with the inline bundle instead of adding both",
+				Message: fmt.Sprintf("plugin %s: package %s is defined in more than one of its policy paths (%s), so the plugin records its evidence more than once; if one is an inline bundle that extends the other, replace the source with the bundle instead of listing both",
 					pluginName, pkg, strings.Join(entries, ", ")),
 			})
 		}
@@ -392,7 +392,7 @@ func sortedPluginNames(m map[string]*agentconfig.Plugin) []string {
 	return keys
 }
 
-func sortedOriginKeys[V any](m map[string]V) []string {
+func sortedMapKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -29,6 +29,9 @@ const artifactMemoLimit = 1024
 // artifactDigestPattern is the format of an artifact digest (the API checks the same).
 var artifactDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
+// errTreeChanged: a local tree no longer has the digest it was inventoried with.
+var errTreeChanged = errors.New("the policy tree changed since it was inventoried")
+
 // artifactTree is a policy tree the report names, and the directory it was read from.
 type artifactTree struct {
 	digest string // agentconfig.BundleTreeDigest of the tree
@@ -71,6 +74,12 @@ func (rc *reconciler) uploadArtifacts(ctx context.Context, c *candidate) {
 				rc.logger.Warn("Uploading policy trees as artifacts timed out; retrying with the next report", "timeout", remoteRequestTimeout)
 			}
 			return
+		case errors.Is(err, errTreeChanged):
+			// The candidate's report is stale for this tree; do not re-read it every poll.
+			rc.rememberArtifact(t.digest, "")
+			if rc.logOnce("artifacts:" + t.digest) {
+				rc.logger.Warn("A policy tree changed on disk since it was inventoried; the report names it without its sources", "dir", t.dir, "error", err)
+			}
 		case errors.As(err, &statusErr) && permanentArtifactFailure(statusErr.StatusCode):
 			rc.rememberArtifact(t.digest, "")
 			if rc.logOnce("artifacts:" + t.digest) {
@@ -93,7 +102,7 @@ func (rc *reconciler) uploadTree(ctx context.Context, t artifactTree) (string, e
 		return "", err
 	}
 	if got := agentconfig.BundleTreeDigest(files); got != t.digest {
-		return "", fmt.Errorf("the policy tree at %s changed since it was inventoried (%s, now %s)", t.dir, t.digest, got)
+		return "", fmt.Errorf("%w: %s was %s, now %s", errTreeChanged, t.dir, t.digest, got)
 	}
 	tarball, err := policytree.TarFiles(files)
 	if err != nil {

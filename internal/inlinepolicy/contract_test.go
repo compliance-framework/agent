@@ -143,6 +143,15 @@ func TestCheck_Contract_R63(t *testing.T) {
 		}
 	})
 
+	t.Run("an authored test does not make vendor debt an error", func(t *testing.T) {
+		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: ext, Modules: map[string]string{
+			"untitled_test.rego": "package compliance_framework.untitled\n\ntest_ok if { count(violation) == 1 with input as {\"x\": true} }\n",
+		}})
+		if errs := errorsOf(check(m, nil), agentconfig.SeverityError); len(errs) != 0 {
+			t.Fatalf("vendor debt must stay a warning, got %+v", errs)
+		}
+	})
+
 	t.Run("authored package without a title is rejected", func(t *testing.T) {
 		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: ext, Modules: map[string]string{
 			"x.rego": "package compliance_framework.x\n\nviolation contains {\"id\": \"x\"} if input.x\n",

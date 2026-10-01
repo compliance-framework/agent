@@ -779,17 +779,15 @@ func (rc *reconciler) takePending() *candidate {
 	return next
 }
 
-// setFallback records the candidate the run loop falls back to (GC keeps its trees).
-func (rc *reconciler) setFallback(c *candidate) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	rc.fallback = c
-}
-
 // start points the inline bundles' stable paths at c's trees, then records c as the running
-// candidate. The run loop calls it only once the previous configuration's run returned, so
-// the swap never happens under a running plugin (R67).
-func (rc *reconciler) start(c *candidate, cancel context.CancelFunc) error {
+// candidate and fallback as the one to fall back to. The run loop calls it only once the
+// previous configuration's run returned, so the swap never happens under a running plugin
+// (R67). starting and fallback are set together first, so GC keeps the trees of both
+// throughout (the old active stays covered until it becomes the fallback).
+func (rc *reconciler) start(c, fallback *candidate, cancel context.CancelFunc) error {
+	rc.mu.Lock()
+	rc.starting, rc.fallback = c, fallback
+	rc.mu.Unlock()
 	err := rc.activateInline(c)
 	rc.bind(c, cancel)
 	return err
@@ -811,7 +809,7 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 	var previous, failedRun *candidate
 	for {
 		runCtx, cancel := context.WithCancel(context.Background())
-		runErr := rc.start(active, cancel)
+		runErr := rc.start(active, previous, cancel)
 		if failedRun != nil {
 			// Notify only once the fallback is bound, so the reconciler's current() is the
 			// fallback, never the candidate that failed.
@@ -831,7 +829,6 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 				rc.logger.Error("Configuration failed to run; falling back to the previous configuration", "error", runErr)
 				failedRun = active
 				active, previous = previous, nil
-				rc.setFallback(nil)
 				continue
 			}
 			return runErr
@@ -844,7 +841,6 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 			continue
 		}
 		previous, active = active, next
-		rc.setFallback(previous)
 	}
 }
 
