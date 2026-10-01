@@ -52,7 +52,7 @@ func readFile(t *testing.T, dir, p string) string {
 	return string(raw)
 }
 
-const vendorBanner = "package compliance_framework.banner\n\nviolation contains {\"remarks\": \"no banner\"} if not input.banner\n"
+const vendorBanner = "package compliance_framework.banner\n\ntitle := \"Banner\"\n\nviolation contains {\"id\": \"no-banner\", \"remarks\": \"no banner\"} if not input.banner\n"
 const vendorMaxAuth = "package compliance_framework.max_auth\n\nviolation contains {\"remarks\": \"too many\"} if input.max_auth > 3\n"
 
 func TestMaterialize_R17Order(t *testing.T) {
@@ -300,7 +300,7 @@ func TestCheck_CompileAndBuiltins(t *testing.T) {
 
 	t.Run("pure builtins are allowed", func(t *testing.T) {
 		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
-			"x.rego": "package compliance_framework.x\n\na := net.cidr_contains(\"10.0.0.0/8\", \"10.1.2.3\")\n\nb := rego.parse_module(\"x.rego\", \"package x\")\n\nc if trace(\"hi\")\n",
+			"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\na := net.cidr_contains(\"10.0.0.0/8\", \"10.1.2.3\")\n\nb := rego.parse_module(\"x.rego\", \"package x\")\n\nc if trace(\"hi\")\n",
 		}})
 		if errs := errorsOf(check(m, nil), agentconfig.SeverityError); len(errs) != 0 {
 			t.Fatalf("unexpected errors %v", errs)
@@ -309,7 +309,7 @@ func TestCheck_CompileAndBuiltins(t *testing.T) {
 
 	t.Run("vendor-only denied builtins are not attributed to authored rules", func(t *testing.T) {
 		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
-			"x.rego": "package compliance_framework.x\n\nimport data.ccf_libs.net\n\nr := net.helper(1)\n",
+			"x.rego": "package compliance_framework.x\n\nimport data.ccf_libs.net\n\ntitle := \"x\"\n\nr := net.helper(1)\n",
 		}})
 		if errs := errorsOf(check(m, nil), agentconfig.SeverityError); len(errs) != 0 {
 			t.Fatalf("unexpected errors %v", errs)
@@ -321,7 +321,7 @@ func TestCheck_CompileAndBuiltins(t *testing.T) {
 			".manifest":   `{"roots": ["compliance_framework/banner"]}`,
 			"banner.rego": vendorBanner,
 		}, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
-			"x.rego": "package compliance_framework.x\n\nr := 1\n",
+			"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nr := 1\n",
 		}})
 		if errs := errorsOf(check(m, nil), agentconfig.SeverityError); len(errs) == 0 {
 			t.Fatal("a package outside the manifest roots must be rejected")
@@ -363,7 +363,7 @@ func TestCheck_DeniedBuiltinNeverExecutes(t *testing.T) {
 			withTest[k] = v
 		}
 		m := materialize(t, withTest, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{
-			"x.rego": "package compliance_framework.x\n\nr := 1\n",
+			"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nr := 1\n",
 		}})
 		res := check(m, nil)
 		if errs := errorsOf(res, agentconfig.SeverityError); len(errs) != 0 {
@@ -385,7 +385,7 @@ func TestCheck_Tests(t *testing.T) {
 		"banner_test.rego": "package compliance_framework.banner_test\n\nimport data.compliance_framework.banner\n\ntest_fails if { count(banner.violation) == 42 with input as {} }\n",
 	}
 	t.Run("failing vendor test warns", func(t *testing.T) {
-		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{"x.rego": "package compliance_framework.x\n\nr := 1\n"}})
+		m := materialize(t, vendor, &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: map[string]string{"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nr := 1\n"}})
 		res := check(m, nil)
 		if len(errorsOf(res, agentconfig.SeverityError)) != 0 || len(errorsOf(res, agentconfig.SeverityWarning)) != 1 {
 			t.Fatalf("expected exactly one warning, got %+v", res)
@@ -426,7 +426,7 @@ func TestCheck_Tests(t *testing.T) {
 // TestMergePolicyDataParity checks that the test store sees the same data a plugin evaluates.
 func TestMergePolicyDataParity(t *testing.T) {
 	m := materialize(t, map[string]string{}, &agentconfig.PolicyBundle{
-		Modules: map[string]string{"x.rego": "package compliance_framework.x\n\nr := 1\n"},
+		Modules: map[string]string{"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n\nr := 1\n"},
 		Data:    map[string]any{"a": map[string]any{"x": 1, "y": 2}, "list": []any{1}},
 	})
 	policyData := map[string]any{"a": map[string]any{"y": 3, "z": map[string]any{"q": true}}, "list": []any{2}, "b": 5}

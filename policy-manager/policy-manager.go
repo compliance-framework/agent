@@ -34,6 +34,26 @@ func New(ctx context.Context, logger hclog.Logger, policyPath string, policyData
 	}
 }
 
+// NewWithEvaluator wraps an evaluator built by the caller, for example one restricted to
+// policyeval.SandboxCapabilities. The agent uses it to dry-run inline bundles exactly the way
+// plugins evaluate them.
+func NewWithEvaluator(logger hclog.Logger, evaluator *policyeval.Evaluator) *PolicyManager {
+	return &PolicyManager{logger: logger, evaluator: evaluator}
+}
+
+// RiskTemplateError is a failure to read the risk_templates of one policy package.
+type RiskTemplateError struct {
+	Package string // without the leading "data."
+	File    string
+	Err     error
+}
+
+func (e *RiskTemplateError) Error() string {
+	return fmt.Sprintf("risk_templates of package %s (%s): %v", e.Package, e.File, e.Err)
+}
+
+func (e *RiskTemplateError) Unwrap() error { return e.Err }
+
 func (pm *PolicyManager) prepareForEval(ctx context.Context, regoArgs ...func(r *rego.Rego)) (rego.PreparedEvalQuery, error) {
 	return pm.evaluator.PrepareForEval(ctx, regoArgs...)
 }
@@ -266,7 +286,7 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*pr
 
 		riskTemplates, err := pm.evaluateRiskTemplates(ctx, policy)
 		if err != nil {
-			return nil, err
+			return nil, &RiskTemplateError{Package: purePackage, File: policy.File, Err: err}
 		}
 
 		if _, exists := allTemplates[purePackage]; !exists {
@@ -277,12 +297,12 @@ func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*pr
 		for _, riskTemplate := range riskTemplates {
 			temp := &RiskTemplate{}
 			if err := mapstructure.Decode(riskTemplate, temp); err != nil {
-				return nil, err
+				return nil, &RiskTemplateError{Package: purePackage, File: policy.File, Err: err}
 			}
 
 			template, err := newProtoRiskTemplate(policy, temp)
 			if err != nil {
-				return nil, err
+				return nil, &RiskTemplateError{Package: purePackage, File: policy.File, Err: err}
 			}
 
 			moduleTemplates = append(moduleTemplates, template)

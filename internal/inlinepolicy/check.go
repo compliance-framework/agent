@@ -39,9 +39,15 @@ type CheckInput struct {
 //     rule through the compiled rule graph — including `with f as http.send` — is an error;
 //  3. tests: a failing authored _test.rego test is an error, a failing vendor test a warning.
 //     Tests never run when step 2 found a denied builtin, and they run sandboxed: a denied
-//     builtin can never execute on the agent host (D17, HLD §8).
+//     builtin can never execute on the agent host (D17, HLD §8);
+//  4. the policy contract (R63, contract.go): statically on vendor-only packages, then, when
+//     nothing so far is an error, a sandboxed dry run on an empty input.
 //
-// The parse-level checks (regocheck) run once per bundle before materialization.
+// A compile error in a vendor file whose package an authored module also defines carries a
+// hint about the override that most likely caused it (R65).
+//
+// The parse-level checks (regocheck, including the static contract check of the authored
+// modules) run once per bundle before materialization.
 func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 	var out []agentconfig.PolicyError
 	add := func(severity string, loc *ast.Location, format string, args ...any) {
@@ -60,8 +66,9 @@ func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 	_, err := policyeval.NewFromBundlePath(in.PolicyDir, in.PolicyData, policyeval.Options{}).
 		PrepareForEval(ctx, rego.Query("data.compliance_framework"), rego.Package("compliance_framework"))
 	if err != nil {
+		hints := compileHints(in)
 		addCompileErrors(err, func(loc *ast.Location, msg string) {
-			add(agentconfig.SeverityError, loc, "%s", strings.ReplaceAll(msg, in.PolicyDir+string(filepath.Separator), ""))
+			add(agentconfig.SeverityError, loc, "%s", hints(loc, strings.ReplaceAll(msg, in.PolicyDir+string(filepath.Separator), "")))
 		})
 		agentconfig.SortPolicyErrors(out)
 		return out
@@ -78,10 +85,13 @@ func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 	}
 	compiler := ast.NewCompiler()
 	if compiler.Compile(modules); compiler.Failed() {
-		addCompileErrors(compiler.Errors, func(loc *ast.Location, msg string) { add(agentconfig.SeverityError, loc, "%s", msg) })
+		hints := compileHints(in)
+		addCompileErrors(compiler.Errors, func(loc *ast.Location, msg string) { add(agentconfig.SeverityError, loc, "%s", hints(loc, msg)) })
 		agentconfig.SortPolicyErrors(out)
 		return out
 	}
+	pkgs := packagesOf(modules, in.PolicyDir)
+	authoredPkgs := pkgs.authoredPackages(in.Authored)
 
 	// 2. Transitive denied builtins. The revision is rejected, so the tests (which would
 	// execute the denied builtin) never run.
@@ -96,8 +106,37 @@ func Check(ctx context.Context, in CheckInput) []agentconfig.PolicyError {
 
 	// 3. Tests.
 	out = append(out, runTests(ctx, in, b.Data, modules)...)
+
+	// 4. Policy contract.
+	static, vendorSeen := staticContract(in, modules, pkgs, authoredPkgs)
+	out = append(out, static...)
+	if !agentconfig.HasPolicyErrors(out) {
+		out = append(out, dryRun(ctx, in, b, pkgs, authoredPkgs, vendorSeen)...)
+	}
 	agentconfig.SortPolicyErrors(out)
 	return out
+}
+
+// compileHints returns a function that appends the R65 override hint to a compile error
+// located in a vendor file.
+func compileHints(in CheckInput) func(loc *ast.Location, msg string) string {
+	pkgs := treePackages{}
+	if files, _, err := readTree(in.PolicyDir); err == nil {
+		for _, f := range inventory(files) {
+			if f.Package != "" {
+				pkgs[f.Path] = f.Package
+			}
+		}
+	}
+	return func(loc *ast.Location, msg string) string {
+		if loc == nil {
+			return msg
+		}
+		if hint := overrideHint(relPath(in.PolicyDir, loc.File), pkgs, in.Authored); hint != "" {
+			return msg + " (hint: " + hint + ")"
+		}
+		return msg
+	}
 }
 
 func addCompileErrors(err error, add func(loc *ast.Location, msg string)) {

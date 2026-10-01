@@ -36,6 +36,8 @@ policy_bundles:
 
         import rego.v1
 
+        title := "extra"
+
         violation contains {"remarks": "x"} if input.max > data.max
 `
 
@@ -100,7 +102,7 @@ func TestInline_TransitiveDeniedBuiltinRejected(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vendor, "lib.rego"), []byte("package ccf_libs.net\n\nimport rego.v1\n\nfetch(u) := http.send({\"method\": \"GET\", \"url\": u})\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\nimport data.ccf_libs.net\n\nviolation contains {\"remarks\": r} if r := net.fetch(\"http://x\")\n"}}}}`)
+	h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\nimport data.ccf_libs.net\n\ntitle := \"extra\"\n\nviolation contains {\"remarks\": r} if r := net.fetch(\"http://x\")\n"}}}}`)
 	mustStartup(t, h.rc)
 	r := h.remote.lastReport(t)
 	if r.Status != agentconfig.StatusRejected || r.Reason != agentconfig.ReasonPolicyErrors || !strings.Contains(*r.Error, "http.send") {
@@ -131,7 +133,7 @@ func TestInline_GCAfterSwap(t *testing.T) {
 	h.remote.publish(0, `{}`)
 	mustStartup(t, h.rc)
 	for rev := int64(1); rev <= 10; rev++ {
-		overlay := fmt.Sprintf(`{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\n# rev %d\nviolation contains {\"remarks\": \"x\"} if input.max > data.max\n"}}}}`, rev)
+		overlay := fmt.Sprintf(`{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\n# rev %d\ntitle := \"extra\"\n\nviolation contains {\"remarks\": \"x\"} if input.max > data.max\n"}}}}`, rev)
 		h.remote.publish(rev, overlay)
 		if got := h.poll(t); got.overlay == nil || got.overlay.Revision != rev {
 			r := h.remote.lastReport(t)
