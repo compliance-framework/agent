@@ -1,0 +1,2 @@
+lisa-design:
+R81 (supersedes R80): agent v0.8.0 and v0.8.1 were released without agent#95, so neither has R74 policy_id seeding. pluginlib.MinInlinePolicy = v0.9.0 final; plain semver keeps v0.8.x, v0.9.0-rc* and pseudo-versions based on them unsupported, and replace/(devel)/untagged builds unknown. Update the constant before tagging if agent#95 ships in a different release.
