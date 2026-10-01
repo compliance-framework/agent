@@ -1,0 +1,3 @@
+lisa-design:
+R80: pluginlib.MinInlinePolicy = v0.8.0 final. AtLeast now compares plain semver (dropped the "-0" pre-release floor), so v0.8.0-rc1..rc4 and pseudo-versions based on them are unsupported; v0.8.1-0.x (built after v0.8.0) is supported. MinViolationSet (v0.7.1) is unaffected in practice: no v0.7.1 RC tags exist. (devel)/replace/no-buildinfo/untagged stay unknown (warning).
+R77 correction: ContinuityPolicyID is the literal pluginPath + "/" + file (not path.Join). Stream comparisons stay seed-based (SeedOf -> policyeval.SeedPath; api f50e4d8: seedFile = path.Clean(id), seedPolicyPath = raw TrimSuffix(id, "/"+rel)), so local sources configured as ./policies, ./policies/ or policies/ are continuable for plugins that label _policy_path.
