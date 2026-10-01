@@ -591,7 +591,8 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		}
 	}
 
-	inline, aerr := rc.prepareInline(ctx, resolved, part.skip, touched)
+	origin := newPolicyOrigin(base.declared, touched)
+	inline, aerr := rc.prepareInline(ctx, resolved, part.skip, origin)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -610,7 +611,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		aerr.runtime = runtime
 		return nil, aerr
 	}
-	compat, plugins := rc.pluginCompatibility(ctx, runtime, inline.materialized, touched)
+	compat, plugins := rc.pluginCompatibility(ctx, runtime, inline.materialized, origin)
 	if agentconfig.HasPolicyErrors(compat) {
 		return nil, policyRejection(append(compat, inline.warnings...))
 	}

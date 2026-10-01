@@ -367,3 +367,27 @@ func TestInline_EvidenceSourceIsTheBundle(t *testing.T) {
 		t.Fatalf("OCI source = %+v", oci)
 	}
 }
+
+// TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75: an overlay that only reorders a
+// plugin's policies does not introduce the file's duplicate, so it still applies.
+func TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75(t *testing.T) {
+	h, _ := newInlineHarnessWith(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["ghcr.io/vendor/policies:v1", "inline:ssh"]`, 1))
+	withPluginLib(h, "v0.7.2") // file bundles on an old plugin only warn too
+	h.remote.publish(1, `{"plugins":{"ssh":{"policies":["inline:ssh","ghcr.io/vendor/policies:v1"]}}}`)
+	active := mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	if active.overlay == nil || r.Status != agentconfig.StatusApplied {
+		t.Fatalf("expected the reorder to apply, got %s/%s %+v", r.Status, r.Reason, r.PolicyErrors)
+	}
+	for _, code := range []string{agentconfig.PolicyCodeDuplicatePolicyIdentity, agentconfig.PolicyCodePluginLibInlineUnsupported} {
+		got := policyErrorsWithCode(r, code)
+		if len(got) == 0 {
+			t.Fatalf("expected a %s warning, got %+v", code, r.PolicyErrors)
+		}
+		for _, e := range got {
+			if e.Severity != agentconfig.SeverityWarning {
+				t.Fatalf("%s must stay a warning: %+v", code, e)
+			}
+		}
+	}
+}

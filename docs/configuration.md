@@ -285,8 +285,9 @@ policy_bundles:
     or a `policy_id` that continues the stream of a module the plugin also loads;
   - `duplicate-policy-package` (warning): the same package from two paths otherwise.
 
-  The first two are **errors** when the overlay introduces them (it changes the plugin's `policies` or one of the
-  bundles involved) and warnings when they come from the file (R34). Replace the source with the inline bundle
+  The first two are **errors** when the overlay introduces them (it gives the plugin one of the policy entries
+  involved, or changes one of the bundles involved) and warnings when they come from the file (R34), even under an
+  overlay that changes something else. Replace the source with the inline bundle
   instead of listing both.
 - **Overrides and evidence streams (R75).** Overriding a vendor module keeps its evidence stream only if the
   override keeps the vendor module's `package` and continues its identity (see "Policy identity" below). A changed
@@ -362,7 +363,7 @@ reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `
 `unknown`).
 
 - **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
-  An overlay that gives an `inline:` bundle to a plugin built on an older library, changes a bundle such a plugin
+  An overlay that gives an `inline:` entry to a plugin built on an older library, changes a bundle such a plugin
   uses, or moves a plugin that uses one to such a build (its `source`), is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
   support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
   running.

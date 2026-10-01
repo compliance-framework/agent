@@ -20,10 +20,54 @@ import (
 //     inline bundle listed next to the source it extends);
 //   - duplicate-policy-package (R66): the same package from two policy paths otherwise.
 //
-// The first two are errors when the overlay introduces them (it changes the plugin's
-// policies or one of the inline bundles involved) and warnings when they come from the
-// config file (R34). The last is always a warning. Plugins that use no inline bundle are not
+// The first two are errors when the overlay introduces them (it gives the plugin one of the
+// policy entries involved, or changes one of the inline bundles involved) and warnings when
+// they come from the config file (R34). The last is always a warning. Plugins that use no inline bundle are not
 // checked: their policy paths are the file's and the vendors' business.
+
+// policyOrigin tells overlay-introduced policy problems from file-origin ones (R34).
+type policyOrigin struct {
+	// touched are the pointers the overlay changed (nil without an overlay).
+	touched []string
+	// filePolicies are the policy entries each plugin has in the config file.
+	filePolicies map[string]map[string]bool
+}
+
+func newPolicyOrigin(file agentconfig.Config, touched []string) policyOrigin {
+	o := policyOrigin{touched: touched, filePolicies: map[string]map[string]bool{}}
+	for name, p := range file.Plugins {
+		if p == nil {
+			continue
+		}
+		entries := map[string]bool{}
+		for _, e := range p.Policies {
+			entries[string(e)] = true
+		}
+		o.filePolicies[name] = entries
+	}
+	return o
+}
+
+// newEntry reports whether the overlay gave plugin the policy entry: the file does not.
+func (o policyOrigin) newEntry(plugin, entry string) bool {
+	return o.touched != nil && !o.filePolicies[plugin][entry]
+}
+
+// bundleTouched reports whether the overlay changed inline bundle name.
+func (o policyOrigin) bundleTouched(name string) bool {
+	return touchedByOverlay(agentconfig.Pointer("policy_bundles", name), o.touched)
+}
+
+// pluginTouched reports whether the overlay changed field of plugin.
+func (o policyOrigin) pluginTouched(plugin, field string) bool {
+	return touchedByOverlay(agentconfig.Pointer("plugins", plugin, field), o.touched)
+}
+
+// introduces reports whether the overlay brought module m to plugin: it added m's policy
+// entry to the plugin, or changed m's inline bundle.
+func (o policyOrigin) introduces(plugin string, m loadedModule) bool {
+	return o.newEntry(plugin, m.entry) || (m.bundle != "" && o.bundleTouched(m.bundle))
+}
 
 // codeDuplicatePolicyPackage is the PolicyError code of R66.
 const codeDuplicatePolicyPackage = "duplicate-policy-package"
@@ -50,9 +94,9 @@ func (m loadedModule) where() string {
 }
 
 // policyIdentities returns the R66/R75 problems of every enabled plugin that uses an inline
-// bundle. touched are the pointers the overlay changed. A source that cannot be resolved
+// bundle. origin tells overlay-introduced problems apart. A source that cannot be resolved
 // here is skipped (prefetch reports it).
-func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig.Config, skip map[string]string, materialized map[string]*inlinepolicy.Materialized, touched []string) []agentconfig.PolicyError {
+func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig.Config, skip map[string]string, materialized map[string]*inlinepolicy.Materialized, origin policyOrigin) []agentconfig.PolicyError {
 	var out []agentconfig.PolicyError
 	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
 		p := resolved.Plugins[pluginName]
@@ -93,12 +137,9 @@ func (rc *reconciler) policyIdentities(ctx context.Context, resolved agentconfig
 		if !usesInline {
 			continue
 		}
-		pluginTouched := touchedByOverlay(agentconfig.Pointer("plugins", pluginName, "policies"), touched)
 		severity := func(a, b loadedModule) string {
-			for _, m := range []loadedModule{a, b} {
-				if pluginTouched || (m.bundle != "" && touchedByOverlay(agentconfig.Pointer("policy_bundles", m.bundle), touched)) {
-					return agentconfig.SeverityError
-				}
+			if origin.introduces(pluginName, a) || origin.introduces(pluginName, b) {
+				return agentconfig.SeverityError
 			}
 			return agentconfig.SeverityWarning
 		}

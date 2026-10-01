@@ -26,7 +26,7 @@ func (rc *reconciler) inlineRoot() string {
 // way the plugin will load it. Any error rejects the revision (policy-errors); warnings are
 // kept for the report. No network is touched before the Classify gate: extends trees are
 // fetched here, after it.
-func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Config, skip map[string]string, touched []string) (inlineResult, *applyError) {
+func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Config, skip map[string]string, origin policyOrigin) (inlineResult, *applyError) {
 	var res inlineResult
 	if len(resolved.PolicyBundles) == 0 {
 		return res, nil
@@ -107,7 +107,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	for _, name := range sortedMaterializedKeys(materialized) {
 		problems = append(problems, inlinepolicy.OverrideStreams(materialized[name])...)
 	}
-	problems = append(problems, rc.policyIdentities(ctx, resolved, skip, materialized, touched)...)
+	problems = append(problems, rc.policyIdentities(ctx, resolved, skip, materialized, origin)...)
 	if agentconfig.HasPolicyErrors(problems) {
 		return res, policyRejection(append(problems, res.warnings...))
 	}

@@ -50,9 +50,9 @@ func inlineSupport(version string) string {
 }
 
 // pluginCompatibility returns the R76/R79 problems of the plugins of runtime that use inline
-// bundles, and the plugins report. touched are the pointers the overlay changed. Without a
+// bundles, and the plugins report. origin tells overlay-introduced problems apart. Without a
 // pluginLib function (tests) it checks and reports nothing.
-func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentConfig, materialized map[string]*inlinepolicy.Materialized, touched []string) ([]agentconfig.PolicyError, []agentconfig.PluginReport) {
+func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentConfig, materialized map[string]*inlinepolicy.Materialized, origin policyOrigin) ([]agentconfig.PolicyError, []agentconfig.PluginReport) {
 	if rc.pluginLib == nil || runtime == nil {
 		return nil, nil
 	}
@@ -75,35 +75,23 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 
 		var bundles []*inlinepolicy.Materialized
 		seen := map[string]bool{}
+		// The overlay brought the plugin and its inline policies together when it changed the
+		// plugin's source (a different build), gave it an inline entry, or changed a bundle
+		// it uses.
+		introduced := origin.pluginTouched(name, "source")
 		for _, e := range p.Policies {
 			if b, ok := agentconfig.InlineBundleName(string(e)); ok && materialized[b] != nil && !seen[b] {
 				seen[b] = true
 				bundles = append(bundles, materialized[b])
+				introduced = introduced || origin.newEntry(name, string(e)) || origin.bundleTouched(b)
 			}
 		}
 		if len(bundles) == 0 {
 			continue
 		}
-		problems = append(problems, libProblems(name, version, support, bundles, rc.overlayTouchesInline(name, bundles, touched))...)
+		problems = append(problems, libProblems(name, version, support, bundles, introduced)...)
 	}
 	return problems, reports
-}
-
-// overlayTouchesInline reports whether the overlay brought the plugin and its inline
-// policies together: it changed the plugin's policies or source (a different plugin build),
-// or one of the inline bundles the plugin uses.
-func (rc *reconciler) overlayTouchesInline(plugin string, bundles []*inlinepolicy.Materialized, touched []string) bool {
-	for _, field := range []string{"policies", "source"} {
-		if touchedByOverlay(agentconfig.Pointer("plugins", plugin, field), touched) {
-			return true
-		}
-	}
-	for _, m := range bundles {
-		if touchedByOverlay(agentconfig.Pointer("policy_bundles", m.Name), touched) {
-			return true
-		}
-	}
-	return false
 }
 
 // libProblems are the problems of one plugin whose library is not known to support inline
@@ -122,8 +110,12 @@ func libProblems(plugin, version, support string, bundles []*inlinepolicy.Materi
 	for _, m := range bundles {
 		msg := fmt.Sprintf("plugin %s (agent lib %s) doesn't support inline policies; upgrade the plugin to a build on agent ≥ %s", plugin, lib, pluginlib.MinInlinePolicy)
 		if support == inlinePoliciesUnknown {
-			msg = fmt.Sprintf("plugin %s: its agent library version is unknown (a local or replaced build, or no build info), so the agent cannot tell whether it supports inline policies; plugins built on agent < %s ignore policy_id, and those < %s crash on `violation contains ...`",
-				plugin, pluginlib.MinInlinePolicy, pluginlib.MinViolationSet)
+			why := "is unknown (a local or replaced build, or no build info)"
+			if version != "" {
+				why = fmt.Sprintf("%s has no release before it", version)
+			}
+			msg = fmt.Sprintf("plugin %s: its agent library version %s, so the agent cannot tell whether it supports inline policies; plugins built on agent < %s ignore policy_id, and those < %s crash on `violation contains ...`",
+				plugin, why, pluginlib.MinInlinePolicy, pluginlib.MinViolationSet)
 		}
 		out = append(out, agentconfig.PolicyError{Bundle: m.Name, Severity: severity, Code: agentconfig.PolicyCodePluginLibInlineUnsupported, Message: msg})
 

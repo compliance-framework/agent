@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
@@ -156,6 +157,14 @@ func TestCompat_FileInlineBundleOnOldLibWarns_R79(t *testing.T) {
 	ids := policyErrorsWithCode(r, agentconfig.PolicyCodePluginLibPolicyIDUnsupported)
 	if len(ids) != 1 || ids[0].Severity != agentconfig.SeverityWarning || ids[0].Path != "extra.rego" {
 		t.Fatalf("expected a plugin-lib-policy-id-unsupported warning for the file bundle, got %+v", r.PolicyErrors)
+	}
+}
+
+func TestLibProblemsNameAnUntaggedVersion(t *testing.T) {
+	m := &inlinepolicy.Materialized{Name: "ssh"}
+	got := libProblems("ssh", "v0.0.0-20261001110117-f88bde9ee37a", inlinePoliciesUnknown, []*inlinepolicy.Materialized{m}, true)
+	if len(got) != 1 || got[0].Severity != agentconfig.SeverityWarning || !strings.Contains(got[0].Message, "v0.0.0-20261001110117-f88bde9ee37a has no release before it") {
+		t.Fatalf("an untagged build only warns and names its version, got %+v", got)
 	}
 }
 

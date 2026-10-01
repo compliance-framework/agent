@@ -82,7 +82,8 @@ The agent checks identity statically, with the same rule the API's contract chec
 "<literal>"`, once per package), over every module of every policy path of each plugin that uses an inline bundle:
 the same `policy_id` twice is `duplicate-policy-id`, and the same identity from two paths (equal seeds, or the same
 package and bundle-relative file without `policy_id`) is `duplicate-policy-identity`. Both are errors when the overlay
-touches the plugin's `policies` or a bundle involved, warnings otherwise (R34); what is left of R66 (the same package
+introduces them (it gives the plugin a policy entry the file does not, or changes a bundle involved), warnings
+otherwise (R34), so an overlay never fails on the file's own duplicates; what is left of R66 (the same package
 with different identities) stays a warning. For an `extends` bundle, an override is compared with the vendor module it
 replaces by the seeds plugins would compute from the extends source's path and the bundle's path: a changed
 `package` is `policy-package-changed`, any other difference `policy-stream-forked` (warnings).
