@@ -1,2 +1,7 @@
 lisa-addressed:
 Round 3 pass 1: downloadPlugin doc/Prefetch reuse; R79 counts /plugins/<p>/source as overlay-introduced (test TestCompat_OverlayMovingAnInlinePluginToAnOldBuildIsRejected_R79); seeds precomputed in loadedModule.
+
+lisa-selfreview:
+Round 3 pass 2 (strict):
+- high cmd/identity.go + cmd/compat.go: "overlay-introduced" was any touch of /plugins/<p>/policies, so an overlay that only reorders or adds an unrelated entry turned the file's own duplicates (R75) or file-bundle lib warnings (R79) into errors, rejecting revisions on file debt (R34). Fix: policyOrigin - a problem is overlay-introduced only when the overlay gives the plugin a policy entry the file does not, changes an inline bundle involved, or (R79) changes the plugin's source.
+- low cmd/compat.go: the unknown-version message said "local or replaced build" for an untagged pseudo-version that is present. Fix: name the version.
