@@ -1,0 +1,2 @@
+lisa-addressed:
+- round-2 self-review pass 1: fixed all 8 findings (GC windows via start(c, fallback); writeOnce completion marker .ccf-tree; dry-run timeout -> warning; authored tests do not make a package authored; duplicate-module path; tree-changed memo; R66 wording; sortedMapKeys).
