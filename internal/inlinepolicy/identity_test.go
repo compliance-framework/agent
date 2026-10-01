@@ -63,15 +63,18 @@ func TestOverrideStreams_R75(t *testing.T) {
 	}{
 		{"continues the legacy stream", map[string]string{"banner.rego": continuing}, map[string]string{}},
 		{"keeps the vendor policy_id", map[string]string{"ided.rego": vendorID + "\n# changed\n"}, map[string]string{}},
-		{"no policy_id", map[string]string{"banner.rego": vendorBanner + "\n# changed\n"}, map[string]string{"banner.rego": CodePolicyStreamForked}},
+		// R82: the agent appends the continuity policy_id to an override without one.
+		{"no policy_id", map[string]string{"banner.rego": vendorBanner + "\n# changed\n"}, map[string]string{}},
+		{"no policy_id in a package of two modules", map[string]string{"banner.rego": vendorBanner + "\n# changed\n", "banner_more.rego": "package compliance_framework.banner\n\nmore := true\n"}, map[string]string{"banner.rego": CodePolicyStreamForked}},
 		{"changed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\npolicy_id := \"other\"\n\ntitle := \"x\"\n"}, map[string]string{"ided.rego": CodePolicyStreamForked}},
-		{"removed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\ntitle := \"x\"\n"}, map[string]string{"ided.rego": CodePolicyStreamForked}},
+		// R82: the agent appends the vendor package's policy_id.
+		{"removed policy_id", map[string]string{"ided.rego": "package compliance_framework.ided\n\ntitle := \"x\"\n"}, map[string]string{}},
 		{"changed package", map[string]string{"max_auth.rego": "package compliance_framework.max_auth_v2\n\ntitle := \"x\"\n"}, map[string]string{"max_auth.rego": agentconfig.PolicyCodePolicyPackageChanged}},
 		{"new module", map[string]string{"new.rego": "package compliance_framework.new\n\ntitle := \"x\"\n"}, map[string]string{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: tc.modules}, resolve)
+			m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1"), Modules: tc.modules}, resolve)
 			require.NoError(t, err)
 			got := map[string]string{}
 			for _, e := range OverrideStreams(m) {
@@ -82,7 +85,7 @@ func TestOverrideStreams_R75(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
-	m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Modules: map[string]string{"banner.rego": vendorBanner}}, resolve)
+	m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Modules: map[string]string{"banner.rego": vendorBanner}}, resolve)
 	require.NoError(t, err)
 	assert.Empty(t, OverrideStreams(m), "a bundle without extends overrides nothing")
 }
@@ -104,7 +107,7 @@ func TestOverrideStreams_NonCleanLocalSource_R77(t *testing.T) {
 			override := func(id string) []agentconfig.PolicyError {
 				t.Helper()
 				src := "package compliance_framework.banner\n\npolicy_id := \"" + id + "\"\n\ntitle := \"Banner\"\n"
-				m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("local"), Modules: map[string]string{"banner.rego": src}}, resolve)
+				m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("local"), Modules: map[string]string{"banner.rego": src}}, resolve)
 				require.NoError(t, err)
 				return OverrideStreams(m)
 			}

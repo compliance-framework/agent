@@ -72,8 +72,11 @@ func TestInline_FileBundleMaterializedAndReported(t *testing.T) {
 	h, _ := newInlineHarness(t)
 	active := mustStartup(t, h.rc)
 	dir, ok := active.runtime.inlinePolicyDirs["inline:ssh"]
-	if !ok || !strings.HasPrefix(dir, filepath.Join(h.dir, "state", "inline", "ssh")) {
-		t.Fatalf("inline bundle not materialized under the state dir: %v", active.runtime.inlinePolicyDirs)
+	if !ok || dir != filepath.Join(h.dir, "policies", "inline", "ssh", "policies") {
+		t.Fatalf("plugins must receive the bundle's stable link: %v", active.runtime.inlinePolicyDirs)
+	}
+	if tree := active.runtime.inlineTrees["inline:ssh"]; !strings.HasPrefix(tree, filepath.Join(h.dir, "state", "inline", "ssh")) {
+		t.Fatalf("inline bundle not materialized under the state dir: %s", tree)
 	}
 	for _, f := range []string{"banner.rego", "extra.rego"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
@@ -151,7 +154,7 @@ func TestInline_GCAfterSwap(t *testing.T) {
 			t.Fatalf("revision %d did not apply: %s/%s %s", rev, r.Status, r.Reason, derefString(r.Error))
 		}
 	}
-	entries, err := os.ReadDir(filepath.Join(h.rc.inlineRoot(), "ssh"))
+	entries, err := os.ReadDir(filepath.Join(h.rc.inlineLayout().Store, "ssh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +274,7 @@ func TestInline_ReportsPluginPaths_R77(t *testing.T) {
 	for _, b := range r.PolicyBundles {
 		got[b.Source] = b.PluginPath
 	}
-	if got["inline:ssh"] != active.runtime.inlinePolicyDirs["inline:ssh"] || !strings.HasSuffix(got["inline:ssh"], filepath.Join("inline", "ssh", "current", "bundle")) {
+	if got["inline:ssh"] != active.runtime.inlinePolicyDirs["inline:ssh"] || !strings.HasSuffix(got["inline:ssh"], filepath.Join("inline", "ssh", "policies")) {
 		t.Fatalf("inline plugin-path = %q, want the stable path %q", got["inline:ssh"], active.runtime.inlinePolicyDirs["inline:ssh"])
 	}
 	if got["ghcr.io/vendor/policies:v1"] != vendor {
@@ -549,7 +552,7 @@ func TestInline_EvidenceSourceIsTheBundle(t *testing.T) {
 	mustStartup(t, h.rc)
 	cfg := h.rc.running().runtime
 	stable := cfg.inlinePolicyDirs["inline:ssh"]
-	if !strings.HasSuffix(filepath.ToSlash(stable), "/inline/ssh/current/bundle") {
+	if !strings.HasSuffix(filepath.ToSlash(stable), "/inline/ssh/policies") {
 		t.Fatalf("plugins must receive the stable path, got %s", stable)
 	}
 	got := cfg.policySource("inline:ssh", stable)
@@ -588,5 +591,50 @@ func TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75(t *testing.T) {
 				t.Fatalf("%s must stay a warning: %+v", code, e)
 			}
 		}
+	}
+}
+
+// TestInline_RelativePathContinuesVendorStreams_R82: plugins receive an inline bundle at
+// the relative .compliance-framework/policies/inline/<name>/policies, like a local source,
+// and an inherited vendor module keeps the vendor's evidence stream with no policy_id
+// written by the user, next to an added module.
+func TestInline_RelativePathContinuesVendorStreams_R82(t *testing.T) {
+	const source = "ghcr.io/vendor/policies:v1"
+	const extracted = ".compliance-framework/policies/vendor/policies/v1/policies"
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(extracted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extracted, "banner.rego"), []byte(r78Vendor), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := r78Harness(t, source, false, func(_ context.Context, s string) (string, error) {
+		if s == source {
+			return extracted, nil
+		}
+		return "", errors.New("unknown source " + s)
+	})
+	h.rc.inlineLinks = "" // the agent's default, relative to the working directory
+	active := mustStartup(t, h.rc)
+	if err := h.rc.activateInline(active); err != nil {
+		t.Fatal(err)
+	}
+
+	const want = ".compliance-framework/policies/inline/ssh/policies"
+	path := active.runtime.inlinePolicyDirs["inline:ssh"]
+	if filepath.ToSlash(path) != want {
+		t.Fatalf("plugins receive %q, want %q", path, want)
+	}
+	inline, _ := r78Report(t, h)
+	if inline.PluginPath != path {
+		t.Fatalf("plugin-path = %q, want %q", inline.PluginPath, path)
+	}
+	for _, code := range []string{inlinepolicy.CodePolicyStreamForked, inlinepolicy.CodeContinuityPolicyIDSkipped, agentconfig.PolicyCodeDuplicatePolicyIdentity} {
+		if got := policyErrorsWithCode(h.remote.lastReport(t), code); len(got) != 0 {
+			t.Fatalf("unexpected %s: %+v", code, got)
+		}
+	}
+	if got, want := r78Evidence(t, path), r78Evidence(t, extracted); got != want {
+		t.Fatalf("inherited banner evidence UUID = %s, want the vendor's %s", got, want)
 	}
 }

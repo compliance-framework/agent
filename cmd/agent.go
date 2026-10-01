@@ -94,7 +94,8 @@ type agentConfig struct {
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 
 	// inlinePolicyDirs maps "inline:<name>" policy entries to the path plugins receive: the
-	// bundle's stable path, which the reconciler points at inlineTrees before each run (R67).
+	// bundle's stable path (.compliance-framework/policies/inline/<name>/policies, R82), which
+	// the reconciler points at inlineTrees before each run (R67).
 	inlinePolicyDirs map[string]string
 	// inlineTrees maps "inline:<name>" policy entries to their materialized, content-addressed
 	// tree (inlinepolicy.Materialized.Dir).

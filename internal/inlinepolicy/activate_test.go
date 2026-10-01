@@ -14,6 +14,12 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
+// testLayout is the layout of the tests: the trees under root/store and the stable links
+// under root/links.
+func testLayout(root string) Layout {
+	return Layout{Store: filepath.Join(root, "store"), Links: filepath.Join(root, "links")}
+}
+
 func skipWithoutSymlinks(t *testing.T, root string) {
 	t.Helper()
 	if runtime.GOOS == "windows" || !symlinksSupported(root) {
@@ -58,14 +64,14 @@ func TestActivate_EvidenceIdentityIsStable_R67(t *testing.T) {
 	root := t.TempDir()
 	skipWithoutSymlinks(t, root)
 	revision := func(other string) *Materialized {
-		m, err := Materialize(context.Background(), root, "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
+		m, err := Materialize(context.Background(), testLayout(root), "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
 			"stable.rego": stablePkg,
 			"other.rego":  "package compliance_framework.other\n\ntitle := \"" + other + "\"\n",
 		}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := Activate(root, "ssh", m.Dir); err != nil {
+		if err := Activate(testLayout(root), "ssh", m.Dir); err != nil {
 			t.Fatal(err)
 		}
 		return m
@@ -79,7 +85,7 @@ func TestActivate_EvidenceIdentityIsStable_R67(t *testing.T) {
 	if first.Dir == second.Dir || first.Path != second.Path {
 		t.Fatalf("the trees must differ and the stable path must not: %s %s / %s %s", first.Dir, second.Dir, first.Path, second.Path)
 	}
-	if want := filepath.Join(root, "ssh", "current", "bundle"); first.Path != want {
+	if want := filepath.Join(root, "links", "ssh", "policies"); first.Path != want {
 		t.Fatalf("stable path = %s, want %s", first.Path, want)
 	}
 	const stable, other = "compliance_framework.stable", "compliance_framework.other"
@@ -104,12 +110,13 @@ func TestActivate_EvidenceIdentityIsStable_R67(t *testing.T) {
 func TestActivate_RejectsForeignDirs(t *testing.T) {
 	root := t.TempDir()
 	skipWithoutSymlinks(t, root)
-	for _, dir := range []string{t.TempDir(), filepath.Join(root, "other", "abc", "bundle"), filepath.Join(root, "ssh", "abc")} {
-		if err := Activate(root, "ssh", dir); err == nil {
+	store := testLayout(root).Store
+	for _, dir := range []string{t.TempDir(), filepath.Join(store, "other", "abc", "policies"), filepath.Join(store, "ssh", "abc"), filepath.Join(store, "ssh", "abc", "bundle")} {
+		if err := Activate(testLayout(root), "ssh", dir); err == nil {
 			t.Fatalf("activating %s must fail", dir)
 		}
 	}
-	if err := Activate(root, "ssh", filepath.Join(root, "ssh", "abc", "bundle")); err == nil {
+	if err := Activate(testLayout(root), "ssh", filepath.Join(store, "ssh", "abc", "policies")); err == nil {
 		t.Fatal("activating a missing tree must fail")
 	}
 }
@@ -121,7 +128,7 @@ func TestGC_NeverRemovesCurrent(t *testing.T) {
 	skipWithoutSymlinks(t, root)
 	var dirs []string
 	for _, title := range []string{"a", "b", "c"} {
-		m, err := Materialize(context.Background(), root, "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
+		m, err := Materialize(context.Background(), testLayout(root), "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
 			"x.rego": "package compliance_framework.x\n\ntitle := \"" + title + "\"\n",
 		}}, nil)
 		if err != nil {
@@ -129,14 +136,15 @@ func TestGC_NeverRemovesCurrent(t *testing.T) {
 		}
 		dirs = append(dirs, m.Dir)
 	}
-	if err := Activate(root, "ssh", dirs[0]); err != nil {
+	if err := Activate(testLayout(root), "ssh", dirs[0]); err != nil {
 		t.Fatal(err)
 	}
 	// A crash between creating and renaming the temporary link leaves it behind.
-	if err := os.Symlink("x", filepath.Join(root, "ssh", currentTmpPrefix+"stale")); err != nil {
+	stale := filepath.Join(root, "links", tmpPrefix+"ssh-stale")
+	if err := os.Symlink("x", stale); err != nil {
 		t.Fatal(err)
 	}
-	if err := GC(root, nil, 0); err != nil {
+	if err := GC(testLayout(root), nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(dirs[0]); err != nil {
@@ -147,10 +155,10 @@ func TestGC_NeverRemovesCurrent(t *testing.T) {
 			t.Fatalf("%s should have been collected", d)
 		}
 	}
-	if _, err := os.Lstat(filepath.Join(root, "ssh", currentTmpPrefix+"stale")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
 		t.Fatal("a stale temporary link must be removed")
 	}
-	if _, err := os.Stat(filepath.Join(root, "ssh", "current", "bundle", "x.rego")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "links", "ssh", "policies", "x.rego")); err != nil {
 		t.Fatalf("the stable path must still resolve: %v", err)
 	}
 }
@@ -168,7 +176,7 @@ func TestActivate_SwapIsAtomic(t *testing.T) {
 	skipWithoutSymlinks(t, root)
 	var trees [2]*Materialized
 	for i, title := range []string{"a", "b"} {
-		m, err := Materialize(context.Background(), root, "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
+		m, err := Materialize(context.Background(), testLayout(root), "ssh", &agentconfig.PolicyBundle{Modules: map[string]string{
 			"x.rego": "package compliance_framework.x\n\ntitle := \"" + title + "\"\n",
 		}}, nil)
 		if err != nil {
@@ -176,7 +184,7 @@ func TestActivate_SwapIsAtomic(t *testing.T) {
 		}
 		trees[i] = m
 	}
-	if err := Activate(root, "ssh", trees[0].Dir); err != nil {
+	if err := Activate(testLayout(root), "ssh", trees[0].Dir); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]bool{}
@@ -207,7 +215,7 @@ func TestActivate_SwapIsAtomic(t *testing.T) {
 		}()
 	}
 	for i := range 500 {
-		if err := Activate(root, "ssh", trees[(i+1)%2].Dir); err != nil {
+		if err := Activate(testLayout(root), "ssh", trees[(i+1)%2].Dir); err != nil {
 			t.Error(err)
 			break
 		}
@@ -220,11 +228,11 @@ func TestActivate_SwapIsAtomic(t *testing.T) {
 }
 
 // TestMaterialize_RebuildsOldLayout: a tree directory from the layout before R67 (files
-// directly under <hex>) is rebuilt instead of being reused without its bundle/ directory.
+// directly under <hex>) is rebuilt instead of being reused without its policies/ directory.
 func TestMaterialize_RebuildsOldLayout(t *testing.T) {
 	root := t.TempDir()
 	b := &agentconfig.PolicyBundle{Modules: map[string]string{"x.rego": "package compliance_framework.x\n\ntitle := \"x\"\n"}}
-	m, err := Materialize(context.Background(), root, "ssh", b, nil)
+	m, err := Materialize(context.Background(), testLayout(root), "ssh", b, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,14 +246,14 @@ func TestMaterialize_RebuildsOldLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(version, "x.rego"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A vendor tree with a top-level bundle/ directory must not pass for the new layout.
-	if err := os.MkdirAll(filepath.Join(version, "bundle"), 0o755); err != nil {
+	// A vendor tree with a top-level policies/ directory must not pass for the new layout.
+	if err := os.MkdirAll(filepath.Join(version, "policies"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(version, "bundle", "other.rego"), []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(version, "policies", "other.rego"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	again, err := Materialize(context.Background(), root, "ssh", b, nil)
+	again, err := Materialize(context.Background(), testLayout(root), "ssh", b, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

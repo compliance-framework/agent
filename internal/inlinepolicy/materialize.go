@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/compliance-framework/agent/internal/policytree"
 	"github.com/compliance-framework/api/pkg/agentconfig"
-	"github.com/open-policy-agent/opa/v1/ast"
 	"sigs.k8s.io/yaml"
 )
 
@@ -52,25 +52,37 @@ func (p PolicyErrors) Error() string {
 	return strings.Join(parts, "; ")
 }
 
-// Materialized is one bundle written to disk.
+// Layout is where inline bundles live on disk (R67, R82):
 //
-// Layout under root (R67):
+//	<Store>/<name>/<tree digest hex>/policies/...   the tree, write-once and content-addressed (Dir)
+//	<Links>/<name> -> <Store>/<name>/<tree digest hex>   swapped atomically by Activate
 //
-//	<name>/<tree digest hex>/bundle/...   the tree, write-once and content-addressed (Dir)
-//	<name>/current -> <tree digest hex>   swapped atomically by Activate
-//
-// Plugins receive Path, <name>/current/bundle: the same path for every revision of the
+// Plugins receive Path, <Links>/<name>/policies: the same path for every revision of the
 // bundle, so the policy_file of an unchanged package, and with it the evidence UUID that
-// policy-manager seeds with it, survives edits of other files. The symlink is an
-// intermediate path component on purpose: OPA's bundle loader does not descend into a
-// symlinked root directory, but resolves a symlink earlier in the path like any other.
+// policy-manager seeds with it, survives edits of other files. The agent uses the relative
+// Links .compliance-framework/policies/inline, next to the OCI policy cache, so an inline
+// bundle's path reads like a local source's and does not depend on the state directory
+// (R82). The symlink is an intermediate path component on purpose: OPA's bundle loader does
+// not descend into a symlinked root directory, but resolves a symlink earlier in the path
+// like any other, so policies/ is a real directory inside the tree.
+//
+// Two agents that share a working directory and use the same bundle name share
+// <Links>/<name> and would swap it under each other; run one agent per working directory.
+type Layout struct {
+	// Store holds the content-addressed trees (under the agent's state directory).
+	Store string
+	// Links holds each bundle's stable symlink. Plugins receive paths under it.
+	Links string
+}
+
+// Materialized is one bundle written to disk (see Layout).
 type Materialized struct {
 	Name string
-	// Dir is the tree itself (<root>/<name>/<hex>/bundle). The checks run on it and its
+	// Dir is the tree itself (<Store>/<name>/<hex>/policies). The checks run on it and its
 	// contents never change.
 	Dir string
-	// Path is what plugins receive: <root>/<name>/current/bundle, or Dir when the file
-	// system has no symlinks (then evidence identity changes with each revision, as before).
+	// Path is what plugins receive: <Links>/<name>/policies, or Dir when the file system has
+	// no symlinks (then evidence identity changes with each revision, as before R67).
 	Path   string
 	Digest string // agentconfig.BundleTreeDigest(files)
 	// Extends describes the vendor tree the bundle extends (nil when standalone).
@@ -89,19 +101,24 @@ type Materialized struct {
 	// SetViolations are the authored modules that define violation as a set, which plugins
 	// built on an agent library older than v0.7.1 cannot evaluate; PolicyIDRules are the
 	// authored modules that declare policy_id, which plugins built before R74 ignore (R76).
+	// Neither counts the policy_id the agent appends (Continued).
 	SetViolations, PolicyIDRules []Site
+	// Continued maps the modules the agent appended a continuity policy_id to (R82), by
+	// path, to that policy_id.
+	Continued map[string]string
 }
 
 // Materialize builds bundle name in the R17 order (extends tree, delete, modules, data),
-// checks the data-file rule (R18) and writes the result write-once under root.
-func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBundle, resolve Resolver) (*Materialized, error) {
+// checks the data-file rule (R18), appends the continuity policy_id to the modules that
+// continue a vendor file (R82) and writes the result write-once under l.Store.
+func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.PolicyBundle, resolve Resolver) (*Materialized, error) {
 	if b == nil {
 		return nil, PolicyErrors{{Bundle: name, Message: "bundle has no definition", Severity: agentconfig.SeverityError}}
 	}
 	if !agentconfig.BundleNamePattern.MatchString(name) {
 		return nil, PolicyErrors{{Bundle: name, Message: "invalid bundle name", Severity: agentconfig.SeverityError}}
 	}
-	m := &Materialized{Name: name, Authored: map[string]bool{}}
+	m := &Materialized{Name: name, Authored: map[string]bool{}, Continued: map[string]string{}}
 	var errs PolicyErrors
 	warn := func(p, format string, args ...any) {
 		m.Warnings = append(m.Warnings, agentconfig.PolicyError{Bundle: name, Path: p, Message: fmt.Sprintf(format, args...), Severity: agentconfig.SeverityWarning})
@@ -112,6 +129,7 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 
 	// 1. Base tree.
 	files := map[string][]byte{}
+	var vendorFiles map[string][]byte
 	if b.Extends != nil {
 		if resolve == nil {
 			return nil, fmt.Errorf("%w: no resolver", ErrResolve)
@@ -142,7 +160,8 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 		}
 		m.ExtendsDir = dir
 		m.ExtendsIdentities = Identities(baseFiles)
-		files = baseFiles
+		vendorFiles = baseFiles
+		files = maps.Clone(baseFiles)
 	}
 
 	// 2. Delete.
@@ -208,23 +227,30 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 		return nil, errs
 	}
 
-	// 6. Write once.
+	// The authored constructs, before the agent adds anything.
+	m.SetViolations, m.PolicyIDRules = authoredSites(files, m.Authored)
+
+	// 6. Continuity policy_id (R82).
+	if m.Extends != nil {
+		m.Warnings = append(m.Warnings, continueVendorStreams(m, files, vendorFiles)...)
+	}
+
+	// 7. Write once.
 	m.Digest = agentconfig.BundleTreeDigest(files)
-	final := filepath.Join(root, name, strings.TrimPrefix(m.Digest, agentconfig.TreeDigestPrefix))
+	final := filepath.Join(l.Store, name, strings.TrimPrefix(m.Digest, agentconfig.TreeDigestPrefix))
 	if err := writeOnce(final, files); err != nil {
 		return nil, err
 	}
 	m.Dir = filepath.Join(final, treeDir)
 	m.Path = m.Dir
-	if symlinksSupported(root) {
-		m.Path = filepath.Join(root, name, currentLink, treeDir)
+	if symlinksSupported(l.Links) {
+		m.Path = filepath.Join(l.Links, name, treeDir)
 	}
 
-	// 7. Inventory.
+	// 8. Inventory: the tree as written, so Files matches Digest and the uploaded artifact.
 	m.Files = inventory(files)
 	slices.Sort(m.AuthoredTests)
 	m.Identities = Identities(files)
-	m.SetViolations, m.PolicyIDRules = authoredSites(files, m.Authored)
 	return m, nil
 }
 
@@ -298,8 +324,8 @@ func inventory(files map[string][]byte) []agentconfig.PolicyFileReport {
 		sum := sha256.Sum256(files[p])
 		r := agentconfig.PolicyFileReport{Path: p, SHA256: hex.EncodeToString(sum[:])}
 		if strings.HasSuffix(p, ".rego") {
-			if mod, err := ast.ParseModuleWithOpts(p, string(files[p]), ast.ParserOptions{RegoVersion: ast.RegoV1}); err == nil && mod != nil && mod.Package != nil {
-				r.Package = strings.TrimPrefix(mod.Package.Path.String(), "data.")
+			if mod := parseRego(p, files[p]); mod != nil {
+				r.Package = packageOf(mod)
 			}
 		}
 		out = append(out, r)
@@ -308,20 +334,22 @@ func inventory(files map[string][]byte) []agentconfig.PolicyFileReport {
 }
 
 const (
-	// treeDir is the directory holding the policy tree inside a materialized directory.
-	treeDir = "bundle"
-	// currentLink is the per-bundle symlink to the active materialized directory.
-	currentLink = "current"
-	// treeMarker marks a complete materialized directory in this layout. It sits next to
-	// treeDir, outside the tree.
+	// treeDir is the directory holding the policy tree inside a materialized directory, the
+	// last component of the path plugins receive (like an OCI source's policies/).
+	treeDir = "policies"
+	// legacyCurrentLink is the per-bundle symlink of the R67 layout (<Store>/<name>/current
+	// -> <hex>, plugins got <Store>/<name>/current/bundle). GC removes it (R82).
+	legacyCurrentLink = "current"
+	// treeMarker marks a complete materialized directory. It sits next to treeDir, outside
+	// the tree.
 	treeMarker = ".ccf-tree"
-	// Name prefixes of transient entries in a bundle directory.
+	// Name prefixes of transient entries in a bundle directory, and in Links.
 	tmpPrefix         = ".tmp-"
 	currentTmpPrefix  = ".current-"
 	symlinkProbeEntry = ".symlink-probe-"
 )
 
-// writeOnce writes files under final/bundle unless final is already complete: a temp dir
+// writeOnce writes files under final/policies unless final is already complete: a temp dir
 // (dirs 0755, files 0644) with the completion marker, renamed into place. Losing a rename
 // race reuses the winner's directory.
 func writeOnce(final string, files map[string][]byte) error {
@@ -329,8 +357,8 @@ func writeOnce(final string, files map[string][]byte) error {
 		return nil
 	}
 	if _, err := os.Lstat(final); err == nil {
-		// A directory in the layout before R67 (the tree directly under final, which may
-		// itself contain a bundle/ directory): rebuild it.
+		// A directory in an earlier layout (the tree directly under final before R67, or
+		// under final/bundle before R82): rebuild it.
 		if err := os.RemoveAll(final); err != nil {
 			return err
 		}
@@ -369,10 +397,15 @@ func writeOnce(final string, files map[string][]byte) error {
 	return nil
 }
 
-// complete reports whether final is a materialized directory in this layout.
+// complete reports whether final is a materialized directory in this layout: the marker and
+// a real policies/ directory (an R67 directory has the marker and bundle/).
 func complete(final string) bool {
 	info, err := os.Stat(filepath.Join(final, treeMarker))
-	return err == nil && info.Mode().IsRegular()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	tree, err := os.Lstat(filepath.Join(final, treeDir))
+	return err == nil && tree.IsDir()
 }
 
 func randomSuffix() string {
@@ -402,32 +435,39 @@ func symlinksSupported(root string) bool {
 }
 
 // Activate points bundle name's stable path (Materialized.Path) at dir, a Materialized.Dir
-// of that bundle under root. The swap is atomic: a temporary symlink renamed over
-// <name>/current, so on Linux a reader resolving the stable path sees either the previous
+// of that bundle under l.Store. The swap is atomic: a temporary symlink renamed over
+// <Links>/<name>, so on Linux a reader resolving the stable path sees either the previous
 // tree or the new one, never neither (macOS APFS may fail such a racing lookup with EINVAL).
 // It is not a snapshot for a reader walking the tree while it is swapped either. Callers
 // therefore swap only while no plugin of the previous configuration runs (the agent does it
 // between two configuration runs, after the reload drain), and serialize Activate with GC.
 // It is a no-op when the tree is already active or the file system has no symlinks (plugins
 // then receive dir itself).
-func Activate(root, name, dir string) error {
-	bundleDir := filepath.Join(root, name)
+func Activate(l Layout, name, dir string) error {
 	versionDir := filepath.Dir(filepath.Clean(dir))
-	if filepath.Base(filepath.Clean(dir)) != treeDir || filepath.Dir(versionDir) != bundleDir {
+	if filepath.Base(filepath.Clean(dir)) != treeDir || filepath.Dir(versionDir) != filepath.Join(l.Store, name) {
 		return fmt.Errorf("activate %s: %s is not a materialized tree of the bundle", name, dir)
 	}
-	if !symlinksSupported(root) {
+	if !symlinksSupported(l.Links) {
 		return nil
 	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	if !complete(versionDir) {
 		return fmt.Errorf("activate %s: the materialized tree %s is missing", name, dir)
 	}
-	target := filepath.Base(versionDir)
-	link := filepath.Join(bundleDir, currentLink)
+	// An absolute target: the link lives next to the policy cache and the tree under the
+	// state directory, which may be anywhere.
+	target, err := filepath.Abs(versionDir)
+	if err != nil {
+		return fmt.Errorf("activate %s: %w", name, err)
+	}
+	link := filepath.Join(l.Links, name)
 	if cur, err := os.Readlink(link); err == nil && cur == target {
 		return nil
 	}
-	tmp := filepath.Join(bundleDir, currentTmpPrefix+randomSuffix())
+	if err := os.MkdirAll(l.Links, 0o755); err != nil {
+		return fmt.Errorf("activate %s: %w", name, err)
+	}
+	tmp := filepath.Join(l.Links, tmpPrefix+name+"-"+randomSuffix())
 	if err := os.Symlink(target, tmp); err != nil {
 		return fmt.Errorf("activate %s: %w", name, err)
 	}
@@ -438,32 +478,40 @@ func Activate(root, name, dir string) error {
 	return nil
 }
 
-// GC removes materialized directories under root except those in keep (Materialized.Dir
-// values, or their parent), the one each bundle's current symlink points to, and the
-// perBundle newest per bundle, plus abandoned temporary entries. Callers serialize GC with
-// Activate.
-func GC(root string, keep map[string]struct{}, perBundle int) error {
-	bundles, err := os.ReadDir(root)
+// GC removes materialized directories under l.Store except those in keep (Materialized.Dir
+// values, or their parent), the one each bundle's stable link points to, and the perBundle
+// newest per bundle, plus abandoned temporary entries, directories of an earlier layout and
+// the R67 current links. Callers serialize GC with Activate.
+func GC(l Layout, keep map[string]struct{}, perBundle int) error {
+	var errs []error
+	// Abandoned temporary links of Activate.
+	if entries, err := os.ReadDir(l.Links); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), tmpPrefix) {
+				errs = append(errs, os.Remove(filepath.Join(l.Links, e.Name())))
+			}
+		}
+	}
+	bundles, err := os.ReadDir(l.Store)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return errors.Join(errs...)
 	}
 	if err != nil {
 		return err
 	}
-	var errs []error
 	for _, b := range bundles {
 		if !b.IsDir() {
 			continue
 		}
-		bundleDir := filepath.Join(root, b.Name())
+		bundleDir := filepath.Join(l.Store, b.Name())
 		entries, err := os.ReadDir(bundleDir)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		active := ""
-		if target, err := os.Readlink(filepath.Join(bundleDir, currentLink)); err == nil {
-			active = filepath.Join(bundleDir, target)
+		if target, err := os.Readlink(filepath.Join(l.Links, b.Name())); err == nil {
+			active = absPath(target)
 		}
 		type dirInfo struct {
 			path string
@@ -476,7 +524,26 @@ func GC(root string, keep map[string]struct{}, perBundle int) error {
 				errs = append(errs, os.RemoveAll(p))
 				continue
 			}
+			if e.Name() == legacyCurrentLink && e.Type()&os.ModeSymlink != 0 {
+				// Plugins no longer receive the R67 path, so nothing resolves it.
+				errs = append(errs, os.Remove(p))
+				continue
+			}
 			if !e.IsDir() {
+				continue
+			}
+			if absPath(p) == active {
+				continue
+			}
+			if _, ok := keep[p]; ok {
+				continue
+			}
+			if _, ok := keep[filepath.Join(p, treeDir)]; ok {
+				continue
+			}
+			if !complete(p) {
+				// A tree of an earlier layout: Materialize rebuilds it when it is needed.
+				errs = append(errs, os.RemoveAll(p))
 				continue
 			}
 			info, err := e.Info()
@@ -486,25 +553,21 @@ func GC(root string, keep map[string]struct{}, perBundle int) error {
 			dirs = append(dirs, dirInfo{p, info.ModTime().UnixNano()})
 		}
 		sort.Slice(dirs, func(i, j int) bool { return dirs[i].mod > dirs[j].mod })
-		kept := 0
-		for _, d := range dirs {
-			if d.path == active {
-				continue
+		for i, d := range dirs {
+			if i >= perBundle {
+				errs = append(errs, os.RemoveAll(d.path))
 			}
-			if _, ok := keep[d.path]; ok {
-				continue
-			}
-			if _, ok := keep[filepath.Join(d.path, treeDir)]; ok {
-				continue
-			}
-			if kept < perBundle {
-				kept++
-				continue
-			}
-			errs = append(errs, os.RemoveAll(d.path))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// absPath returns p made absolute and cleaned, or p cleaned when that fails.
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return filepath.Clean(p)
 }
 
 func sortedKeys[V any](m map[string]V) []string {

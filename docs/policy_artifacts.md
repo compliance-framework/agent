@@ -103,7 +103,7 @@ volume).
 
 The agent looks the policy source up by the exact path it gave the plugin, which is the
 path the plugin reports the evaluation under. For an inline bundle that is the bundle's
-stable path (`<state dir>/inline/<name>/current/bundle`), so its evidence carries these props
+stable path (`.compliance-framework/policies/inline/<name>/policies`, R82), so its evidence carries these props
 across revisions. A bundle an inline bundle `extends` is not on the evidence; the
 configuration report names it (`policy-bundles[].extends`).
 

@@ -16,9 +16,19 @@ import (
 // active ones.
 const inlineGCKeepPerBundle = 5
 
-// inlineRoot is where inline bundles are materialized (under the state dir, R31).
-func (rc *reconciler) inlineRoot() string {
-	return filepath.Join(rc.store.Dir(), "inline")
+// inlineLinksDir is where the stable links of inline bundles live, relative to the agent's
+// working directory like the OCI policy cache next to it, so plugins receive an inline
+// bundle as .compliance-framework/policies/inline/<name>/policies (R82).
+var inlineLinksDir = filepath.Join(AgentPolicyDir, "inline")
+
+// inlineLayout is where inline bundles are materialized (under the state dir, R31) and
+// where plugins receive them (R82).
+func (rc *reconciler) inlineLayout() inlinepolicy.Layout {
+	links := rc.inlineLinks
+	if links == "" {
+		links = inlineLinksDir
+	}
+	return inlinepolicy.Layout{Store: filepath.Join(rc.store.Dir(), "inline"), Links: links}
 }
 
 // prepareInline is prepare step 8 (G3b): the parse-level checks on every bundle, then
@@ -60,7 +70,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	materialized := map[string]*inlinepolicy.Materialized{}
 	var problems []agentconfig.PolicyError
 	for _, name := range sortedBoolKeys(refs) {
-		m, err := inlinepolicy.Materialize(ctx, rc.inlineRoot(), name, resolved.PolicyBundles[name], rc.boundedResolver())
+		m, err := inlinepolicy.Materialize(ctx, rc.inlineLayout(), name, resolved.PolicyBundles[name], rc.boundedResolver())
 		var perrs inlinepolicy.PolicyErrors
 		switch {
 		case errors.As(err, &perrs):
@@ -248,7 +258,7 @@ func (rc *reconciler) afterStartup(active *candidate) {
 }
 
 // gcInline removes materialized inline bundles that none of keep, the running, pending,
-// starting or fallback candidate, nor a bundle's current symlink uses, and that are not among
+// starting or fallback candidate, nor a bundle's stable link uses, and that are not among
 // the newest inlineGCKeepPerBundle per bundle. It runs after startup and after every swap,
 // so a long-running daemon does not accumulate one directory per revision. It holds
 // inlineMu, so it never races activateInline.
@@ -276,7 +286,7 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 	if !found {
 		return
 	}
-	if err := inlinepolicy.GC(rc.inlineRoot(), dirs, inlineGCKeepPerBundle); err != nil {
+	if err := inlinepolicy.GC(rc.inlineLayout(), dirs, inlineGCKeepPerBundle); err != nil {
 		rc.logger.Warn("Could not clean up old inline policy bundles", "error", err)
 	}
 }
@@ -291,7 +301,7 @@ func (rc *reconciler) activateInline(c *candidate) error {
 	var errs []error
 	for _, entry := range sortedStringKeys(c.runtime.inlineTrees) {
 		name := strings.TrimPrefix(entry, agentconfig.InlineSourcePrefix)
-		errs = append(errs, inlinepolicy.Activate(rc.inlineRoot(), name, c.runtime.inlineTrees[entry]))
+		errs = append(errs, inlinepolicy.Activate(rc.inlineLayout(), name, c.runtime.inlineTrees[entry]))
 	}
 	return errors.Join(errs...)
 }

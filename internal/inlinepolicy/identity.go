@@ -1,8 +1,10 @@
 package inlinepolicy
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
@@ -63,8 +65,8 @@ func authoredSites(files map[string][]byte, authored map[string]bool) (setViolat
 		if !authored[p] || !strings.HasSuffix(p, ".rego") || policyeval.IsTestFile(p) {
 			continue
 		}
-		mod, err := ast.ParseModuleWithOpts(p, string(files[p]), ast.ParserOptions{RegoVersion: ast.RegoV1})
-		if err != nil || mod == nil || !policyeval.IsPolicyPackage(packageOf(mod)) {
+		mod := parseRego(p, files[p])
+		if mod == nil || !policyeval.IsPolicyPackage(packageOf(mod)) {
 			continue
 		}
 		var setSite, idSite *Site
@@ -173,14 +175,134 @@ func OverrideStreams(m *Materialized) []agentconfig.PolicyError {
 // continue the evidence stream of the vendor module it replaces (R75). Warning.
 const CodePolicyStreamForked = "policy-stream-forked"
 
+// CodeContinuityPolicyIDSkipped is the PolicyError code of a module that continues a vendor
+// file but that the agent could not give a continuity policy_id (R82), so plugins that load
+// the bundle instead of the extends source record its evidence in a new stream. Warning.
+const CodeContinuityPolicyIDSkipped = "policy-id-continuity-skipped"
+
+// continueVendorStreams appends a continuity policy_id (R82) to every module of files, the
+// tree of bundle m that extends vendor, that continues a vendor file and whose package
+// declares no policy_id, so plugins loading the bundle in place of the extends source keep
+// recording the vendor module's evidence stream:
+//
+//   - a module inherited from the vendor tree unchanged, or
+//   - an authored module at the path of a vendor module, with the vendor module's package.
+//
+// The policy_id is the vendor package's own policy_id when it declares one, and otherwise
+// ContinuityPolicyID of the extends source's plugin path and the module's path: the stream
+// the vendor module had. Only non-test modules of compliance_framework packages count
+// (others record no evidence). A package with more than one non-test module in the bundle is
+// skipped with a warning: one complete policy_id rule would name a single file for all of
+// them, and two would conflict. It records what it appended in m.Continued and returns the
+// warnings.
+func continueVendorStreams(m *Materialized, files, vendor map[string][]byte) []agentconfig.PolicyError {
+	var warnings []agentconfig.PolicyError
+	warn := func(p, format string, args ...any) {
+		warnings = append(warnings, agentconfig.PolicyError{Bundle: m.Name, Path: p, Severity: agentconfig.SeverityWarning,
+			Code: CodeContinuityPolicyIDSkipped, Message: fmt.Sprintf(format, args...)})
+	}
+	modules := parseModules(files)
+	vendorModules := parseModules(vendor)
+	vendorIDs := policyIDs(vendorModules)
+
+	// Per package: its non-test modules, and whether one of them declares (or imports as)
+	// policy_id, which always wins.
+	pkgModules := map[string][]string{}
+	declared := map[string]bool{}
+	for _, p := range sortedKeys(modules) {
+		if policyeval.IsTestFile(p) {
+			continue
+		}
+		pkg := packageOf(modules[p])
+		pkgModules[pkg] = append(pkgModules[pkg], p)
+		if declaresPolicyID(modules[p]) {
+			declared[pkg] = true
+		}
+	}
+
+	for _, p := range sortedKeys(modules) {
+		mod := modules[p]
+		pkg := packageOf(mod)
+		if policyeval.IsTestFile(p) || !policyeval.IsPolicyPackage(pkg) || declared[pkg] {
+			continue
+		}
+		vmod, fromVendor := vendorModules[p]
+		if !fromVendor {
+			continue // a new module: its own stream
+		}
+		if m.Authored[p] && packageOf(vmod) != pkg {
+			continue // a changed package starts a new stream (OverrideStreams warns)
+		}
+		id := vendorIDs[pkg]
+		if id == "" {
+			id = ContinuityPolicyID(m.ExtendsDir, p)
+		}
+		if others := pkgModules[pkg]; len(others) > 1 {
+			warn(p, "package %s has %d modules in the bundle (%s), so the agent cannot declare its policy_id for %s; plugins that load this bundle instead of %s record its evidence in a new stream. Declare `policy_id := %q` in one module of the package to continue the vendor policy's stream",
+				pkg, len(others), strings.Join(others, ", "), p, m.Extends.Source, id)
+			continue
+		}
+		if !policyeval.ValidPolicyID(id) {
+			warn(p, "the policy_id that continues the vendor stream of %s would not be valid (%d characters), so plugins that load this bundle instead of %s record its evidence in a new stream", p, len([]rune(id)), m.Extends.Source)
+			continue
+		}
+		literal, err := json.Marshal(id)
+		if err != nil {
+			continue
+		}
+		src := append(slices.Clip(files[p]), []byte("\npolicy_id := "+string(literal)+"\n")...)
+		// The module must still parse and now declare exactly this policy_id.
+		if got := parseRego(p, src); got == nil || policyIDs(map[string]*ast.Module{p: got})[pkg] != id {
+			warn(p, "the agent could not append the policy_id that continues the vendor stream of %s; plugins that load this bundle instead of %s record its evidence in a new stream", p, m.Extends.Source)
+			continue
+		}
+		files[p] = src
+		m.Continued[p] = id
+	}
+	return warnings
+}
+
+// declaresPolicyID reports whether mod defines a rule named policy_id, in any form, or
+// imports something as policy_id: either way an appended policy_id rule would not be the
+// package's only one.
+func declaresPolicyID(mod *ast.Module) bool {
+	for _, rule := range mod.Rules {
+		if ruleName(rule) == "policy_id" {
+			return true
+		}
+	}
+	for _, imp := range mod.Imports {
+		if imp.Alias == "policy_id" {
+			return true
+		}
+		if ref, ok := imp.Path.Value.(ast.Ref); ok && len(ref) > 1 {
+			if s, ok := ref[len(ref)-1].Value.(ast.String); ok && string(s) == "policy_id" && imp.Alias == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseRego parses a module as Rego v1, then as Rego v0, as plugins on either OPA major
+// would load it; nil when it does not parse or has no package.
+func parseRego(p string, src []byte) *ast.Module {
+	for _, v := range []ast.RegoVersion{ast.RegoV1, ast.RegoV0} {
+		mod, err := ast.ParseModuleWithOpts(p, string(src), ast.ParserOptions{RegoVersion: v})
+		if err == nil && mod != nil && mod.Package != nil {
+			return mod
+		}
+	}
+	return nil
+}
+
 func parseModules(files map[string][]byte) map[string]*ast.Module {
 	out := map[string]*ast.Module{}
 	for p, src := range files {
 		if !strings.HasSuffix(p, ".rego") {
 			continue
 		}
-		mod, err := ast.ParseModuleWithOpts(p, string(src), ast.ParserOptions{RegoVersion: ast.RegoV1})
-		if err == nil && mod != nil && mod.Package != nil {
+		if mod := parseRego(p, src); mod != nil {
 			out[p] = mod
 		}
 	}

@@ -55,8 +55,14 @@ func readFile(t *testing.T, dir, p string) string {
 const vendorBanner = "package compliance_framework.banner\n\ntitle := \"Banner\"\n\nviolation contains {\"id\": \"no-banner\", \"remarks\": \"no banner\"} if not input.banner\n"
 const vendorMaxAuth = "package compliance_framework.max_auth\n\nviolation contains {\"remarks\": \"too many\"} if input.max_auth > 3\n"
 
+// withContinuity is src with the continuity policy_id the agent appends to a module at rel
+// that continues the vendor file at rel under pluginPath (R82).
+func withContinuity(src, pluginPath, rel string) string {
+	return src + "\npolicy_id := \"" + pluginPath + "/" + rel + "\"\n"
+}
+
 func TestMaterialize_R17Order(t *testing.T) {
-	_, resolve := vendorTree(t, map[string]string{
+	vendor, resolve := vendorTree(t, map[string]string{
 		"banner.rego":          vendorBanner,
 		"max_auth.rego":        vendorMaxAuth,
 		"legacy.rego":          "package compliance_framework.legacy\n",
@@ -81,18 +87,31 @@ func TestMaterialize_R17Order(t *testing.T) {
 		Data: map[string]any{"limits": map[string]any{"max_auth": 5, "keep": nil}},
 	}
 	root := t.TempDir()
-	m, err := Materialize(context.Background(), root, "ssh", b, resolve)
+	m, err := Materialize(context.Background(), testLayout(root), "ssh", b, resolve)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(m.Dir, "legacy.rego")); !os.IsNotExist(err) {
 		t.Fatal("deleted vendor module must be gone")
 	}
-	if got := readFile(t, m.Dir, "max_auth.rego"); !strings.Contains(got, "# override") {
-		t.Fatalf("override not applied: %q", got)
+	if got := readFile(t, m.Dir, "max_auth.rego"); got != withContinuity(b.Modules["max_auth.rego"], vendor, "max_auth.rego") {
+		t.Fatalf("override not applied, or without the continuity policy_id: %q", got)
 	}
-	if got := readFile(t, m.Dir, "banner.rego"); got != vendorBanner {
-		t.Fatalf("inherited module changed: %q", got)
+	if got := readFile(t, m.Dir, "banner.rego"); got != withContinuity(vendorBanner, vendor, "banner.rego") {
+		t.Fatalf("inherited module changed beyond the continuity policy_id: %q", got)
+	}
+	if got := readFile(t, m.Dir, "lib/helpers.rego"); got != "package ccf_libs.helpers\n" {
+		t.Fatalf("a library package records no evidence and gets no policy_id: %q", got)
+	}
+	if got := readFile(t, m.Dir, "banner_test.rego"); got != "package compliance_framework.banner_test\n" {
+		t.Fatalf("a test module gets no policy_id: %q", got)
+	}
+	if got := readFile(t, m.Dir, "extra/new.rego"); got != b.Modules["extra/new.rego"] {
+		t.Fatalf("a new module starts its own stream and gets no policy_id: %q", got)
+	}
+	wantContinued := map[string]string{"banner.rego": vendor + "/banner.rego", "max_auth.rego": vendor + "/max_auth.rego", "nested/deep/a.rego": vendor + "/nested/deep/a.rego"}
+	if !reflect.DeepEqual(m.Continued, wantContinued) {
+		t.Fatalf("continued = %v, want %v", m.Continued, wantContinued)
 	}
 	readFile(t, m.Dir, "extra/new.rego")
 	readFile(t, m.Dir, "Policies/Max.Auth.rego")
@@ -128,7 +147,7 @@ func TestMaterialize_R17Order(t *testing.T) {
 		}
 	}
 
-	again, err := Materialize(context.Background(), root, "ssh", b, resolve)
+	again, err := Materialize(context.Background(), testLayout(root), "ssh", b, resolve)
 	if err != nil || again.Dir != m.Dir {
 		t.Fatalf("the same content must reuse the same directory: %v %s %s", err, again.Dir, m.Dir)
 	}
@@ -144,7 +163,7 @@ func contains(list []string, s string) bool {
 }
 
 func TestMaterialize_OverlayNullRestoresVendorModule(t *testing.T) {
-	_, resolve := vendorTree(t, map[string]string{"max_auth.rego": vendorMaxAuth})
+	vendor, resolve := vendorTree(t, map[string]string{"max_auth.rego": vendorMaxAuth})
 	base := agentconfig.Config{PolicyBundles: map[string]*agentconfig.PolicyBundle{"ssh": {
 		Extends: strptr("ghcr.io/vendor/policies:v1"),
 		Modules: map[string]string{"max_auth.rego": "package compliance_framework.max_auth\n# file override\n"},
@@ -153,11 +172,11 @@ func TestMaterialize_OverlayNullRestoresVendorModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := Materialize(context.Background(), t.TempDir(), "ssh", merged.PolicyBundles["ssh"], resolve)
+	m, err := Materialize(context.Background(), testLayout(t.TempDir()), "ssh", merged.PolicyBundles["ssh"], resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, m.Dir, "max_auth.rego"); got != vendorMaxAuth {
+	if got := readFile(t, m.Dir, "max_auth.rego"); got != withContinuity(vendorMaxAuth, vendor, "max_auth.rego") {
 		t.Fatalf("null must restore the vendor module, got %q", got)
 	}
 }
@@ -176,7 +195,7 @@ func TestMaterialize_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Materialize(context.Background(), t.TempDir(), "b", tt.b, resolve)
+			_, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", tt.b, resolve)
 			var perrs PolicyErrors
 			if !errors.As(err, &perrs) || !agentconfig.HasPolicyErrors(perrs) {
 				t.Fatalf("expected policy errors, got %v", err)
@@ -184,7 +203,7 @@ func TestMaterialize_Errors(t *testing.T) {
 		})
 	}
 	t.Run("resolver failure", func(t *testing.T) {
-		_, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/other:v1")}, resolve)
+		_, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/other:v1")}, resolve)
 		if !errors.Is(err, ErrResolve) {
 			t.Fatalf("expected ErrResolve, got %v", err)
 		}
@@ -202,7 +221,7 @@ func TestMaterialize_ExtendsRootSymlinkAndEmptyTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		resolve := func(context.Context, string) (string, error) { return link, nil }
-		m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("/etc/ccf/policies")}, resolve)
+		m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("/etc/ccf/policies")}, resolve)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +231,7 @@ func TestMaterialize_ExtendsRootSymlinkAndEmptyTree(t *testing.T) {
 	})
 	t.Run("a tree without .rego files is an error", func(t *testing.T) {
 		_, resolve := vendorTree(t, map[string]string{"README.md": "nothing here"})
-		_, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1")}, resolve)
+		_, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1")}, resolve)
 		if !errors.Is(err, ErrResolve) || !strings.Contains(err.Error(), "no .rego files") {
 			t.Fatalf("expected an ErrResolve for an empty extends tree, got %v", err)
 		}
@@ -231,7 +250,7 @@ func TestMaterialize_SkipsSymlinksInExtends(t *testing.T) {
 	if err := os.Symlink(secret, filepath.Join(dir, "link.rego")); err != nil {
 		t.Fatal(err)
 	}
-	m, err := Materialize(context.Background(), t.TempDir(), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1")}, resolve)
+	m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", &agentconfig.PolicyBundle{Extends: strptr("ghcr.io/vendor/policies:v1")}, resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +265,7 @@ func TestMaterialize_SkipsSymlinksInExtends(t *testing.T) {
 func materialize(t *testing.T, vendor map[string]string, b *agentconfig.PolicyBundle) *Materialized {
 	t.Helper()
 	_, resolve := vendorTree(t, vendor)
-	m, err := Materialize(context.Background(), t.TempDir(), "b", b, resolve)
+	m, err := Materialize(context.Background(), testLayout(t.TempDir()), "b", b, resolve)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -457,8 +476,11 @@ func TestGC_KeepsActiveAndNewest(t *testing.T) {
 	root := t.TempDir()
 	var dirs []string
 	for i := 0; i < 8; i++ {
-		d := filepath.Join(root, "ssh", strings.Repeat(string(rune('a'+i)), 4))
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		d := filepath.Join(root, "store", "ssh", strings.Repeat(string(rune('a'+i)), 4))
+		if err := os.MkdirAll(filepath.Join(d, treeDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, treeMarker), nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		mod := time.Now().Add(time.Duration(i) * time.Minute)
@@ -467,11 +489,11 @@ func TestGC_KeepsActiveAndNewest(t *testing.T) {
 		}
 		dirs = append(dirs, d)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "ssh", ".tmp-abc"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "store", "ssh", ".tmp-abc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	keep := map[string]struct{}{dirs[0]: {}} // the oldest is active
-	if err := GC(root, keep, 5); err != nil {
+	if err := GC(testLayout(root), keep, 5); err != nil {
 		t.Fatal(err)
 	}
 	for i, d := range dirs {
@@ -482,7 +504,7 @@ func TestGC_KeepsActiveAndNewest(t *testing.T) {
 			t.Fatalf("dir %d exists=%v want %v", i, exists, want)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "ssh", ".tmp-abc")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, "store", "ssh", ".tmp-abc")); !os.IsNotExist(err) {
 		t.Fatal("abandoned temp dirs must be removed")
 	}
 }

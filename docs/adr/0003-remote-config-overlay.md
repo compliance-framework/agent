@@ -103,8 +103,9 @@ relies on) warn. A pseudo-version counts as its base tag, since an untagged comm
 ### Stable inline paths (R67)
 
 `policy-manager` seeds evidence UUIDs with the policy file path. Materialized bundles stay write-once,
-content-addressed directories (`<name>/<digest>/bundle`), but plugins receive `<name>/current/bundle`, where `current`
-is a symlink swapped with an atomic rename. The symlink is an intermediate path component on purpose: OPA's bundle
+content-addressed directories (`<state>/inline/<name>/<digest>/policies`), but plugins receive
+`.compliance-framework/policies/inline/<name>/policies` (R82; `<state>/inline/<name>/current/bundle` before), where
+`.compliance-framework/policies/inline/<name>` is a symlink swapped with an atomic rename. The symlink is an intermediate path component on purpose: OPA's bundle
 loader does not descend into a symlinked root directory and would silently load nothing. The run loop swaps it only
 between two configuration runs, after the reload drain, and on a fallback; a plugin run therefore sees one tree from
 start to end, and its API helper resolves the path when the run starts, so evidence artifacts are the tree the run

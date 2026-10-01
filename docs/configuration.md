@@ -289,21 +289,31 @@ policy_bundles:
   involved, or changes one of the bundles involved) and warnings when they come from the file (R34), even under an
   overlay that changes something else. Replace the source with the inline bundle
   instead of listing both.
-- **Overrides and evidence streams (R75).** Overriding a vendor module keeps its evidence stream only if the
-  override keeps the vendor module's `package` and continues its identity (see "Policy identity" below). A changed
-  `package` is a `policy-package-changed` warning; a `policy_id` that does not continue the vendor stream (missing,
-  removed or changed) is a `policy-stream-forked` warning, which names the `policy_id` that would continue it.
+- **Overrides and evidence streams (R75, R82).** Inherited and overridden vendor modules keep their evidence
+  stream automatically: while materializing a bundle that `extends` a source, the agent appends
+  `policy_id := "<extends plugin-path>/<file>"` (or the vendor package's own `policy_id`, when it declares one) to
+  every non-test `compliance_framework.*` module that continues a vendor file and whose package declares no
+  `policy_id`: a module inherited unchanged, or an override at the same path that keeps the vendor module's `package`.
+  An explicit `policy_id` always wins. A package with more than one non-test module in the bundle is skipped with a
+  `policy-id-continuity-skipped` warning (one `policy_id` rule would name a single file for all of them); declare it
+  yourself in one module. The materialized tree, its digest, its artifact and the report's `files[]` include the
+  appended line; `extends.files[]` keeps the vendor's own hashes. A changed `package` is a `policy-package-changed`
+  warning; an explicit `policy_id` that does not continue the vendor stream is a `policy-stream-forked` warning,
+  which names the `policy_id` that would continue it.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
-- **Where bundles live (R67).** Inline bundles are written under the state directory and are never downloaded. Each
-  revision of a bundle is a write-once directory named by its tree digest, `<state>/inline/<bundle>/<digest>/bundle/`,
-  but plugins always receive the same path, `<state>/inline/<bundle>/current/bundle`: `current` is a symlink the agent
-  swaps atomically to the running revision's directory, between two configuration runs (never while a plugin of the
-  previous configuration runs). Evidence UUIDs are seeded with the policy file path, so an unchanged package keeps its
-  evidence identity across edits of the bundle. On a file system without symlinks (Windows without the privilege),
-  plugins receive the digest directory itself and evidence identity changes with each revision, as before.
-  Directories no running, pending or fallback configuration uses are garbage-collected, never the one `current`
-  points to.
+- **Where bundles live (R67, R82).** Inline bundles are never downloaded. Each revision of a bundle is a write-once
+  directory under the state directory named by its tree digest, `<state>/inline/<bundle>/<digest>/policies/`, but
+  plugins always receive the same relative path, `.compliance-framework/policies/inline/<bundle>/policies` (relative
+  to the agent's working directory, like an OCI source's path): `.compliance-framework/policies/inline/<bundle>` is a
+  symlink the agent swaps atomically to the running revision's directory, between two configuration runs (never
+  while a plugin of the previous configuration runs). Evidence UUIDs are seeded with the policy file path, so an
+  unchanged package keeps its evidence identity across edits of the bundle, and a new module's stream does not
+  depend on the state directory. Two agents that share a working directory and use the same bundle name would swap
+  the same link: run one agent per working directory. On a file system without symlinks (Windows without the
+  privilege), plugins receive the digest directory itself and evidence identity changes with each revision.
+  Directories no running, pending or fallback configuration uses are garbage-collected, never the one the link
+  points to; trees and `current` links of the earlier `<state>/inline/<bundle>/current/bundle` layout are removed.
 - **Plugin paths (R77).** Each `policy-bundles[]` entry of the configuration report carries `plugin-path`, the exact
   path string the agent passes plugins for that source: the stable path for an inline bundle, and the path the
   agent extracted an OCI source to, or a local source as configured. It is what a continuity `policy_id` is built

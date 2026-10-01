@@ -206,6 +206,9 @@ type reconciler struct {
 	// resolvePolicy returns the policy root of an OCI or local policy source (downloading it
 	// into the shared cache); it serves inline bundles' extends and the report inventory.
 	resolvePolicy inlinepolicy.Resolver
+	// inlineLinks overrides inlineLinksDir, where plugins receive inline bundles (a test
+	// seam: the default is relative to the working directory).
+	inlineLinks string
 	// pluginLib reads the agent library version of a prefetched plugin source (R76, R79);
 	// nil skips the plugin compatibility checks and report.
 	pluginLib pluginLibFunc
