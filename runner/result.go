@@ -17,6 +17,29 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 	artifacts   *artifactUploader
+
+	// pluginSource and policySources are the configured references the plugin and its
+	// policy bundles came from, recorded on evidence as _plugin_source and _policy_source.
+	pluginSource  string
+	policySources map[string]string
+}
+
+// Evidence props recording where the plugin and policy bundle came from: the configured
+// source, an OCI reference or a local path.
+const (
+	PropPluginSource = "_plugin_source"
+	PropPolicySource = "_policy_source"
+)
+
+// WithSources sets the plugin's configured source and the configured source of each policy
+// bundle, keyed by the local path the agent gave the plugin.
+func WithSources(pluginSource string, policySources map[string]string) ApiHelperOption {
+	return func(h *apiHelper) {
+		h.pluginSource = pluginSource
+		for path, source := range policySources {
+			h.policySources[filepath.Clean(path)] = source
+		}
+	}
 }
 
 type ApiHelperOption func(*apiHelper)
@@ -39,6 +62,8 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
 		artifacts:   newArtifactUploader(client),
+
+		policySources: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -68,6 +93,9 @@ func (h *apiHelper) NewEvidenceSender(ctx context.Context) EvidenceSender {
 type evaluationOutcome struct {
 	// refs are the stored artifacts' digests, or nil if the evidence goes without them.
 	refs *types.PolicyArtifacts
+	// policyPath is the evaluation's policy bundle path, kept so evidence that refers to an
+	// earlier evaluation in a stream still records its policy source.
+	policyPath string
 }
 
 type apiEvidenceSender struct {
@@ -82,13 +110,15 @@ type apiEvidenceSender struct {
 
 func (s *apiEvidenceSender) Send(e *proto.Evidence) {
 	var refs *types.PolicyArtifacts
+	policyPath := ""
 	if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
-		refs = s.outcome(evaluation).refs
+		outcome := s.outcome(evaluation)
+		refs, policyPath = outcome.refs, outcome.policyPath
 		if refs == nil {
 			s.notReplayable++
 		}
 	}
-	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs)); err != nil {
+	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs, policyPath)); err != nil {
 		s.sendErr = errors.Join(s.sendErr, err)
 	}
 }
@@ -100,6 +130,7 @@ func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluati
 	}
 
 	var outcome evaluationOutcome
+	outcome.policyPath = evaluation.GetPolicyPath()
 	if isReference(evaluation) {
 		s.h.logger.Warn("Sending evidence without policy artifacts; it cannot be played back",
 			"error", unknownEvaluation(evaluation.GetId()))
@@ -131,9 +162,23 @@ func (s *apiEvidenceSender) Close() error {
 
 // toSdk converts evidence for the API, merging agent, config and finding labels, and
 // referring to its stored artifacts. The evaluation's raw data is not included.
-func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts) types.Evidence {
+func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policyPath string) types.Evidence {
 	evid := EvidenceProtoToSdk(e)
 	evid.PolicyArtifacts = refs
+	// The agent owns the source props; any a plugin set are replaced.
+	props := evid.Props[:0]
+	for _, prop := range evid.Props {
+		if prop.Name != PropPluginSource && prop.Name != PropPolicySource {
+			props = append(props, prop)
+		}
+	}
+	evid.Props = props
+	if h.pluginSource != "" {
+		evid.Props = append(evid.Props, types.Property{Name: PropPluginSource, Value: h.pluginSource})
+	}
+	if source := h.policySources[filepath.Clean(policyPath)]; policyPath != "" && source != "" {
+		evid.Props = append(evid.Props, types.Property{Name: PropPolicySource, Value: source})
+	}
 	labels := make(map[string]string)
 	for k, v := range h.agentLabels {
 		labels[k] = v
