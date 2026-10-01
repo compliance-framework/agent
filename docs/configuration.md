@@ -277,9 +277,21 @@ policy_bundles:
 - **Vendor tests that no longer compile (R65)** reject the revision: plugins compile `_test.rego` files too, so such a
   bundle would produce no evidence at all. When the failing file is a vendor file in a package an authored module
   also defines, the error carries a hint: keep the rule the override removed, or add the test to `delete`.
-- **Duplicate evidence (R66).** When a plugin lists both a source and an inline bundle that `extends` it, every
-  vendor package is evaluated twice and recorded twice. The agent reports a warning naming both paths; replace the
-  source with the inline bundle instead.
+- **Duplicate evidence (R66, R75).** A plugin evaluates each of its policy paths separately, so a policy it loads
+  twice is recorded twice. Across all of a plugin's policy paths the agent reports:
+  - `duplicate-policy-id`: two modules declare the same `policy_id`;
+  - `duplicate-policy-identity`: two paths load the same evidence identity, either the same package and
+    bundle-relative file without `policy_id` (typically a source listed next to an inline bundle that `extends` it),
+    or a `policy_id` that continues the stream of a module the plugin also loads;
+  - `duplicate-policy-package` (warning): the same package from two paths otherwise.
+
+  The first two are **errors** when the overlay introduces them (it changes the plugin's `policies` or one of the
+  bundles involved) and warnings when they come from the file (R34). Replace the source with the inline bundle
+  instead of listing both.
+- **Overrides and evidence streams (R75).** Overriding a vendor module keeps its evidence stream only if the
+  override keeps the vendor module's `package` and continues its identity (see "Policy identity" below). A changed
+  `package` is a `policy-package-changed` warning; a `policy_id` that does not continue the vendor stream (missing,
+  removed or changed) is a `policy-stream-forked` warning, which names the `policy_id` that would continue it.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
 - **Where bundles live (R67).** Inline bundles are written under the state directory and are never downloaded. Each
@@ -291,6 +303,10 @@ policy_bundles:
   plugins receive the digest directory itself and evidence identity changes with each revision, as before.
   Directories no running, pending or fallback configuration uses are garbage-collected, never the one `current`
   points to.
+- **Plugin paths (R77).** Each `policy-bundles[]` entry of the configuration report carries `plugin-path`, the exact
+  path string the agent passes plugins for that source: the stable path for an inline bundle, and the path the
+  agent extracted an OCI source to, or a local source as configured. It is what a continuity `policy_id` is built
+  from.
 - **Sources for the UI (R62).** Outside mode `off`, the agent uploads every policy tree it reports (each inline
   bundle, the tree it extends, and each OCI or local source a plugin uses) as a policy bundle artifact, and reports
   its `artifact-digest` next to the tree digest, so the UI can show and pre-fill vendor sources. These are the same
@@ -298,6 +314,67 @@ policy_bundles:
   best effort: a failure (an API without artifacts, a tree over the API's size limit, a timeout) leaves
   `artifact-digest` empty and never rejects or fails a revision. Note that artifacts are readable with
   `artifact:read`.
+
+### Policy identity (`policy_id`, R74)
+
+Plugins seed each evidence UUID with the policy's package, its file (the plugin path joined with the module's path in
+the bundle) and their `_policy_path` label (the plugin path). So moving a policy (an override in an inline bundle, a
+new OCI tag, a renamed bundle, a moved state directory) starts a new evidence stream. A module may declare its
+identity instead:
+
+```rego
+package compliance_framework.ssh_deny_password_auth
+
+import rego.v1
+
+policy_id := "ssh-deny-password-auth"
+```
+
+- **Without `policy_id` nothing changes**: the seed is exactly what it has always been.
+- **With one**, `policy-manager` seeds with `policyeval.SeedPath`: the `policy_file` seed is the `policy_id`, and the
+  `_policy_path` seed (when the plugin labels it) is the `policy_id` minus the module's bundle-relative path when it
+  ends in `/<path>`, else the `policy_id` itself. Evidence keeps its real `_policy_path` label and gains `_policy_id`.
+- **Continue a stream** with `policy_id := "<plugin-path>/<file>"`: the old location reproduces the old UUID, so an
+  override keeps writing to the vendor policy's stream. The UI pre-fills it from the report's `plugin-path`.
+  (A local source configured with a non-clean path such as `./policies` is the exception for plugins that label
+  `_policy_path`: their seed keeps the literal `./policies`, which a `policy_id` does not reproduce.)
+- **A stable stream**: any other `policy_id` (for example `<bundle>/<file>`) does not depend on where the bundle
+  lives.
+- `policy_id` must be `policy_id := "<literal>"`, declared once per package, at most 512 characters
+  (`invalid-policy-id` otherwise), and unique among the policies a plugin loads.
+
+| Change | Evidence stream |
+|---|---|
+| override a policy, keeping its `policy_id` (or the continuity `policy_id`) | the same stream |
+| `delete` the policy | the stream stops receiving evidence |
+| revert the override | the same stream |
+| a new policy | a new stream, from its `policy_id` |
+| publish it into a real bundle with the same `policy_id` | the same stream |
+| change the overridden module's `package` | a new stream (`policy-package-changed`) |
+
+**Plugins must be rebuilt.** Plugins seed evidence with the `policy-manager` they embed, so `policy_id` only takes
+effect for plugins built on an agent library that includes it (agent ≥ v0.9.0, `pluginlib.MinInlinePolicy`).
+
+### Plugin compatibility (R76, R79)
+
+The agent reads each plugin's agent library version from the binary's Go build info, without starting it, and
+reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `supported`, `unsupported` or
+`unknown`).
+
+- **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
+  An overlay that gives an `inline:` bundle to a plugin built on an older library, or changes a bundle such a plugin
+  uses, is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
+  support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
+  running.
+- **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
+  `violation[{...}] if { ... }`. An authored module that uses them for such a plugin is also named
+  (`plugin-lib-violation-set-unsupported`), with that fix.
+- **Unknown versions are warnings**: a `replace`d or `(devel)` build, a pseudo-version with no tag before it, or a
+  binary without build info. Local plugin builds therefore keep working.
+- **File-defined inline bundles only warn** (R34), and for them each authored `policy_id` the plugin would ignore is a
+  `plugin-lib-policy-id-unsupported` warning ("this module starts a new evidence stream").
+- A pseudo-version counts as the tag it was built after, so a plugin built on an unreleased commit after v0.8.x is
+  `unsupported` until it moves to a v0.9.0 build (or a `replace`, which is `unknown`).
 
 ## Remote configuration
 

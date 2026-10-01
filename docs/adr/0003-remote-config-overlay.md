@@ -62,7 +62,7 @@ executes on the agent host while a revision is checked (D17); a vendor test that
 Residual risk (R20): a vendor rule that already calls `http.send` with a URL taken from `data` makes `policy_data`
 edits to that plugin effectively able to direct its requests. Eval-time capabilities are a follow-up.
 
-### Policy contract: the agent is authoritative (R63, R65, R66)
+### Policy contract: the agent is authoritative (R63, R65)
 
 The API's `regocheck` runs `policyeval.CheckContract` on the authored modules only (it lacks the extends trees). The
 agent, after the compile and the tests pass, adds what needs the whole tree: the static check on the vendor-only
@@ -71,8 +71,32 @@ and `policy-manager`'s `GetRiskTemplates`, sandboxed like the tests. Decode erro
 `PolicyError`s with the contract codes: errors for packages that contain an authored non-test module, warnings for
 vendor-only packages; conflicts that only show on `{}` and input-dependent titles are warnings. A package that fails to evaluate is
 left out of the next attempt, so one broken package does not hide the others. A compile error in a vendor file whose
-package an authored module also defines carries an override hint (R65). A package defined in two of a plugin's policy
-paths is a warning naming both (R66). The per-plugin results are de-duplicated before they are reported.
+package an authored module also defines carries an override hint (R65). The per-plugin results are de-duplicated before they are reported.
+
+### Evidence identity across a plugin's paths (R66, R74, R75)
+
+`policy-manager` seeds evidence UUIDs from the policy's package, file and plugin path, and, when the module declares
+one, from its `policy_id` through `policyeval.SeedPath` (the API's function, so the API, the agent and the UI agree).
+Without a `policy_id` the seed is byte for byte the old one: we never change the identity of an existing stream.
+The agent checks identity statically, with the same rule the API's contract check enforces (`policy_id :=
+"<literal>"`, once per package), over every module of every policy path of each plugin that uses an inline bundle:
+the same `policy_id` twice is `duplicate-policy-id`, and the same identity from two paths (equal seeds, or the same
+package and bundle-relative file without `policy_id`) is `duplicate-policy-identity`. Both are errors when the overlay
+touches the plugin's `policies` or a bundle involved, warnings otherwise (R34); what is left of R66 (the same package
+with different identities) stays a warning. For an `extends` bundle, an override is compared with the vendor module it
+replaces by the seeds plugins would compute from the extends source's path and the bundle's path: a changed
+`package` is `policy-package-changed`, any other difference `policy-stream-forked` (warnings).
+
+### Plugin library gate (R76, R79)
+
+What a plugin can do with a policy depends on the `policy-manager` compiled into it, not on the running agent. The
+agent reads the `github.com/compliance-framework/agent` version from each plugin binary with
+`debug/buildinfo.ReadFile` (memoized by path, size and modification time) after prefetch, and gates inline policies on
+`pluginlib.MinInlinePolicy` (v0.9.0: no release has R74 yet and v0.8.0 is being cut without it; update the constant
+if that changes). We chose a hard gate over per-feature warnings because a plugin that ignores `policy_id` silently
+forks every overridden stream, and one older than v0.7.1 crashes on set-form violations. Only overlay-introduced
+inline policies are rejected; file bundles and unknown versions (a `replace` or devel build, which local development
+relies on) warn. A pseudo-version counts as its base tag, since an untagged commit after v0.8.x may not contain R74.
 
 ### Stable inline paths (R67)
 
