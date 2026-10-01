@@ -360,7 +360,7 @@ func TestPolicyProcessorNewEvidenceRejectsMissingTitle(t *testing.T) {
 			Package: Package("data.compliance_framework.missing_title"),
 		},
 		EvalOutput: &EvalOutput{},
-	}, nil)
+	}, "", nil)
 
 	assert.Nil(t, evidence)
 	assert.EqualError(t, err, "evidence title is required")
