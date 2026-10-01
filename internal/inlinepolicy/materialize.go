@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/compliance-framework/agent/internal/policytree"
+	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"sigs.k8s.io/yaml"
 )
@@ -106,12 +107,29 @@ type Materialized struct {
 	// Continued maps the modules the agent appended a continuity policy_id to (R82), by
 	// path, to that policy_id.
 	Continued map[string]string
+	// Shadowed is set when plugins receive the bundle at the extends source's own path,
+	// resolved to Dir inside each plugin's view (path shadowing, see internal/policyview):
+	// Path is then Extends.PluginPath, and no continuity policy_id is appended, because the
+	// path string alone keeps the vendor's evidence streams.
+	Shadowed bool
+}
+
+// Options change how Materialize writes a bundle.
+type Options struct {
+	// Shadow asks for path shadowing: when the bundle extends a source whose plugin path
+	// policyview.Shadowable accepts, plugins receive that path (Materialized.Shadowed) and
+	// the tree is written without continuity policy_ids. Otherwise it is ignored.
+	Shadow bool
 }
 
 // Materialize builds bundle name in the R17 order (extends tree, delete, modules, data),
 // checks the data-file rule (R18), appends the continuity policy_id to the modules that
 // continue a vendor file (R82) and writes the result write-once under l.Store.
-func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.PolicyBundle, resolve Resolver) (*Materialized, error) {
+func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.PolicyBundle, resolve Resolver, opts ...Options) (*Materialized, error) {
+	var opt Options
+	for _, o := range opts {
+		opt.Shadow = opt.Shadow || o.Shadow
+	}
 	if b == nil {
 		return nil, PolicyErrors{{Bundle: name, Message: "bundle has no definition", Severity: agentconfig.SeverityError}}
 	}
@@ -230,8 +248,9 @@ func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.Poli
 	// The authored constructs, before the agent adds anything.
 	m.SetViolations, m.PolicyIDRules = authoredSites(files, m.Authored)
 
-	// 6. Continuity policy_id (R82).
-	if m.Extends != nil {
+	// 6. Continuity: path shadowing, or else the continuity policy_id (R82).
+	m.Shadowed = opt.Shadow && m.Extends != nil && policyview.Shadowable(m.ExtendsDir) == nil
+	if m.Extends != nil && !m.Shadowed {
 		m.Warnings = append(m.Warnings, continueVendorStreams(m, files, vendorFiles)...)
 	}
 
@@ -243,7 +262,10 @@ func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.Poli
 	}
 	m.Dir = filepath.Join(final, treeDir)
 	m.Path = m.Dir
-	if symlinksSupported(l.Links) {
+	switch {
+	case m.Shadowed:
+		m.Path = m.ExtendsDir
+	case symlinksSupported(l.Links):
 		m.Path = filepath.Join(l.Links, name, treeDir)
 	}
 
@@ -578,3 +600,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	slices.Sort(keys)
 	return keys
 }
+
+// SymlinksSupported reports, once per root, whether symlinks can be created under root.
+func SymlinksSupported(root string) bool { return symlinksSupported(root) }

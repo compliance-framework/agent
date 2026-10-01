@@ -100,6 +100,18 @@ forks every overridden stream, and one older than v0.7.1 crashes on set-form vio
 inline policies are rejected; file bundles and unknown versions (a `replace` or devel build, which local development
 relies on) warn. A pseudo-version counts as its base tag, since an untagged commit after v0.8.x or a v0.9.0 RC may not contain R74.
 
+### Path shadowing (prototype)
+
+Instead of making every plugin honour a continuity `policy_id` (R74/R82, which needs plugins rebuilt on agent ≥
+v0.9.0), a bundle that extends a relative source is given to plugins at the source's own path, and the plugin runs
+with a per-plugin view directory as its working directory (`internal/policyview`), in which that path's parent links
+to the bundle's tree and everything else mirrors the agent's working directory. Evidence identity is then the vendor's
+by construction, for every plugin build. The agent resolves every relative policy path of such a plugin through its
+view (artifact uploads, source props). R82's `policy_id` remains the fallback where a view cannot represent the paths
+(absolute `extends`, a plugin loading the source and the bundle together), and the R79 gate only applies there.
+Risk: a plugin that relies on its working directory sees the view (mirrored, so reads and writes inside existing
+directories still reach the agent's; new top-level files stay in the view).
+
 ### Stable inline paths (R67)
 
 `policy-manager` seeds evidence UUIDs with the policy file path. Materialized bundles stay write-once,

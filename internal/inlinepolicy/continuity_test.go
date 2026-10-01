@@ -292,3 +292,29 @@ func sha(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
+
+// TestShadow_MaterializeWithoutContinuityPolicyID: with Options.Shadow and a shadowable
+// extends path, plugins receive the extends path itself and the tree is written without
+// continuity policy_ids; an absolute extends path ignores the option (R82 fallback).
+func TestShadow_MaterializeWithoutContinuityPolicyID(t *testing.T) {
+	l, resolve := r82Setup(t)
+	b := &agentconfig.PolicyBundle{
+		Extends: strptr("ghcr.io/compliance-framework/plugin-local-ssh-policies:v0.2.0"),
+		Modules: map[string]string{"custom/new.rego": "package compliance_framework.custom_new\n\nimport rego.v1\n\ntitle := \"New\"\n\nviolation[{\"id\": \"n\"}] if input.password\n"},
+	}
+	m, err := Materialize(context.Background(), l, "custom", b, resolve, Options{Shadow: true})
+	require.NoError(t, err)
+	assert.True(t, m.Shadowed)
+	assert.Equal(t, r82Vendor, m.Path, "plugins receive the vendor's path string")
+	assert.Empty(t, m.Continued)
+	assert.Equal(t, r82VendorFiles["banner.rego"], readFile(t, m.Dir, "banner.rego"), "inherited modules keep the vendor bytes")
+	assert.Empty(t, OverrideStreams(m))
+
+	abs, err := filepath.Abs(r82Vendor)
+	require.NoError(t, err)
+	m, err = Materialize(context.Background(), l, "custom", b, func(context.Context, string) (string, error) { return abs, nil }, Options{Shadow: true})
+	require.NoError(t, err)
+	assert.False(t, m.Shadowed, "an absolute extends path cannot be shadowed")
+	assert.Equal(t, ".compliance-framework/policies/inline/custom/policies", filepath.ToSlash(m.Path))
+	assert.NotEmpty(t, m.Continued, "the R82 continuity policy_id is the fallback")
+}

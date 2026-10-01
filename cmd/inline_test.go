@@ -594,47 +594,6 @@ func TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75(t *testing.T) {
 	}
 }
 
-// TestInline_RelativePathContinuesVendorStreams_R82: plugins receive an inline bundle at
-// the relative .compliance-framework/policies/inline/<name>/policies, like a local source,
-// and an inherited vendor module keeps the vendor's evidence stream with no policy_id
-// written by the user, next to an added module.
-func TestInline_RelativePathContinuesVendorStreams_R82(t *testing.T) {
-	const source = "ghcr.io/vendor/policies:v1"
-	const extracted = ".compliance-framework/policies/vendor/policies/v1/policies"
-	t.Chdir(t.TempDir())
-	if err := os.MkdirAll(extracted, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(extracted, "banner.rego"), []byte(r78Vendor), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	h := r78Harness(t, source, false, func(_ context.Context, s string) (string, error) {
-		if s == source {
-			return extracted, nil
-		}
-		return "", errors.New("unknown source " + s)
-	})
-	h.rc.inlineLinks = "" // the agent's default, relative to the working directory
-	active := mustStartup(t, h.rc)
-	if err := h.rc.activateInline(active); err != nil {
-		t.Fatal(err)
-	}
-
-	const want = ".compliance-framework/policies/inline/ssh/policies"
-	path := active.runtime.inlinePolicyDirs["inline:ssh"]
-	if filepath.ToSlash(path) != want {
-		t.Fatalf("plugins receive %q, want %q", path, want)
-	}
-	inline, _ := r78Report(t, h)
-	if inline.PluginPath != path {
-		t.Fatalf("plugin-path = %q, want %q", inline.PluginPath, path)
-	}
-	for _, code := range []string{inlinepolicy.CodePolicyStreamForked, inlinepolicy.CodeContinuityPolicyIDSkipped, agentconfig.PolicyCodeDuplicatePolicyIdentity} {
-		if got := policyErrorsWithCode(h.remote.lastReport(t), code); len(got) != 0 {
-			t.Fatalf("unexpected %s: %+v", code, got)
-		}
-	}
-	if got, want := r78Evidence(t, path), r78Evidence(t, extracted); got != want {
-		t.Fatalf("inherited banner evidence UUID = %s, want the vendor's %s", got, want)
-	}
-}
+// TestInline_RelativePathContinuesVendorStreams_R82 moved to shadow_test.go: a bundle that
+// extends a relative source is now shadowed (TestShadow_PluginReceivesTheVendorPathInItsView);
+// the R82 fallback is TestShadow_PluginAlsoLoadingTheSourceFallsBack.

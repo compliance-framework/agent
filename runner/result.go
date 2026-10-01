@@ -20,6 +20,10 @@ type apiHelper struct {
 	// policyPaths maps each policy path the plugin was given (cleaned) to the directory it
 	// resolved to when the helper was created.
 	policyPaths map[string]string
+	// rawPolicyPaths and policyRoot are what WithPolicyPaths and WithPolicyRoot set;
+	// NewApiHelper resolves them into policyPaths.
+	rawPolicyPaths []string
+	policyRoot     string
 	// evidenceProps are appended to every evidence the plugin creates.
 	evidenceProps []types.Property
 
@@ -56,6 +60,10 @@ const (
 	PropPolicyDigest = "_policy_digest"
 )
 
+// LabelPolicyPath is the evidence label in which plugins record the policy path they were
+// given (policy-manager's _policy_path).
+const LabelPolicyPath = "_policy_path"
+
 func isSourceProp(name string) bool {
 	switch name {
 	case PropPluginSource, PropPluginDigest, PropPolicySource, PropPolicyDigest:
@@ -83,14 +91,32 @@ type ApiHelperOption func(*apiHelper)
 // configuration runs, and the artifact must be the tree this run evaluated.
 func WithPolicyPaths(paths []string) ApiHelperOption {
 	return func(h *apiHelper) {
-		for _, path := range paths {
-			clean := filepath.Clean(path)
-			dir := clean
-			if resolved, err := filepath.EvalSymlinks(clean); err == nil {
-				dir = resolved
-			}
-			h.policyPaths[clean] = dir
+		h.rawPolicyPaths = append(h.rawPolicyPaths, paths...)
+	}
+}
+
+// WithPolicyRoot sets the working directory the plugin runs in (its view, when it receives
+// a shadowed inline bundle): relative policy paths resolve against it, as they do for the
+// plugin, so the agent reads the tree the plugin evaluated. Empty means the agent's own
+// working directory.
+func WithPolicyRoot(dir string) ApiHelperOption {
+	return func(h *apiHelper) {
+		h.policyRoot = dir
+	}
+}
+
+// resolvePolicyPaths fills policyPaths from rawPolicyPaths and policyRoot.
+func (h *apiHelper) resolvePolicyPaths() {
+	for _, path := range h.rawPolicyPaths {
+		clean := filepath.Clean(path)
+		dir := clean
+		if h.policyRoot != "" && !filepath.IsAbs(clean) {
+			dir = filepath.Join(h.policyRoot, clean)
 		}
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		h.policyPaths[clean] = dir
 	}
 }
 
@@ -128,6 +154,7 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 	for _, opt := range opts {
 		opt(h)
 	}
+	h.resolvePolicyPaths()
 	if h.uploader == nil {
 		h.uploader = NewArtifactUploader()
 	}
@@ -240,6 +267,15 @@ func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Ev
 		}
 	}
 	evid.Props = appendSource(props, h.pluginSource, PropPluginSource, PropPluginDigest)
+	if outcome.policyPath == "" {
+		// Plugins built on an agent library without policy evaluations still label their
+		// evidence with the policy path they were given.
+		if p := evid.Labels[LabelPolicyPath]; p != "" {
+			if _, known := h.policySources[filepath.Clean(p)]; known {
+				outcome.policyPath = p
+			}
+		}
+	}
 	if outcome.policyPath != "" {
 		evid.Props = appendSource(evid.Props, h.policySource(outcome), PropPolicySource, PropPolicyDigest)
 	}

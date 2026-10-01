@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
+	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/pkg/agentconfig/regocheck"
 )
@@ -67,10 +68,15 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 		return res, nil
 	}
 
+	// Path shadowing is decided before materializing: a shadowed bundle's tree has no
+	// continuity policy_id.
+	plan := rc.planShadowing(ctx, resolved, skip, refs)
+
 	materialized := map[string]*inlinepolicy.Materialized{}
 	var problems []agentconfig.PolicyError
 	for _, name := range sortedBoolKeys(refs) {
-		m, err := inlinepolicy.Materialize(ctx, rc.inlineLayout(), name, resolved.PolicyBundles[name], rc.boundedResolver())
+		m, err := inlinepolicy.Materialize(ctx, rc.inlineLayout(), name, resolved.PolicyBundles[name], rc.boundedResolver(),
+			inlinepolicy.Options{Shadow: plan.shadow[name]})
 		var perrs inlinepolicy.PolicyErrors
 		switch {
 		case errors.As(err, &perrs):
@@ -124,6 +130,12 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	res.warnings = append(res.warnings, problems...)
 	res.warnings = dedupePolicyErrors(res.warnings)
 	agentconfig.SortPolicyErrors(res.warnings)
+
+	views, err := rc.buildViews(plan, materialized)
+	if err != nil {
+		return res, failed(agentconfig.ReasonInternal, err)
+	}
+	res.views = views
 
 	res.materialized = materialized
 	res.dirs = map[string]string{}
@@ -273,6 +285,7 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 	rc.inlineMu.Lock()
 	defer rc.inlineMu.Unlock()
 	dirs := map[string]struct{}{}
+	views := map[string]struct{}{}
 	found := false
 	for _, c := range keep {
 		if c == nil || c.runtime == nil {
@@ -282,6 +295,9 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 		for _, dir := range c.runtime.inlineTrees {
 			dirs[dir] = struct{}{}
 		}
+		for _, v := range c.runtime.pluginViews {
+			views[v.Dir] = struct{}{}
+		}
 	}
 	if !found {
 		return
@@ -289,9 +305,18 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 	if err := inlinepolicy.GC(rc.inlineLayout(), dirs, inlineGCKeepPerBundle); err != nil {
 		rc.logger.Warn("Could not clean up old inline policy bundles", "error", err)
 	}
+	// Views of no kept candidate: they are cheap to rebuild, and a plugin of an earlier
+	// configuration no longer runs (GC runs after the swap's drain).
+	if root, err := filepath.Abs(rc.viewsRoot()); err == nil {
+		if err := policyview.GC(root, views); err != nil {
+			rc.logger.Warn("Could not clean up old plugin views", "error", err)
+		}
+	}
 }
 
-// activateInline points the stable path of each inline bundle c uses at c's tree (R67).
+// activateInline points the stable path of each inline bundle c uses at c's tree (R67),
+// then creates the views of the plugins that receive a shadowed bundle. Views are
+// content-addressed, so a new tree is a new view and nothing is swapped under a plugin.
 func (rc *reconciler) activateInline(c *candidate) error {
 	if c == nil || c.runtime == nil || len(c.runtime.inlineTrees) == 0 {
 		return nil
@@ -302,6 +327,9 @@ func (rc *reconciler) activateInline(c *candidate) error {
 	for _, entry := range sortedStringKeys(c.runtime.inlineTrees) {
 		name := strings.TrimPrefix(entry, agentconfig.InlineSourcePrefix)
 		errs = append(errs, inlinepolicy.Activate(rc.inlineLayout(), name, c.runtime.inlineTrees[entry]))
+	}
+	for _, plugin := range sortedMapKeys(c.runtime.pluginViews) {
+		errs = append(errs, c.runtime.pluginViews[plugin].Ensure())
 	}
 	return errors.Join(errs...)
 }

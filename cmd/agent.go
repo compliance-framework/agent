@@ -32,6 +32,7 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/internal/pluginlib"
+	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
@@ -103,6 +104,10 @@ type agentConfig struct {
 	// inlineDigests maps "inline:<name>" policy entries to their tree digest, the evidence
 	// _policy_digest fallback when a bundle's artifact digest is not known.
 	inlineDigests map[string]string
+	// pluginViews are the working directories of the plugins that receive a shadowed inline
+	// bundle (path shadowing): the plugin process runs in its view, where the bundle's
+	// plugin path (the extends source's own path) resolves to the bundle's tree.
+	pluginViews map[string]*policyview.View
 	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
 	// Read it with syncInfo; nil means the zero syncMeta.
 	sync *atomic.Pointer[syncMeta]
@@ -1434,7 +1439,15 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			return err
 		}
 
-		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
+		workDir, err := config.pluginWorkDir(pluginName)
+		if err != nil {
+			ar.markPluginRunFinished(pluginName, err)
+			if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
+				logger.Error("Error sending agent run evidence", "error", evidenceErr)
+			}
+			return err
+		}
+		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion, workDir)
 
 		if err != nil {
 			ar.markPluginRunFinished(pluginName, err)
@@ -1478,6 +1491,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			)
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
 				runner.WithPolicyPaths(policyPaths),
+				runner.WithPolicyRoot(workDir),
 				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
 				runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 				runner.WithEvidenceProps(configRevisionProps(config)...),
@@ -1610,7 +1624,11 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 		return err
 	}
 
-	runnerInstance, cleanupRunner, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion)
+	workDir, err := config.pluginWorkDir(name)
+	if err != nil {
+		return err
+	}
+	runnerInstance, cleanupRunner, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion, workDir)
 
 	if err != nil {
 		return err
@@ -1629,6 +1647,7 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	)
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
 		runner.WithPolicyPaths(policyPaths),
+		runner.WithPolicyRoot(workDir),
 		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
 		runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 		runner.WithEvidenceProps(configRevisionProps(config)...),
@@ -1936,9 +1955,15 @@ func safePluginErrorFilename(pluginName string) string {
 	return b.String() + "-error.txt"
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, func(), error) {
-	// We're a host! Start by launching the plugin process.
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32, workDir string) (runner.RunnerV2, func(), error) {
+	// We're a host! Start by launching the plugin process. The binary is started by its
+	// absolute path: a relative one would resolve against workDir.
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	cmd := exec.Command(path)
+	// A plugin that receives a shadowed inline bundle runs in its view (path shadowing).
+	cmd.Dir = workDir
 	// Plugins get the host environment minus the agent's own API credentials (R26); go-plugin
 	// would otherwise append the whole environment.
 	cmd.Env = pluginEnviron(os.Environ())
@@ -2231,6 +2256,19 @@ func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
 // source and, where known, the digest of what the agent extracted at location.
 func sourceOf(source, location string) runner.Source {
 	return runner.Source{Reference: source, Digest: internal.SourceDigest(source, location)}
+}
+
+// pluginWorkDir returns the working directory plugin runs in: its view, made sure to exist
+// and refreshed (path shadowing), or "" for the agent's own working directory.
+func (c *agentConfig) pluginWorkDir(plugin string) (string, error) {
+	view := c.pluginViews[plugin]
+	if view == nil {
+		return "", nil
+	}
+	if err := view.Ensure(); err != nil {
+		return "", fmt.Errorf("plugin %s: %w", plugin, err)
+	}
+	return view.Dir, nil
 }
 
 // policySource describes where the policy entry, which plugins receive at location, came from.

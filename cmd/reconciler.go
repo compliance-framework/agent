@@ -17,6 +17,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
+	"github.com/compliance-framework/agent/internal/policyview"
 	runnerpkg "github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
@@ -606,6 +607,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	}
 	runtime.inlineTrees = inline.trees
 	runtime.inlineDigests = inline.digests
+	runtime.pluginViews = inline.views
 	prefetchCtx, cancelPrefetch := context.WithTimeout(ctx, prepareNetworkTimeout)
 	err = rc.runner.Prefetch(prefetchCtx, runtime)
 	cancelPrefetch()
@@ -661,6 +663,8 @@ type inlineResult struct {
 	warnings  []agentconfig.PolicyError
 	// materialized are the bundles the enabled plugins use, by name.
 	materialized map[string]*inlinepolicy.Materialized
+	// views are the working directories of the plugins that receive a shadowed bundle.
+	views map[string]*policyview.View
 }
 
 // overlayTouched returns the pointers an overlay changed, computed on the unresolved forms so

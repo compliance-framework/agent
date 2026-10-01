@@ -300,6 +300,27 @@ policy_bundles:
   appended line; `extends.files[]` keeps the vendor's own hashes. A changed `package` is a `policy-package-changed`
   warning; an explicit `policy_id` that does not continue the vendor stream is a `policy-stream-forked` warning,
   which names the `policy_id` that would continue it.
+- **Path shadowing (prototype; takes precedence over the R82 `policy_id` above).** Plugins seed evidence UUIDs from
+  the policy path *string* they receive, so a plugin that keeps receiving the vendor's path keeps the vendor's
+  streams, whatever agent library it was built with. When a bundle `extends` a source whose plugin path is relative
+  and ends in `policies/` (every OCI source, e.g.
+  `.compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.2.0/policies`), plugins receive the
+  bundle **at that exact path**, and each plugin that uses such a bundle runs in its own **view**,
+  `<state>/views/<plugin>/<hash>/`, as its working directory (the plugin binary is started by absolute path). In
+  the view, the path's parent is a symlink to the bundle's content-addressed directory (whose `policies/` is real:
+  OPA loads nothing from a symlinked root), and every other entry of the agent's working directory is mirrored as a
+  symlink, so every other relative path resolves as it does for the agent. The tree gets **no** continuity
+  `policy_id`: inherited and overridden modules continue the vendor streams through the path alone, new modules
+  start their own path-based streams, deleted ones stop. `plugin-path` (and `extends.plugin-path`) report the
+  vendor path; `_policy_source` says `inline:<bundle>` (also for plugins that send no policy evaluations, from
+  their `_policy_path` label) and evaluation-time artifacts are read through the view, i.e. from the bundle's
+  tree. Views are content-addressed (a new revision is a new view, nothing is swapped under a running plugin) and
+  garbage-collected with the inline trees. A bundle is **not** shadowed, and falls back to R82, when its `extends`
+  path is absolute (or not a `policies/` tree), when a plugin using it also loads the source itself (reported as
+  `duplicate-policy-identity` as before) or another bundle extending the same source, when another relative policy
+  path of the plugin cannot be represented in a view (e.g. a single-component path such as `policies`), or without
+  symlinks. A plugin running in a view sees its working directory as the view: files it creates there (rather than
+  through a mirrored directory) stay in the view and are removed with it.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
 - **Where bundles live (R67, R82).** Inline bundles are never downloaded. Each revision of a bundle is a write-once
@@ -370,29 +391,25 @@ policy_id := "ssh-deny-password-auth"
 **Plugins must be rebuilt.** Plugins seed evidence with the `policy-manager` they embed, so `policy_id` only takes
 effect for plugins built on an agent library that includes it (agent ≥ v0.9.0, `pluginlib.MinInlinePolicy`).
 
-### Plugin compatibility (R76, R79)
+### Plugin compatibility (R76, R79, relaxed by path shadowing)
 
 The agent reads each plugin's agent library version from the binary's Go build info, without starting it, and
-reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `supported`, `unsupported` or
-`unknown`).
+reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`). With path shadowing,
+`inline-policies` is `supported` for every known library version (each bundle is checked against it, below) and
+`unknown` when the version is unknown; `unsupported` is no longer reported.
 
-- **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
-  v0.8.0 and v0.8.1 were released without `policy_id`, and v0.9.0 release candidates (`v0.9.0-rc*`) count as older
-  than v0.9.0, so they are `unsupported`, as are pseudo-versions built after them.
-  An overlay that gives an `inline:` entry to a plugin built on an older library, changes a bundle such a plugin
-  uses, or moves a plugin that uses one to such a build (its `source`), is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
-  support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
-  running.
+- **Shadowed bundles and bundles without `extends` work with any plugin build**: continuity comes from the path.
+- **Bundles that extend a source but are not shadowed** (absolute `extends` path, a plugin that also loads the
+  source, no symlinks) keep the vendor streams only through the continuity `policy_id`, which needs agent ≥ v0.9.0
+  (`pluginlib.MinInlinePolicy`). For an older plugin an overlay that introduces such a bundle is rejected with
+  `plugin-lib-inline-unsupported`; the running configuration keeps running.
 - **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
-  `violation[{...}] if { ... }`. An authored module that uses them for such a plugin is also named
-  (`plugin-lib-violation-set-unsupported`), with that fix.
-- **Unknown versions are warnings**: a `replace`d or `(devel)` build, a pseudo-version with no tag before it, or a
-  binary without build info. Local plugin builds therefore keep working.
-- **File-defined inline bundles only warn** (R34), and for them each authored `policy_id` the plugin would ignore is a
-  `plugin-lib-policy-id-unsupported` warning ("this module starts a new evidence stream").
-- A pseudo-version counts as the tag it was built after: a plugin built on an unreleased commit after v0.8.x or a
-  v0.9.0 release candidate is `unsupported` until it moves to a v0.9.0 build (or a `replace`, which is `unknown`);
-  one built on a commit after v0.9.0 is `supported`.
+  `violation[{...}] if { ... }`: an overlay-introduced authored module that uses them for such a plugin is rejected
+  with `plugin-lib-violation-set-unsupported`, with that fix.
+- **An authored `policy_id`** is ignored by plugins older than v0.9.0 (the module's stream follows its path):
+  `plugin-lib-policy-id-unsupported` warning.
+- **Unknown versions and file-defined bundles only warn** (R34): a `replace`d or `(devel)` build, a pseudo-version
+  with no tag before it, or a binary without build info.
 
 ## Remote configuration
 

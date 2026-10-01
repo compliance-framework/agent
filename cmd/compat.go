@@ -9,21 +9,28 @@ import (
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
 
-// Plugin compatibility (R76, R79). A plugin evaluates policies with the policy-manager it
-// embeds, so what it can do with an inline bundle depends on the agent library it was built
-// with, which the agent reads from the plugin binary's build info:
+// Plugin compatibility (R76, R79, relaxed by path shadowing). A plugin evaluates policies
+// with the policy-manager it embeds, so what it can do with an inline bundle depends on the
+// agent library it was built with, which the agent reads from the plugin binary's build info.
+// With path shadowing (shadow.go) a plugin keeps the vendor's evidence streams of a bundle
+// that extends a relative (OCI) source whatever library it was built with, so the R79 gate
+// only remains where continuity cannot be guaranteed otherwise:
 //
-//   - inline policies need pluginlib.MinInlinePolicy, the first library that seeds evidence
-//     with policy_id (R74). An overlay that gives a plugin built on an older library an
-//     inline bundle, changes one it uses, or moves a plugin that uses one to such a build
-//     is rejected (plugin-lib-inline-unsupported), so the last good configuration keeps
-//     running (R79);
+//   - a bundle that extends a source and is not shadowed (an absolute local extends path,
+//     a plugin that also loads the source, no symlinks) keeps the vendor streams only
+//     through the continuity policy_id (R82), which needs pluginlib.MinInlinePolicy (R74).
+//     For an older library an overlay that introduces it is rejected
+//     (plugin-lib-inline-unsupported), so the last good configuration keeps running;
 //   - a set-form violation (`violation contains ...`) crashes plugins older than
-//     pluginlib.MinViolationSet, which is named separately when it applies, with the fix;
+//     pluginlib.MinViolationSet: rejected when the overlay introduces it
+//     (plugin-lib-violation-set-unsupported);
+//   - a policy_id an authored module declares is ignored by an older library, so the
+//     module's stream is path-based: a warning (plugin-lib-policy-id-unsupported);
 //   - inline bundles from the config file only warn (R34), and so does a library whose
-//     version is unknown (a local or replaced build, or no build info), so local plugin
-//     builds keep working. For file bundles a policy_id that the plugin ignores is named per
-//     module (plugin-lib-policy-id-unsupported); for overlay bundles the gate supersedes it.
+//     version is unknown (a local or replaced build, or no build info).
+//
+// plugins[].inline-policies now reads: supported (the library version is known, so the agent
+// checks each bundle against it as above) or unknown; unsupported is no longer reported.
 
 // Shorter names for the plugins[].inline-policies values (R79).
 const (
@@ -36,17 +43,13 @@ const (
 // with ("" when unknown). The source has been prefetched.
 type pluginLibFunc func(ctx context.Context, source string) (string, error)
 
-// inlineSupport classifies a plugin's agent library version for inline policies.
+// inlineSupport classifies a plugin's agent library version for inline policies: with path
+// shadowing every known library takes inline bundles (each bundle is checked against it).
 func inlineSupport(version string) string {
-	ok, known := pluginlib.AtLeast(version, pluginlib.MinInlinePolicy)
-	switch {
-	case !known:
+	if _, known := pluginlib.AtLeast(version, pluginlib.MinInlinePolicy); !known {
 		return inlinePoliciesUnknown
-	case ok:
-		return inlinePoliciesSupported
-	default:
-		return inlinePoliciesUnsupported
 	}
+	return inlinePoliciesSupported
 }
 
 // pluginCompatibility returns the R76/R79 problems of the plugins of runtime that use inline
@@ -69,8 +72,8 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 		}
 		support := inlineSupport(version)
 		reports = append(reports, agentconfig.PluginReport{Name: name, Source: p.Source, LibVersion: version, InlinePolicies: support})
-		if support == inlinePoliciesSupported {
-			continue
+		if ok, _ := pluginlib.AtLeast(version, pluginlib.MinInlinePolicy); ok {
+			continue // policy_id and set-form violations both work
 		}
 
 		var bundles []*inlinepolicy.Materialized
@@ -89,53 +92,65 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 		if len(bundles) == 0 {
 			continue
 		}
-		problems = append(problems, libProblems(name, version, support, bundles, introduced)...)
+		problems = append(problems, libProblems(name, version, bundles, introduced)...)
 	}
 	return problems, reports
 }
 
-// libProblems are the problems of one plugin whose library is not known to support inline
-// policies (support is unsupported or unknown).
-func libProblems(plugin, version, support string, bundles []*inlinepolicy.Materialized, overlay bool) []agentconfig.PolicyError {
+// needsPolicyID reports whether bundle m keeps vendor evidence streams only through the
+// continuity policy_id the agent appended (R82): it extends a source and is not shadowed.
+func needsPolicyID(m *inlinepolicy.Materialized) bool {
+	return m.Extends != nil && !m.Shadowed && len(m.Continued) > 0
+}
+
+// libProblems are the problems of one plugin whose library is older than
+// pluginlib.MinInlinePolicy or unknown. overlay is whether the overlay brought the plugin and
+// these bundles together; only then is a known incompatibility an error.
+func libProblems(plugin, version string, bundles []*inlinepolicy.Materialized, overlay bool) []agentconfig.PolicyError {
 	var out []agentconfig.PolicyError
 	lib := version
 	if lib == "" {
 		lib = "unknown"
 	}
-	severity := agentconfig.SeverityWarning
-	if support == inlinePoliciesUnsupported && overlay {
-		severity = agentconfig.SeverityError
-	}
+	idOK, known := pluginlib.AtLeast(version, pluginlib.MinInlinePolicy)
 	setOK, setKnown := pluginlib.AtLeast(version, pluginlib.MinViolationSet)
+	severity := func(known bool) string {
+		if known && overlay {
+			return agentconfig.SeverityError
+		}
+		return agentconfig.SeverityWarning
+	}
+	unknownWhy := "is unknown (a local or replaced build, or no build info)"
+	if version != "" {
+		unknownWhy = fmt.Sprintf("%s has no release before it", version)
+	}
 	for _, m := range bundles {
-		msg := fmt.Sprintf("plugin %s (agent lib %s) doesn't support inline policies; upgrade the plugin to a build on agent ≥ %s", plugin, lib, pluginlib.MinInlinePolicy)
-		if support == inlinePoliciesUnknown {
-			why := "is unknown (a local or replaced build, or no build info)"
-			if version != "" {
-				why = fmt.Sprintf("%s has no release before it", version)
+		if !idOK && needsPolicyID(m) {
+			msg := fmt.Sprintf("plugin %s (agent lib %s) cannot keep the vendor evidence streams of bundle %s: it extends %s at %s, which cannot be shadowed, so its inherited and overridden modules continue the vendor streams only through policy_id, which needs agent ≥ %s; upgrade the plugin, or extend a relative (OCI) source the plugin does not also load",
+				plugin, lib, m.Name, m.Extends.Source, m.Extends.PluginPath, pluginlib.MinInlinePolicy)
+			if !known {
+				msg = fmt.Sprintf("plugin %s: its agent library version %s, so the agent cannot tell whether it honours the policy_id that continues the vendor streams of bundle %s (it extends %s at %s, which cannot be shadowed); plugins built on agent < %s ignore it and start new streams",
+					plugin, unknownWhy, m.Name, m.Extends.Source, m.Extends.PluginPath, pluginlib.MinInlinePolicy)
 			}
-			msg = fmt.Sprintf("plugin %s: its agent library version %s, so the agent cannot tell whether it supports inline policies; plugins built on agent < %s ignore policy_id, and those < %s crash on `violation contains ...`",
-				plugin, why, pluginlib.MinInlinePolicy, pluginlib.MinViolationSet)
+			out = append(out, agentconfig.PolicyError{Bundle: m.Name, Severity: severity(known), Code: agentconfig.PolicyCodePluginLibInlineUnsupported, Message: msg})
 		}
-		out = append(out, agentconfig.PolicyError{Bundle: m.Name, Severity: severity, Code: agentconfig.PolicyCodePluginLibInlineUnsupported, Message: msg})
-
 		if !setOK {
-			sev := severity
-			if !setKnown {
-				sev = agentconfig.SeverityWarning
-			}
 			for _, s := range m.SetViolations {
-				out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: sev,
-					Code: agentconfig.PolicyCodePluginLibViolationSetUnsupported,
-					Message: fmt.Sprintf("plugin %s (agent lib %s) cannot evaluate violation as a set (`violation contains ...` needs agent ≥ %s) and would crash; use `violation[{...}] if { … }`",
-						plugin, lib, pluginlib.MinViolationSet)})
+				msg := fmt.Sprintf("plugin %s (agent lib %s) cannot evaluate violation as a set (`violation contains ...` needs agent ≥ %s) and would crash; use `violation[{...}] if { … }`",
+					plugin, lib, pluginlib.MinViolationSet)
+				if !setKnown {
+					msg = fmt.Sprintf("plugin %s: its agent library version %s; plugins built on agent < %s crash on `violation contains ...`; use `violation[{...}] if { … }`",
+						plugin, unknownWhy, pluginlib.MinViolationSet)
+				}
+				out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: severity(setKnown),
+					Code: agentconfig.PolicyCodePluginLibViolationSetUnsupported, Message: msg})
 			}
 		}
-		if support == inlinePoliciesUnsupported && !overlay {
+		if !idOK && known {
 			for _, s := range m.PolicyIDRules {
 				out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: agentconfig.SeverityWarning,
 					Code:    agentconfig.PolicyCodePluginLibPolicyIDUnsupported,
-					Message: fmt.Sprintf("plugin %s (agent lib %s) ignores policy_id; this module starts a new evidence stream", plugin, lib)})
+					Message: fmt.Sprintf("plugin %s (agent lib %s) ignores policy_id; this module's evidence stream follows its path", plugin, lib)})
 			}
 		}
 	}

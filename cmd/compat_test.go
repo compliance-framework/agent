@@ -10,8 +10,10 @@ import (
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
 
-// Plugin compatibility (R76, R79): the plugin's agent library decides whether it may use
-// inline policies.
+// Plugin compatibility (R76, R79, relaxed by path shadowing): the plugin's agent library
+// decides what it can do with an inline bundle. The harness's vendor is an absolute path,
+// which cannot be shadowed, so these bundles need policy_id (shadow_test.go covers
+// shadowed bundles).
 
 // withPluginLib makes the harness's plugins report version as their agent library.
 func withPluginLib(h *remoteHarness, version string) {
@@ -58,7 +60,7 @@ func TestCompat_OldLibRejectsOverlayInlineBundle_R79(t *testing.T) {
 	}
 	gate := rejectionErrors(r, agentconfig.PolicyCodePluginLibInlineUnsupported)
 	if len(gate) != 1 || gate[0].Bundle != "ssh" ||
-		!strings.Contains(gate[0].Message, "plugin ssh (agent lib v0.1.9-0.20250708121809-c5059c3efac8) doesn't support inline policies") ||
+		!strings.Contains(gate[0].Message, "plugin ssh (agent lib v0.1.9-0.20250708121809-c5059c3efac8) cannot keep the vendor evidence streams of bundle ssh") ||
 		!strings.Contains(gate[0].Message, pluginlib.MinInlinePolicy) {
 		t.Fatalf("expected one plugin-lib-inline-unsupported error naming the plugin, its lib and the minimum, got %+v", r.PolicyErrors)
 	}
@@ -68,12 +70,13 @@ func TestCompat_OldLibRejectsOverlayInlineBundle_R79(t *testing.T) {
 		!strings.Contains(set[0].Message, "violation[{...}] if") {
 		t.Fatalf("expected a located set-form violation error, got %+v", r.PolicyErrors)
 	}
-	// The gate supersedes the policy_id warning for overlay bundles.
+	// No authored policy_id, so no policy_id warning.
 	if got := policyErrorsWithCode(r, agentconfig.PolicyCodePluginLibPolicyIDUnsupported); len(got) != 0 {
-		t.Fatalf("no policy_id warning expected next to the gate, got %+v", got)
+		t.Fatalf("no policy_id warning expected, got %+v", got)
 	}
+	// With path shadowing a known library is reported as supported; the gate is per bundle.
 	if len(r.Plugins) != 1 || r.Plugins[0].Name != "ssh" || r.Plugins[0].Source != "ghcr.io/compliance-framework/plugin-ssh:v1" ||
-		r.Plugins[0].LibVersion != "v0.1.9-0.20250708121809-c5059c3efac8" || r.Plugins[0].InlinePolicies != agentconfig.InlinePoliciesUnsupported {
+		r.Plugins[0].LibVersion != "v0.1.9-0.20250708121809-c5059c3efac8" || r.Plugins[0].InlinePolicies != agentconfig.InlinePoliciesSupported {
 		t.Fatalf("plugins report = %+v", r.Plugins)
 	}
 }
@@ -161,8 +164,8 @@ func TestCompat_FileInlineBundleOnOldLibWarns_R79(t *testing.T) {
 }
 
 func TestLibProblemsNameAnUntaggedVersion(t *testing.T) {
-	m := &inlinepolicy.Materialized{Name: "ssh"}
-	got := libProblems("ssh", "v0.0.0-20261001110117-f88bde9ee37a", inlinePoliciesUnknown, []*inlinepolicy.Materialized{m}, true)
+	m := &inlinepolicy.Materialized{Name: "ssh", Extends: &agentconfig.PolicyBundleExtendsReport{Source: "/v", PluginPath: "/v"}, Continued: map[string]string{"x.rego": "/v/x.rego"}}
+	got := libProblems("ssh", "v0.0.0-20261001110117-f88bde9ee37a", []*inlinepolicy.Materialized{m}, true)
 	if len(got) != 1 || got[0].Severity != agentconfig.SeverityWarning || !strings.Contains(got[0].Message, "v0.0.0-20261001110117-f88bde9ee37a has no release before it") {
 		t.Fatalf("an untagged build only warns and names its version, got %+v", got)
 	}
@@ -173,14 +176,16 @@ func TestInlineSupport(t *testing.T) {
 		"v0.9.0":                               inlinePoliciesSupported,
 		"v0.10.0":                              inlinePoliciesSupported,
 		"v0.9.1-0.20261001000000-abcdefabcdef": inlinePoliciesSupported,
-		"v0.9.0-rc1":                           inlinePoliciesUnsupported, // semver: before v0.9.0
-		"v0.8.1":                               inlinePoliciesUnsupported, // released without R74 (R81)
-		"v0.8.0":                               inlinePoliciesUnsupported, // released without R74 (R81)
-		"v0.8.0-rc4":                           inlinePoliciesUnsupported,
-		"v0.7.1":                               inlinePoliciesUnsupported,
-		"":                                     inlinePoliciesUnknown,
-		"(devel)":                              inlinePoliciesUnknown,
-		"v0.0.0-20261001110117-f88bde9ee37a":   inlinePoliciesUnknown,
+		// Path shadowing: every known library takes inline bundles (checked per bundle).
+		"v0.9.0-rc1":                         inlinePoliciesSupported,
+		"v0.8.1":                             inlinePoliciesSupported,
+		"v0.8.0":                             inlinePoliciesSupported,
+		"v0.8.0-rc4":                         inlinePoliciesSupported,
+		"v0.7.1":                             inlinePoliciesSupported,
+		oldLib:                               inlinePoliciesSupported,
+		"":                                   inlinePoliciesUnknown,
+		"(devel)":                            inlinePoliciesUnknown,
+		"v0.0.0-20261001110117-f88bde9ee37a": inlinePoliciesUnknown,
 	} {
 		if got := inlineSupport(version); got != want {
 			t.Errorf("inlineSupport(%q) = %s, want %s", version, got, want)
