@@ -71,3 +71,32 @@ Because evidence is streamed, there is no limit on a whole call. The limit is pe
 one evidence, whose `PolicyEvaluation` may carry a large input such as a whole cluster, may
 be up to 256 MiB, above gRPC's 4 MiB default. Each evaluation's data crosses once however
 many evidence records it produces.
+
+## Plugin and policy sources
+
+Every evidence the agent sends also records where its plugin and policy bundle came from:
+
+| Evidence prop | Value |
+| --- | --- |
+| `_plugin_source` | The plugin's configured `source`: an OCI reference such as `ghcr.io/compliance-framework/plugin-apt-versions:v0.4.0`, or a local path |
+| `_plugin_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it; for a local plugin binary, its SHA-256 |
+| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, so the bundle is known). For an inline bundle, its entry `inline:<name>` |
+| `_policy_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it. For an inline bundle, the artifact digest of the bundle the evaluation stored, or the bundle's tree digest (`tree:sha256:…`, as in the configuration report) when it could not be stored. Not set for a local directory; `_policy_bundle_digest` covers its content |
+
+With `_plugin_source` and `_plugin_digest`, the image is pinned (`ref@digest`) even if the tag
+later moves.
+
+The agent records the registry digest in `.ccf-source.json` next to the extracted files when
+it downloads them, so later runs, which skip the download, still report it. Files extracted
+before digests were recorded have no such record: their evidence carries the source but no
+digest until they are downloaded again (a new version, a cleared cache, or a fresh agent
+volume).
+
+The agent looks the policy source up by the exact path it gave the plugin, which is the
+path the plugin reports the evaluation under. For an inline bundle that is the bundle's
+stable path (`<state dir>/inline/<name>/current/bundle`), so its evidence carries these props
+across revisions. A bundle an inline bundle `extends` is not on the evidence; the
+configuration report names it (`policy-bundles[].extends`).
+
+The agent owns these props: any a plugin sets itself are replaced. They are recorded whether
+or not the evaluation's artifacts could be stored.

@@ -264,3 +264,30 @@ func TestInline_StablePathSwapsOnlyBetweenRuns_R67(t *testing.T) {
 		t.Fatalf("run returned %v after %d runs", err, len(runs))
 	}
 }
+
+// TestInline_EvidenceSourceIsTheBundle (design §13.4, #96/#97): an inline bundle's evidence
+// records the bundle entry and its digest, keyed by the stable path plugins receive (R67),
+// and an OCI source keeps its own source.
+func TestInline_EvidenceSourceIsTheBundle(t *testing.T) {
+	h, _ := newInlineHarness(t)
+	h.remote.publish(0, `{}`)
+	mustStartup(t, h.rc)
+	cfg := h.rc.running().runtime
+	stable := cfg.inlinePolicyDirs["inline:ssh"]
+	if !strings.HasSuffix(filepath.ToSlash(stable), "/inline/ssh/current/bundle") {
+		t.Fatalf("plugins must receive the stable path, got %s", stable)
+	}
+	got := cfg.policySource("inline:ssh", stable)
+	var tree string
+	for _, b := range h.rc.running().bundles {
+		if b.Source == "inline:ssh" {
+			tree = b.Digest
+		}
+	}
+	if got.Reference != "inline:ssh" || !got.BundleArtifact || got.Digest == "" || got.Digest != tree {
+		t.Fatalf("inline source = %+v, want inline:ssh with the reported tree digest %q as fallback", got, tree)
+	}
+	if oci := cfg.policySource("ghcr.io/vendor/policies:v1", t.TempDir()); oci.Reference != "ghcr.io/vendor/policies:v1" || oci.BundleArtifact {
+		t.Fatalf("OCI source = %+v", oci)
+	}
+}

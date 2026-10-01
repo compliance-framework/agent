@@ -98,6 +98,9 @@ type agentConfig struct {
 	// inlineTrees maps "inline:<name>" policy entries to their materialized, content-addressed
 	// tree (inlinepolicy.Materialized.Dir).
 	inlineTrees map[string]string
+	// inlineDigests maps "inline:<name>" policy entries to their tree digest, the evidence
+	// _policy_digest fallback when a bundle's artifact digest is not known.
+	inlineDigests map[string]string
 	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
 	// Read it with syncInfo; nil means the zero syncMeta.
 	sync *atomic.Pointer[syncMeta]
@@ -1449,9 +1452,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			}
 
 			policyPaths := make([]string, 0, len(pluginConfig.Policies))
+			policySources := make(map[string]runner.Source, len(pluginConfig.Policies))
 
 			for _, inputBundle := range pluginConfig.Policies {
-				policyPaths = append(policyPaths, ar.policyLocations[string(inputBundle)])
+				policyLocation := ar.policyLocations[string(inputBundle)]
+				policyPaths = append(policyPaths, policyLocation)
+				policySources[policyLocation] = config.policySource(string(inputBundle), policyLocation)
 			}
 
 			// Create a new results helper for the plugin to send results back to
@@ -1460,7 +1466,12 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 				"auth_enabled", hasAPIAuth(config),
 				"client_id", apiClientID(config),
 			)
-			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths), runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)), runner.WithEvidenceProps(configRevisionProps(config)...))
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
+				runner.WithPolicyPaths(policyPaths),
+				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
+				runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
+				runner.WithEvidenceProps(configRevisionProps(config)...),
+			)
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
 			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1547,9 +1558,11 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	)
 
 	policyPaths := make([]string, 0)
+	policySources := make(map[string]runner.Source, len(plugin.Policies))
 	for _, inputBundle := range plugin.Policies {
 		if dir, ok := config.inlinePolicyDirs[string(inputBundle)]; ok {
 			policyPaths = append(policyPaths, dir)
+			policySources[dir] = config.policySource(string(inputBundle), dir)
 			continue
 		}
 		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
@@ -1557,6 +1570,7 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
+		policySources[policyLocation] = config.policySource(string(inputBundle), policyLocation)
 	}
 
 	platform := v1.Platform{
@@ -1603,7 +1617,12 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths), runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)), runner.WithEvidenceProps(configRevisionProps(config)...))
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
+		runner.WithPolicyPaths(policyPaths),
+		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
+		runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
+		runner.WithEvidenceProps(configRevisionProps(config)...),
+	)
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -2186,4 +2205,21 @@ func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
 			client.Kill()
 		})
 	}
+}
+
+// sourceOf describes where a plugin or policy bundle came from, for evidence: its configured
+// source and, where known, the digest of what the agent extracted at location.
+func sourceOf(source, location string) runner.Source {
+	return runner.Source{Reference: source, Digest: internal.SourceDigest(source, location)}
+}
+
+// policySource describes where the policy entry, which plugins receive at location, came from.
+// An inline bundle is recorded as its entry (inline:<name>) with its artifact digest, or its
+// tree digest when the evaluation could not store the bundle; location is then the bundle's
+// stable path (R67), the same key the plugin reports evaluations under.
+func (c *agentConfig) policySource(entry, location string) runner.Source {
+	if _, inline := c.inlinePolicyDirs[entry]; inline {
+		return runner.Source{Reference: entry, Digest: c.inlineDigests[entry], BundleArtifact: true}
+	}
+	return sourceOf(entry, location)
 }

@@ -116,11 +116,13 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 
 	res.dirs = map[string]string{}
 	res.trees = map[string]string{}
+	res.digests = map[string]string{}
 	for _, name := range sortedMaterializedKeys(materialized) {
 		m := materialized[name]
 		entry := agentconfig.InlineSourcePrefix + name
 		res.dirs[entry] = m.Path
 		res.trees[entry] = m.Dir
+		res.digests[entry] = m.Digest
 		res.reports = append(res.reports, agentconfig.PolicyBundleReport{
 			Source:  entry,
 			Digest:  m.Digest,

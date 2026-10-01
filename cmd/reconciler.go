@@ -593,6 +593,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		return nil, failed(agentconfig.ReasonInvalidConfig, err)
 	}
 	runtime.inlineTrees = inline.trees
+	runtime.inlineDigests = inline.digests
 	prefetchCtx, cancelPrefetch := context.WithTimeout(ctx, prepareNetworkTimeout)
 	err = rc.runner.Prefetch(prefetchCtx, runtime)
 	cancelPrefetch()
@@ -633,6 +634,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 type inlineResult struct {
 	dirs      map[string]string // "inline:<name>" -> the stable path plugins receive
 	trees     map[string]string // "inline:<name>" -> the materialized tree
+	digests   map[string]string // "inline:<name>" -> the materialized tree's digest
 	reports   []agentconfig.PolicyBundleReport
 	artifacts []artifactTree
 	warnings  []agentconfig.PolicyError
