@@ -3,7 +3,7 @@ module github.com/compliance-framework/agent
 go 1.26.1
 
 require (
-	github.com/compliance-framework/api v0.19.1-0.20261001141932-f511c440e087
+	github.com/compliance-framework/api v0.19.1-0.20261001145443-5449a31fd701
 	github.com/compliance-framework/gooci v0.0.6
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/defenseunicorns/go-oscal v0.7.0
@@ -19,6 +19,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/mod v0.36.0
 	golang.org/x/sync v0.21.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
