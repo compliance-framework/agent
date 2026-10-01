@@ -68,8 +68,8 @@ The API's `regocheck` runs `policyeval.CheckContract` on the authored modules on
 agent, after the compile and the tests pass, adds what needs the whole tree: the static check on the vendor-only
 packages (warnings, never re-run on authored modules), and a dry run on an empty input through `policyeval.Execute`
 and `policy-manager`'s `GetRiskTemplates`, sandboxed like the tests. Decode errors and `Result.Issues` become located
-`PolicyError`s with the contract codes: errors for packages that contain an authored module, warnings for vendor-only
-packages; conflicts that only show on `{}` and input-dependent titles are warnings. A package that fails to evaluate is
+`PolicyError`s with the contract codes: errors for packages that contain an authored non-test module, warnings for
+vendor-only packages; conflicts that only show on `{}` and input-dependent titles are warnings. A package that fails to evaluate is
 left out of the next attempt, so one broken package does not hide the others. A compile error in a vendor file whose
 package an authored module also defines carries an override hint (R65). A package defined in two of a plugin's policy
 paths is a warning naming both (R66). The per-plugin results are de-duplicated before they are reported.

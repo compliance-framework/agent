@@ -172,14 +172,16 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 
 	var out []agentconfig.PolicyError
 	seen := map[string]bool{} // package + code + message
-	reportedCodes := map[[2]string]bool{}
+	riskReported := map[string]bool{}
 	add := func(pkg, file, code, severity, msg string) {
 		key := pkg + "\x00" + code + "\x00" + msg
 		if seen[key] {
 			return
 		}
 		seen[key] = true
-		reportedCodes[[2]string{pkg, code}] = true
+		if code == policyeval.IssueInvalidRiskTemplate || strings.Contains(msg, "risk_templates") {
+			riskReported[pkg] = true
+		}
 		out = append(out, agentconfig.PolicyError{
 			Bundle:   in.Bundle,
 			Path:     file,
@@ -300,7 +302,7 @@ func dryRun(ctx context.Context, in CheckInput, b *bundle.Bundle, pkgs treePacka
 			break
 		}
 		var rte *policyManager.RiskTemplateError
-		if errors.As(err, &rte) && (reportedCodes[[2]string{rte.Package, policyeval.IssueInvalidRiskTemplate}] || reportedCodes[[2]string{rte.Package, policyeval.IssueInvalidType}]) {
+		if errors.As(err, &rte) && riskReported[rte.Package] {
 			// ValidateResult already reported this package's risk templates.
 			excluded[rte.Package] = true
 		} else {

@@ -392,8 +392,9 @@ func symlinksSupported(root string) bool {
 // tree or the new one, never neither (macOS APFS may fail such a racing lookup with EINVAL).
 // It is not a snapshot for a reader walking the tree while it is swapped either. Callers
 // therefore swap only while no plugin of the previous configuration runs (the agent does it
-// between two configuration runs, after the reload drain), and serialize Activate with GC. It is a no-op when the tree is already active or the file system has no
-// symlinks (plugins then receive dir itself).
+// between two configuration runs, after the reload drain), and serialize Activate with GC.
+// It is a no-op when the tree is already active or the file system has no symlinks (plugins
+// then receive dir itself).
 func Activate(root, name, dir string) error {
 	bundleDir := filepath.Join(root, name)
 	versionDir := filepath.Dir(filepath.Clean(dir))

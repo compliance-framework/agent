@@ -270,8 +270,8 @@ policy_bundles:
   map of strings, and valid `risk_templates`. The API checks the authored modules statically when an overlay is saved.
   The agent, which sees the whole tree, also checks the vendor packages statically and then dry-runs every package
   on an empty input (`{}` plus the plugin's `policy_data`), sandboxed, through the same calls a plugin makes. A
-  problem in a package that has an authored module (including an override) is an **error**; in a package only the
-  vendor defines it is a **warning**, as is an evaluation conflict that only shows on `{}` or a `title` that depends on
+  problem in a package that has an authored non-test module (including an override) is an **error**; in a package
+  only the vendor defines (an authored test alone does not count) it is a **warning**, as is an evaluation conflict that only shows on `{}` or a `title` that depends on
   the input. So an override that leaves a package without a `title` is rejected: that package would record no
   evidence.
 - **Vendor tests that no longer compile (R65)** reject the revision: plugins compile `_test.rego` files too, so such a
