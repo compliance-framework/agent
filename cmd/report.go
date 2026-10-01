@@ -56,6 +56,7 @@ func (rc *reconciler) maybeReport(ctx context.Context, active *candidate, outcom
 	if rc.now().Before(rc.reportBackoffUntil) {
 		return
 	}
+	rc.uploadArtifacts(ctx, active)
 	report := rc.buildReport(active, outcome, rcfg)
 	body, fingerprint, err := fitReport(&report, false)
 	if err != nil {
@@ -115,7 +116,7 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 		Base:              marshalRaw(agentconfig.Redact(active.base.declared, opts...)),
 		Effective:         marshalRaw(agentconfig.Redact(active.declared, opts...)),
 		EffectiveDigest:   active.digest,
-		PolicyBundles:     append([]agentconfig.PolicyBundleReport(nil), active.bundles...),
+		PolicyBundles:     rc.withArtifactDigests(active.bundles),
 		Warnings:          active.warnings,
 		RemoteConfig:      &rcfg,
 	}

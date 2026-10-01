@@ -239,7 +239,9 @@ policy_bundles:
 
         import rego.v1
 
-        violation contains {"remarks": "too many"} if input.max_auth_tries > data.max_auth_tries
+        title := "SSH allows at most data.max_auth_tries authentication attempts"
+
+        violation contains {"id": "too-many", "remarks": "too many"} if input.max_auth_tries > data.max_auth_tries
     data:                                                                 # merge-patched into data.json
       allowed_ciphers: ["aes256-gcm@openssh.com"]
 ```
@@ -263,9 +265,39 @@ policy_bundles:
   helpers and `with ... as http.send`), and runs its Rego tests with the plugin's `policy_data`. A failing test that the
   bundle authored rejects the configuration; a failing vendor test is only a warning. Tests never run when a forbidden
   builtin is reachable, and they run sandboxed: a test that calls one of those builtins fails instead of executing it.
+- **Policy contract (R63).** A `compliance_framework.*` package must produce what the agent needs to record evidence:
+  a string `title`, `violation` as a set of objects with string `id`/`title`/`description`/`remarks`, `labels` as a
+  map of strings, and valid `risk_templates`. The API checks the authored modules statically when an overlay is saved.
+  The agent, which sees the whole tree, also checks the vendor packages statically and then dry-runs every package
+  on an empty input (`{}` plus the plugin's `policy_data`), sandboxed, through the same calls a plugin makes. A
+  problem in a package that has an authored module (including an override) is an **error**; in a package only the
+  vendor defines it is a **warning**, as is an evaluation conflict that only shows on `{}` or a `title` that depends on
+  the input. So an override that leaves a package without a `title` is rejected: that package would record no
+  evidence.
+- **Vendor tests that no longer compile (R65)** reject the revision: plugins compile `_test.rego` files too, so such a
+  bundle would produce no evidence at all. When the failing file is a vendor file in a package an authored module
+  also defines, the error carries a hint: keep the rule the override removed, or add the test to `delete`.
+- **Duplicate evidence (R66).** When a plugin lists both a source and an inline bundle that `extends` it, every
+  vendor package is evaluated twice and recorded twice. The agent reports a warning naming both paths; replace the
+  source with the inline bundle instead.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
-- Inline bundles are written under the state directory (`<state>/inline/<bundle>/<digest>/`) and are never downloaded.
+- **Where bundles live (R67).** Inline bundles are written under the state directory and are never downloaded. Each
+  revision of a bundle is a write-once directory named by its tree digest, `<state>/inline/<bundle>/<digest>/bundle/`,
+  but plugins always receive the same path, `<state>/inline/<bundle>/current/bundle`: `current` is a symlink the agent
+  swaps atomically to the running revision's directory, between two configuration runs (never while a plugin of the
+  previous configuration runs). Evidence UUIDs are seeded with the policy file path, so an unchanged package keeps its
+  evidence identity across edits of the bundle. On a file system without symlinks (Windows without the privilege),
+  plugins receive the digest directory itself and evidence identity changes with each revision, as before.
+  Directories no running, pending or fallback configuration uses are garbage-collected, never the one `current`
+  points to.
+- **Sources for the UI (R62).** Outside mode `off`, the agent uploads every policy tree it reports (each inline
+  bundle, the tree it extends, and each OCI or local source a plugin uses) as a policy bundle artifact, and reports
+  its `artifact-digest` next to the tree digest, so the UI can show and pre-fill vendor sources. These are the same
+  artifacts evidence references for playback: one uploader serves both, and a tree is uploaded once. Uploads are
+  best effort: a failure (an API without artifacts, a tree over the API's size limit, a timeout) leaves
+  `artifact-digest` empty and never rejects or fails a revision. Note that artifacts are readable with
+  `artifact:read`.
 
 ## Remote configuration
 

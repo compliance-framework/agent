@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +33,8 @@ type fakeRemote struct {
 	reportErr func(n int, r agentconfig.Report) error
 	gets      []string
 	reports   []agentconfig.Report
+	uploads   []string
+	uploadErr func(n int) error
 }
 
 func (f *fakeRemote) Get(_ context.Context, ifNoneMatch string) (*sdk.AgentConfigResult, error) {
@@ -60,6 +64,26 @@ func (f *fakeRemote) Report(_ context.Context, _ uuid.UUID, r agentconfig.Report
 		return f.reportErr(len(f.reports), r)
 	}
 	return nil
+}
+
+// UploadArtifact records an artifact upload; uploadErr scripts failures.
+func (f *fakeRemote) UploadArtifact(_ context.Context, mediaType string, content []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploads = append(f.uploads, mediaType)
+	if f.uploadErr != nil {
+		if err := f.uploadErr(len(f.uploads)); err != nil {
+			return "", err
+		}
+	}
+	sum := sha256.Sum256(content)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func (f *fakeRemote) uploadCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.uploads)
 }
 
 // publish sets a new overlay revision with an opaque ETag.
@@ -183,7 +207,9 @@ func mustStartup(t *testing.T, rc *reconciler) *candidate {
 	if err != nil {
 		t.Fatalf("startup: %v", err)
 	}
-	rc.bind(active, func() {})
+	if err := rc.start(active, func() {}); err != nil {
+		t.Fatalf("start: %v", err)
+	}
 	return active
 }
 
@@ -192,7 +218,9 @@ func (h *remoteHarness) poll(t *testing.T) *candidate {
 	t.Helper()
 	h.rc.reconcile(context.Background(), triggerPoll)
 	if next := h.rc.takePending(); next != nil {
-		h.rc.bind(next, func() {})
+		if err := h.rc.start(next, func() {}); err != nil {
+			t.Fatalf("start: %v", err)
+		}
 	}
 	return h.rc.current()
 }

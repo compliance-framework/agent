@@ -3,12 +3,15 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/pkg/agentconfig/regocheck"
+	"github.com/compliance-framework/api/pkg/policyeval"
 )
 
 // inlineGCKeepPerBundle is how many materialized versions of each bundle GC keeps besides the
@@ -107,23 +110,133 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 		return res, policyRejection(append(problems, res.warnings...))
 	}
 	res.warnings = append(res.warnings, problems...)
+	res.warnings = append(res.warnings, rc.duplicatePackages(ctx, resolved, skip, materialized)...)
+	res.warnings = dedupePolicyErrors(res.warnings)
 	agentconfig.SortPolicyErrors(res.warnings)
 
 	res.dirs = map[string]string{}
+	res.trees = map[string]string{}
 	for _, name := range sortedMaterializedKeys(materialized) {
 		m := materialized[name]
-		res.dirs[agentconfig.InlineSourcePrefix+name] = m.Dir
+		entry := agentconfig.InlineSourcePrefix + name
+		res.dirs[entry] = m.Path
+		res.trees[entry] = m.Dir
 		res.reports = append(res.reports, agentconfig.PolicyBundleReport{
-			Source:  agentconfig.InlineSourcePrefix + name,
+			Source:  entry,
 			Digest:  m.Digest,
 			Extends: m.Extends,
 			Files:   m.Files,
 		})
+		res.artifacts = append(res.artifacts, artifactTree{digest: m.Digest, dir: m.Dir})
+		if m.Extends != nil {
+			res.artifacts = append(res.artifacts, artifactTree{digest: m.Extends.Digest, dir: m.ExtendsDir})
+		}
 	}
 	return res, nil
 }
 
+// duplicatePackages warns when a plugin that uses an inline bundle loads the same policy
+// package from two of its policy paths, typically a vendor source and an inline bundle that
+// extends it without replacing it (R66): the plugin then records evidence for that package
+// twice. A path that cannot be resolved here is skipped (prefetch reports it).
+func (rc *reconciler) duplicatePackages(ctx context.Context, resolved agentconfig.Config, skip map[string]string, materialized map[string]*inlinepolicy.Materialized) []agentconfig.PolicyError {
+	var out []agentconfig.PolicyError
+	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
+		p := resolved.Plugins[pluginName]
+		if p == nil || !p.IsEnabled() || len(p.Policies) < 2 {
+			continue
+		}
+		if _, skipped := skip[pluginName]; skipped {
+			continue
+		}
+		type origin struct {
+			entry, bundle, file string
+		}
+		byPackage := map[string][]origin{}
+		usesInline := false
+		for _, e := range p.Policies {
+			var files []agentconfig.PolicyFileReport
+			bundle := ""
+			if name, ok := agentconfig.InlineBundleName(e); ok {
+				m := materialized[name]
+				if m == nil {
+					continue
+				}
+				usesInline, bundle, files = true, name, m.Files
+			} else {
+				_, r, err := rc.sourceInventory(ctx, string(e))
+				if err != nil {
+					continue
+				}
+				files = r.Files
+			}
+			seen := map[string]bool{}
+			for _, f := range files {
+				if f.Package == "" || seen[f.Package] || !policyeval.IsPolicyPackage(f.Package) || policyeval.IsTestFile(f.Path) {
+					continue
+				}
+				seen[f.Package] = true
+				byPackage[f.Package] = append(byPackage[f.Package], origin{entry: string(e), bundle: bundle, file: f.Path})
+			}
+		}
+		if !usesInline {
+			continue
+		}
+		for _, pkg := range sortedOriginKeys(byPackage) {
+			origins := byPackage[pkg]
+			if len(origins) < 2 {
+				continue
+			}
+			var at origin
+			entries := make([]string, len(origins))
+			for i, o := range origins {
+				entries[i] = o.entry
+				if at.bundle == "" && o.bundle != "" {
+					at = o
+				}
+			}
+			out = append(out, agentconfig.PolicyError{
+				Bundle:   at.bundle,
+				Path:     at.file,
+				Severity: agentconfig.SeverityWarning,
+				Code:     codeDuplicatePolicyPackage,
+				Message: fmt.Sprintf("plugin %s: package %s is defined in more than one of its policy paths (%s), so the plugin records its evidence more than once; replace the extended source with the inline bundle instead of adding both",
+					pluginName, pkg, strings.Join(entries, ", ")),
+			})
+		}
+	}
+	return out
+}
+
+// codeDuplicatePolicyPackage is the PolicyError code of R66.
+const codeDuplicatePolicyPackage = "duplicate-policy-package"
+
+// dedupePolicyErrors drops exact duplicates (the per-plugin checks of one bundle repeat
+// plugin-independent findings) and a warning superseded by an error with the same bundle,
+// path and code (the API's static check may only warn about what the agent, which sees the
+// whole tree, rejects).
+func dedupePolicyErrors(errs []agentconfig.PolicyError) []agentconfig.PolicyError {
+	type site struct{ bundle, path, code string }
+	isError := map[site]bool{}
+	for _, e := range errs {
+		if e.Code != "" && e.Severity == agentconfig.SeverityError {
+			isError[site{e.Bundle, e.Path, e.Code}] = true
+		}
+	}
+	seen := map[agentconfig.PolicyError]bool{}
+	out := make([]agentconfig.PolicyError, 0, len(errs))
+	for _, e := range errs {
+		if seen[e] || (e.Severity == agentconfig.SeverityWarning && e.Code != "" && isError[site{e.Bundle, e.Path, e.Code}]) {
+			continue
+		}
+		seen[e] = true
+		out = append(out, e)
+	}
+	return out
+}
+
 func policyRejection(errs []agentconfig.PolicyError) *applyError {
+	errs = dedupePolicyErrors(errs)
 	agentconfig.SortPolicyErrors(errs)
 	var only []agentconfig.PolicyError
 	for _, e := range errs {
@@ -136,13 +249,9 @@ func policyRejection(errs []agentconfig.PolicyError) *applyError {
 	return aerr
 }
 
-// sourceReports inventories the non-inline policy paths of runtime for the report. OCI trees
-// are memoized per (source, dir); local trees are re-read.
-func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) []agentconfig.PolicyBundleReport {
-	resolve := rc.boundedResolver()
-	if resolve == nil {
-		return nil
-	}
+// sourceReports inventories the non-inline policy paths of runtime for the report, with the
+// trees to upload as artifacts.
+func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) ([]agentconfig.PolicyBundleReport, []artifactTree) {
 	sources := map[string]struct{}{}
 	for _, p := range runtime.Plugins {
 		for _, e := range p.Policies {
@@ -151,28 +260,43 @@ func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) [
 			}
 		}
 	}
-	var out []agentconfig.PolicyBundleReport
+	var reports []agentconfig.PolicyBundleReport
+	var trees []artifactTree
 	for _, source := range sortedSetKeys(sources) {
-		dir, err := resolve(ctx, source)
+		dir, r, err := rc.sourceInventory(ctx, source)
 		if err != nil {
 			continue
 		}
-		key := source + "\x00" + dir
-		if r, ok := rc.inventoryMemo[key]; ok {
-			out = append(out, r)
-			continue
-		}
-		digest, files, err := inlinepolicy.Inventory(dir)
-		if err != nil {
-			continue
-		}
-		r := agentconfig.PolicyBundleReport{Source: source, Digest: digest, Files: files}
-		if agentconfig.KindOf(source) == agentconfig.SourceKindOCI {
-			rc.inventoryMemo[key] = r
-		}
-		out = append(out, r)
+		reports = append(reports, r)
+		trees = append(trees, artifactTree{digest: r.Digest, dir: dir})
 	}
-	return out
+	return reports, trees
+}
+
+// sourceInventory resolves an OCI or local policy source and inventories its tree. OCI trees
+// are memoized per (source, dir); local trees are re-read.
+func (rc *reconciler) sourceInventory(ctx context.Context, source string) (string, agentconfig.PolicyBundleReport, error) {
+	resolve := rc.boundedResolver()
+	if resolve == nil {
+		return "", agentconfig.PolicyBundleReport{}, errors.New("no policy resolver")
+	}
+	dir, err := resolve(ctx, source)
+	if err != nil {
+		return "", agentconfig.PolicyBundleReport{}, err
+	}
+	key := source + "\x00" + dir
+	if r, ok := rc.inventoryMemo[key]; ok {
+		return dir, r, nil
+	}
+	digest, files, err := inlinepolicy.Inventory(dir)
+	if err != nil {
+		return "", agentconfig.PolicyBundleReport{}, err
+	}
+	r := agentconfig.PolicyBundleReport{Source: source, Digest: digest, Files: files}
+	if agentconfig.KindOf(source) == agentconfig.SourceKindOCI {
+		rc.inventoryMemo[key] = r
+	}
+	return dir, r, nil
 }
 
 // boundedResolver wraps resolvePolicy with prepareNetworkTimeout per call (nil when unset).
@@ -192,14 +316,21 @@ func (rc *reconciler) afterStartup(active *candidate) {
 	rc.gcInline(active)
 }
 
-// gcInline removes materialized inline bundles that none of keep uses and that are not among
-// the newest inlineGCKeepPerBundle per bundle. It runs after startup and after every swap
-// (keep = the running, the replaced and the new pending candidate), so a long-running daemon
-// does not accumulate one directory per revision.
+// gcInline removes materialized inline bundles that none of keep, the running, pending,
+// starting or fallback candidate, nor a bundle's current symlink uses, and that are not among
+// the newest inlineGCKeepPerBundle per bundle. It runs after startup and after every swap,
+// so a long-running daemon does not accumulate one directory per revision. It holds
+// inlineMu, so it never races activateInline.
 func (rc *reconciler) gcInline(keep ...*candidate) {
 	if !rc.store.Writable() {
 		return
 	}
+	rc.mu.Lock()
+	keep = append(keep, rc.active, rc.pending, rc.starting, rc.fallback)
+	rc.mu.Unlock()
+
+	rc.inlineMu.Lock()
+	defer rc.inlineMu.Unlock()
 	dirs := map[string]struct{}{}
 	found := false
 	for _, c := range keep {
@@ -207,7 +338,7 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 			continue
 		}
 		found = true
-		for _, dir := range c.runtime.inlinePolicyDirs {
+		for _, dir := range c.runtime.inlineTrees {
 			dirs[dir] = struct{}{}
 		}
 	}
@@ -217,6 +348,21 @@ func (rc *reconciler) gcInline(keep ...*candidate) {
 	if err := inlinepolicy.GC(rc.inlineRoot(), dirs, inlineGCKeepPerBundle); err != nil {
 		rc.logger.Warn("Could not clean up old inline policy bundles", "error", err)
 	}
+}
+
+// activateInline points the stable path of each inline bundle c uses at c's tree (R67).
+func (rc *reconciler) activateInline(c *candidate) error {
+	if c == nil || c.runtime == nil || len(c.runtime.inlineTrees) == 0 {
+		return nil
+	}
+	rc.inlineMu.Lock()
+	defer rc.inlineMu.Unlock()
+	var errs []error
+	for _, entry := range sortedStringKeys(c.runtime.inlineTrees) {
+		name := strings.TrimPrefix(entry, agentconfig.InlineSourcePrefix)
+		errs = append(errs, inlinepolicy.Activate(rc.inlineRoot(), name, c.runtime.inlineTrees[entry]))
+	}
+	return errors.Join(errs...)
 }
 
 func sortedBoolKeys(m map[string]bool) []string {
@@ -238,6 +384,15 @@ func sortedMaterializedKeys(m map[string]*inlinepolicy.Materialized) []string {
 }
 
 func sortedPluginNames(m map[string]*agentconfig.Plugin) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedOriginKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

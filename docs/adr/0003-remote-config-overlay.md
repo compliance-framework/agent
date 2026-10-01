@@ -62,6 +62,40 @@ executes on the agent host while a revision is checked (D17); a vendor test that
 Residual risk (R20): a vendor rule that already calls `http.send` with a URL taken from `data` makes `policy_data`
 edits to that plugin effectively able to direct its requests. Eval-time capabilities are a follow-up.
 
+### Policy contract: the agent is authoritative (R63, R65, R66)
+
+The API's `regocheck` runs `policyeval.CheckContract` on the authored modules only (it lacks the extends trees). The
+agent, after the compile and the tests pass, adds what needs the whole tree: the static check on the vendor-only
+packages (warnings, never re-run on authored modules), and a dry run on an empty input through `policyeval.Execute`
+and `policy-manager`'s `GetRiskTemplates`, sandboxed like the tests. Decode errors and `Result.Issues` become located
+`PolicyError`s with the contract codes: errors for packages that contain an authored module, warnings for vendor-only
+packages; conflicts that only show on `{}` and input-dependent titles are warnings. A package that fails to evaluate is
+left out of the next attempt, so one broken package does not hide the others. A compile error in a vendor file whose
+package an authored module also defines carries an override hint (R65). A package defined in two of a plugin's policy
+paths is a warning naming both (R66). The per-plugin results are de-duplicated before they are reported.
+
+### Stable inline paths (R67)
+
+`policy-manager` seeds evidence UUIDs with the policy file path. Materialized bundles stay write-once,
+content-addressed directories (`<name>/<digest>/bundle`), but plugins receive `<name>/current/bundle`, where `current`
+is a symlink swapped with an atomic rename. The symlink is an intermediate path component on purpose: OPA's bundle
+loader does not descend into a symlinked root directory and would silently load nothing. The run loop swaps it only
+between two configuration runs, after the reload drain, and on a fallback; a plugin run therefore sees one tree from
+start to end, and its API helper resolves the path when the run starts, so evidence artifacts are the tree the run
+evaluated. The candidate identity still hashes the digest directories, so any tree change restarts the plugins. GC and
+the swap share a lock; GC keeps the trees of the running, pending, starting and fallback candidates and whatever
+`current` points to.
+
+### One channel for policy sources (R62)
+
+The UI needs the vendor sources to pre-fill an override, and the API never sees them. Rather than a second route, the
+agent reuses the evidence artifact store: one process-wide `runner.ArtifactUploader` is shared by the reconciler and
+every plugin's API helper, and one archiver (`internal/policytree`: `ReadTree` + `TarFiles`) serves both, so the
+configuration-time and evaluation-time uploads of a tree are the same bytes and the same artifact. At report time the
+reconciler uploads each reported tree once (memoized by tree digest per API) within the remote request timeout and
+fills `artifact-digest` on the bundle and its `extends`; the field survives report truncation. Failures leave it empty
+and never reject or fail a revision.
+
 ### Plugin environment filter
 
 go-plugin hands the whole host environment to plugins. The agent now sets `SkipHostEnv` and passes the host

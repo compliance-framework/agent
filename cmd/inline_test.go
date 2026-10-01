@@ -144,7 +144,123 @@ func TestInline_GCAfterSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) > inlineGCKeepPerBundle+2 {
-		t.Fatalf("expected at most %d materialized dirs after GC, found %d", inlineGCKeepPerBundle+2, len(entries))
+	dirs := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs++
+		}
+	}
+	if dirs > inlineGCKeepPerBundle+2 {
+		t.Fatalf("expected at most %d materialized dirs after GC, found %d", inlineGCKeepPerBundle+2, dirs)
+	}
+	// The stable path points at the running tree.
+	running := h.rc.running().runtime
+	got, err := filepath.EvalSymlinks(running.inlinePolicyDirs["inline:ssh"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(running.inlineTrees["inline:ssh"])
+	if got != want {
+		t.Fatalf("the stable path resolves to %s, want the running tree %s", got, want)
+	}
+}
+
+// TestInline_DuplicatePackageAcrossPolicyPaths_R66: a plugin that loads both the vendor
+// source and an inline bundle extending it gets a warning naming both paths; the revision
+// still applies.
+func TestInline_DuplicatePackageAcrossPolicyPaths_R66(t *testing.T) {
+	h, vendor := newInlineHarness(t)
+	h.writeConfig(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["ghcr.io/vendor/policies:v1", "inline:ssh"]`, 1))
+	h.rc = h.newReconciler()
+	h.rc.resolvePolicy = func(context.Context, string) (string, error) { return vendor, nil }
+	mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	if r.Status != agentconfig.StatusApplied && r.Status != agentconfig.StatusNotApplicable {
+		t.Fatalf("a duplicate package is a warning only, got %s/%s", r.Status, r.Reason)
+	}
+	var found bool
+	for _, e := range r.PolicyErrors {
+		if e.Code == codeDuplicatePolicyPackage {
+			found = e.Severity == agentconfig.SeverityWarning && e.Bundle == "ssh" && e.Path == "banner.rego" &&
+				strings.Contains(e.Message, "compliance_framework.banner") &&
+				strings.Contains(e.Message, "ghcr.io/vendor/policies:v1") && strings.Contains(e.Message, "inline:ssh")
+		}
+	}
+	if !found {
+		t.Fatalf("expected a duplicate-policy-package warning naming both paths, got %+v", r.PolicyErrors)
+	}
+
+	// Replacing the source with the inline bundle (the R22 swap) clears it.
+	h, _ = newInlineHarness(t)
+	mustStartup(t, h.rc)
+	for _, e := range h.remote.lastReport(t).PolicyErrors {
+		if e.Code == codeDuplicatePolicyPackage {
+			t.Fatalf("no warning expected without the duplicate path: %+v", e)
+		}
+	}
+}
+
+// TestInline_StablePathSwapsOnlyBetweenRuns_R67: a revision prepared while a run is in
+// progress does not move the stable path under it; the run loop points it at the new tree
+// before the next run, and back at the previous tree when it falls back.
+func TestInline_StablePathSwapsOnlyBetweenRuns_R67(t *testing.T) {
+	h, _ := newInlineHarness(t)
+	h.remote.publish(0, `{}`)
+	active, err := h.rc.startup(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable := active.runtime.inlinePolicyDirs["inline:ssh"]
+	resolve := func() string {
+		t.Helper()
+		got, err := filepath.EvalSymlinks(stable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	treeOf := func(cfg *agentConfig) string {
+		got, _ := filepath.EvalSymlinks(cfg.inlineTrees["inline:ssh"])
+		return got
+	}
+
+	var runs []string
+	var firstTree string
+	errStop := errors.New("stop")
+	err = h.rc.run(active, func(ctx context.Context, cfg *agentConfig) error {
+		if cfg.inlinePolicyDirs["inline:ssh"] != stable {
+			t.Errorf("plugins must always get the stable path, got %s", cfg.inlinePolicyDirs["inline:ssh"])
+		}
+		if resolve() != treeOf(cfg) {
+			t.Errorf("run %d: the stable path does not point at the run's tree", len(runs)+1)
+		}
+		runs = append(runs, treeOf(cfg))
+		switch len(runs) {
+		case 1:
+			firstTree = resolve()
+			// A new revision arrives and is prepared while this run is in progress.
+			h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\ntitle := \"extra v2\"\n"}}}}`)
+			h.rc.reconcile(context.Background(), triggerPoll)
+			if ctx.Err() == nil {
+				t.Error("the swap must cancel the running configuration")
+			}
+			if resolve() != firstTree {
+				t.Error("the stable path moved while the previous configuration was still running")
+			}
+			return nil
+		case 2:
+			if resolve() == firstTree {
+				t.Error("the new run must see the new tree")
+			}
+			return errStop // fall back to the first configuration
+		default:
+			if resolve() != firstTree {
+				t.Error("the fallback must point the stable path back at its tree")
+			}
+			return errStop
+		}
+	})
+	if !errors.Is(err, errStop) || len(runs) != 3 {
+		t.Fatalf("run returned %v after %d runs", err, len(runs))
 	}
 }

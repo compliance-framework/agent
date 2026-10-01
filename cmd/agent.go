@@ -92,8 +92,12 @@ type agentConfig struct {
 	Plugins       map[string]*agentPlugin `mapstructure:"plugins"`
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 
-	// inlinePolicyDirs maps "inline:<name>" policy entries to their materialized directory.
+	// inlinePolicyDirs maps "inline:<name>" policy entries to the path plugins receive: the
+	// bundle's stable path, which the reconciler points at inlineTrees before each run (R67).
 	inlinePolicyDirs map[string]string
+	// inlineTrees maps "inline:<name>" policy entries to their materialized, content-addressed
+	// tree (inlinepolicy.Materialized.Dir).
+	inlineTrees map[string]string
 	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
 	// Read it with syncInfo; nil means the zero syncMeta.
 	sync *atomic.Pointer[syncMeta]
@@ -359,9 +363,13 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	// file silently creates a new instance. Say where state lives.
 	logger.Info("Agent state", "state_dir", stateDir, "state_dir_source", stateDirSource, "instance_id", id.String(), "instance_id_persisted", persisted)
 
-	ar := NewAgentRunner(WithInstanceID(id))
+	// One artifact uploader for the process: the reconciler's policy tree uploads and every
+	// plugin run's evidence artifacts share what each API already has (R62).
+	artifacts := runner.NewArtifactUploader()
+	ar := NewAgentRunner(WithInstanceID(id), WithSharedArtifactUploader(artifacts))
 	rc := newReconciler(cmd, configPath, store, ar, logger)
 	rc.instanceID = id
+	rc.artifacts = artifacts
 	rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
 		return ar.downloadPolicy(ctx, source, logger)
 	}
@@ -446,6 +454,8 @@ type AgentRunner struct {
 
 	// instanceID is this agent instance's stable ID (R31); set once at construction.
 	instanceID uuid.UUID
+	// artifacts is the process-wide artifact uploader, shared with the reconciler (R62).
+	artifacts *runner.ArtifactUploader
 
 	// protocolCache maps a plugin source to the protocol version its OCI annotations
 	// declared. It survives reloads so a registry outage during a reload cannot silently
@@ -462,6 +472,11 @@ func WithInstanceID(id uuid.UUID) AgentRunnerOption {
 	return func(ar *AgentRunner) { ar.instanceID = id }
 }
 
+// WithSharedArtifactUploader makes every plugin run upload through u (R62).
+func WithSharedArtifactUploader(u *runner.ArtifactUploader) AgentRunnerOption {
+	return func(ar *AgentRunner) { ar.artifacts = u }
+}
+
 func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
 	ar := &AgentRunner{
 		pluginLocations:     map[string]string{},
@@ -472,6 +487,7 @@ func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
 		httpClient:          http.DefaultClient,
 		instanceID:          uuid.New(),
 		protocolCache:       map[string]int32{},
+		artifacts:           runner.NewArtifactUploader(),
 	}
 	for _, opt := range opts {
 		opt(ar)
@@ -1444,7 +1460,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 				"auth_enabled", hasAPIAuth(config),
 				"client_id", apiClientID(config),
 			)
-			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths), runner.WithEvidenceProps(configRevisionProps(config)...))
+			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName, runner.WithPolicyPaths(policyPaths), runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)), runner.WithEvidenceProps(configRevisionProps(config)...))
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
 			if err := initRunner(pluginName, pluginConfig.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {
@@ -1587,7 +1603,7 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 		"auth_enabled", hasAPIAuth(config),
 		"client_id", apiClientID(config),
 	)
-	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths), runner.WithEvidenceProps(configRevisionProps(config)...))
+	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name, runner.WithPolicyPaths(policyPaths), runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)), runner.WithEvidenceProps(configRevisionProps(config)...))
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
 	if err := initRunner(name, plugin.ProtocolVersion, runnerInstance, policyPaths, policyBehaviorProto, resultsHelper); err != nil {

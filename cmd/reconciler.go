@@ -17,6 +17,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
+	runnerpkg "github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/fsnotify/fsnotify"
@@ -56,8 +57,10 @@ type candidate struct {
 	digest   string                    // agentconfig.Digest(declared, base.redactOpts()...) (R55)
 	// identity changes whenever anything that affects the runtime changes, including the
 	// values the digest masks or omits (api block, secrets). It never leaves the process.
-	identity       string
-	bundles        []agentconfig.PolicyBundleReport
+	identity string
+	bundles  []agentconfig.PolicyBundleReport
+	// trees are the policy trees bundles describe, uploaded as artifacts for the report (R62).
+	trees          []artifactTree
 	warnings       []agentconfig.FieldError  // R34 file-origin warnings
 	policyWarnings []agentconfig.PolicyError // G3b severity=warning
 }
@@ -119,14 +122,28 @@ type configReporter interface {
 	Report(ctx context.Context, instanceID uuid.UUID, r agentconfig.Report) error
 }
 
-// remoteAPI bundles the two remote configuration calls.
+// artifactUploader is the test seam over the shared artifact uploader (R62).
+type artifactUploader interface {
+	UploadArtifact(ctx context.Context, mediaType string, content []byte) (string, error)
+}
+
+// remoteAPI bundles the remote configuration calls and the artifact upload.
 type remoteAPI interface {
 	overlayFetcher
 	configReporter
+	artifactUploader
 }
 
-// sdkRemote adapts the SDK client to remoteAPI.
-type sdkRemote struct{ client *sdk.Client }
+// sdkRemote adapts the SDK client to remoteAPI. Artifacts go through the process-wide
+// uploader, shared with the plugins' API helpers.
+type sdkRemote struct {
+	client    *sdk.Client
+	artifacts *runnerpkg.ArtifactEndpoint
+}
+
+func (s sdkRemote) UploadArtifact(ctx context.Context, mediaType string, content []byte) (string, error) {
+	return s.artifacts.Upload(ctx, mediaType, content)
+}
 
 func (s sdkRemote) Get(ctx context.Context, ifNoneMatch string) (*sdk.AgentConfigResult, error) {
 	return s.client.AgentConfig.Get(ctx, ifNoneMatch)
@@ -137,7 +154,7 @@ func (s sdkRemote) Report(ctx context.Context, instanceID uuid.UUID, r agentconf
 }
 
 // newSDKRemote builds the remote configuration client from the (locked, file-only) api block.
-func newSDKRemote(c agentconfig.Config) remoteAPI {
+func newSDKRemote(c agentconfig.Config, uploader *runnerpkg.ArtifactUploader) remoteAPI {
 	if c.API == nil {
 		return nil
 	}
@@ -148,7 +165,8 @@ func newSDKRemote(c agentconfig.Config) remoteAPI {
 			ClientSecret: strings.TrimSpace(c.API.Auth.ClientSecret),
 		}
 	}
-	return sdkRemote{client: sdk.NewClient(nil, cfg)}
+	client := sdk.NewClient(nil, cfg)
+	return sdkRemote{client: client, artifacts: uploader.Endpoint(cfg.BaseURL, client.Artifact)}
 }
 
 // runFunc runs one configuration until it is cancelled (daemon) or completes (one-shot).
@@ -188,12 +206,23 @@ type reconciler struct {
 	resolvePolicy inlinepolicy.Resolver
 	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir").
 	inventoryMemo map[string]agentconfig.PolicyBundleReport
-	now           func() time.Time
+	// artifacts is the process-wide artifact uploader (shared with the plugins' API helpers).
+	artifacts *runnerpkg.ArtifactUploader
+	// artifactMemo maps a policy tree digest to the digest of its uploaded artifact ("" when
+	// the API refused it for good). Owned by the reconciler goroutine.
+	artifactMemo map[string]string
+	now          func() time.Time
 
-	mu        sync.Mutex // guards active, pending, cancelRun
-	active    *candidate
-	pending   *candidate
+	mu      sync.Mutex // guards active, pending, starting, fallback, cancelRun
+	active  *candidate
+	pending *candidate
+	// starting is the candidate the run loop took from pending and is about to bind;
+	// fallback is the one it falls back to if the running one fails. GC keeps their trees.
+	starting  *candidate
+	fallback  *candidate
 	cancelRun context.CancelFunc
+	// inlineMu serializes activating inline trees (run loop) with GC (reconciler goroutine).
+	inlineMu sync.Mutex
 
 	// Everything below is owned by the reconciler goroutine (startup runs before loop).
 	base        *baseSnapshot
@@ -220,7 +249,7 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 	if logger == nil {
 		logger = hclog.NewNullLogger()
 	}
-	return &reconciler{
+	rc := &reconciler{
 		cmd:        cmd,
 		configPath: configPath,
 		store:      store,
@@ -229,13 +258,16 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		fileEvents: make(chan struct{}, 1),
 		runFailed:  make(chan *candidate, 1),
 		debounce:   500 * time.Millisecond,
-		newRemote:  newSDKRemote,
 		lookupEnv:  os.LookupEnv,
 		now:        time.Now,
 		loggedOnce: map[string]bool{},
 
 		inventoryMemo: map[string]agentconfig.PolicyBundleReport{},
+		artifacts:     runnerpkg.NewArtifactUploader(),
+		artifactMemo:  map[string]string{},
 	}
+	rc.newRemote = func(c agentconfig.Config) remoteAPI { return newSDKRemote(c, rc.artifacts) }
+	return rc
 }
 
 func (rc *reconciler) rcfg() agentconfig.RemoteConfig {
@@ -268,6 +300,8 @@ func (rc *reconciler) setBase(base *baseSnapshot) {
 		}
 		rc.remoteKey = key
 		rc.fetchBackoffUntil, rc.reportBackoffUntil = time.Time{}, time.Time{}
+		// Artifacts uploaded to the previous API are not in this one.
+		rc.artifactMemo = map[string]string{}
 	}
 
 	id := cacheIdentity(base.declared)
@@ -558,6 +592,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	if err != nil {
 		return nil, failed(agentconfig.ReasonInvalidConfig, err)
 	}
+	runtime.inlineTrees = inline.trees
 	prefetchCtx, cancelPrefetch := context.WithTimeout(ctx, prepareNetworkTimeout)
 	err = rc.runner.Prefetch(prefetchCtx, runtime)
 	cancelPrefetch()
@@ -567,7 +602,9 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		return nil, aerr
 	}
 	if rcfg.Mode != agentconfig.ModeOff {
-		inline.reports = append(inline.reports, rc.sourceReports(ctx, runtime)...)
+		reports, trees := rc.sourceReports(ctx, runtime)
+		inline.reports = append(inline.reports, reports...)
+		inline.artifacts = append(inline.artifacts, trees...)
 	}
 
 	// The digest is over the UNRESOLVED form with the same masking as the reported effective
@@ -584,8 +621,9 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		declared:       declared,
 		runtime:        runtime,
 		digest:         digest,
-		identity:       candidateIdentity(declared, inline.dirs),
+		identity:       candidateIdentity(declared, inline.trees),
 		bundles:        inline.reports,
+		trees:          inline.artifacts,
 		warnings:       append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
 		policyWarnings: inline.warnings,
 	}, nil
@@ -593,9 +631,11 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 
 // inlineResult is what the inline bundle step contributes to a candidate (G3b).
 type inlineResult struct {
-	dirs     map[string]string
-	reports  []agentconfig.PolicyBundleReport
-	warnings []agentconfig.PolicyError
+	dirs      map[string]string // "inline:<name>" -> the stable path plugins receive
+	trees     map[string]string // "inline:<name>" -> the materialized tree
+	reports   []agentconfig.PolicyBundleReport
+	artifacts []artifactTree
+	warnings  []agentconfig.PolicyError
 }
 
 // overlayTouched returns the pointers an overlay changed, computed on the unresolved forms so
@@ -652,6 +692,8 @@ func overlayValidationError(err error) *applyError {
 	return rejected(reason, errs)
 }
 
+// candidateIdentity hashes the declared config and the materialized inline trees (not the
+// stable paths, which never change), so a different tree is a different configuration.
 func candidateIdentity(c agentconfig.Config, inlineDirs map[string]string) string {
 	raw, err := agentconfig.CanonicalJSON(struct {
 		Config     agentconfig.Config `json:"config"`
@@ -670,6 +712,7 @@ func (rc *reconciler) bind(active *candidate, cancel context.CancelFunc) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	rc.active = active
+	rc.starting = nil
 	rc.cancelRun = cancel
 	if rc.pending != nil {
 		cancel()
@@ -730,7 +773,26 @@ func (rc *reconciler) takePending() *candidate {
 	defer rc.mu.Unlock()
 	next := rc.pending
 	rc.pending = nil
+	if next != nil {
+		rc.starting = next
+	}
 	return next
+}
+
+// setFallback records the candidate the run loop falls back to (GC keeps its trees).
+func (rc *reconciler) setFallback(c *candidate) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.fallback = c
+}
+
+// start points the inline bundles' stable paths at c's trees, then records c as the running
+// candidate. The run loop calls it only once the previous configuration's run returned, so
+// the swap never happens under a running plugin (R67).
+func (rc *reconciler) start(c *candidate, cancel context.CancelFunc) error {
+	err := rc.activateInline(c)
+	rc.bind(c, cancel)
+	return err
 }
 
 // current returns the candidate that is running, or about to run when a swap is pending.
@@ -749,14 +811,18 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 	var previous, failedRun *candidate
 	for {
 		runCtx, cancel := context.WithCancel(context.Background())
-		rc.bind(active, cancel)
+		runErr := rc.start(active, cancel)
 		if failedRun != nil {
 			// Notify only once the fallback is bound, so the reconciler's current() is the
 			// fallback, never the candidate that failed.
 			rc.notifyRunFailed(failedRun)
 			failedRun = nil
 		}
-		runErr := run(runCtx, active.runtime)
+		if runErr != nil {
+			rc.logger.Error("Could not activate the inline policy bundles", "error", runErr)
+		} else {
+			runErr = run(runCtx, active.runtime)
+		}
 		reload := runCtx.Err() != nil
 		cancel()
 		active = rc.record(active)
@@ -765,6 +831,7 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 				rc.logger.Error("Configuration failed to run; falling back to the previous configuration", "error", runErr)
 				failedRun = active
 				active, previous = previous, nil
+				rc.setFallback(nil)
 				continue
 			}
 			return runErr
@@ -777,6 +844,7 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 			continue
 		}
 		previous, active = active, next
+		rc.setFallback(previous)
 	}
 }
 
