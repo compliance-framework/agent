@@ -1,0 +1,2 @@
+lisa-addressed:
+Round 3 pass 1: downloadPlugin doc/Prefetch reuse; R79 counts /plugins/<p>/source as overlay-introduced (test TestCompat_OverlayMovingAnInlinePluginToAnOldBuildIsRejected_R79); seeds precomputed in loadedModule.
