@@ -125,6 +125,7 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	for _, name := range slices.Sorted(maps.Keys(materialized)) {
 		problems = append(problems, inlinepolicy.OverrideStreams(materialized[name])...)
 	}
+	problems = append(problems, unshadowedWarnings(resolved, skip, plan, materialized)...)
 	problems = append(problems, rc.policyIdentities(ctx, resolved, skip, materialized, origin)...)
 	if agentconfig.HasPolicyErrors(problems) {
 		return res, policyRejection(append(problems, res.warnings...))

@@ -308,14 +308,14 @@ policy_bundles:
   modules start path-based streams. That happens when the `extends` path is absolute (or not a `policies/` tree),
   when a plugin using the bundle also loads the source itself (reported as `duplicate-policy-identity` as before) or
   another bundle extending the same source, when another relative policy path of the plugin cannot be represented in
-  a view (e.g. a single-component path such as `policies`), or without symlinks. The agent logs why.
-- **Overrides and evidence streams (R75).** The agent compares what plugins will seed each module of an `extends`
-  bundle with against the vendor module at the same path. A changed `package` is a `policy-package-changed` warning.
-  An override that does not continue the vendor stream (an own `policy_id`, a dropped vendor `policy_id`, or any
-  override of a bundle that is not shadowed) is a `policy-stream-forked` warning, which names the vendor's
-  `policy_id` when it has one; the inherited modules of a bundle that is not shadowed get one such warning for the
-  bundle. A module keeps the stream of a vendor module that declares a `policy_id` wherever it is loaded from, as
-  long as it keeps that `policy_id`.
+  a view (e.g. a single-component path such as `policies`), or without symlinks or a writable state directory. Each
+  plugin that uses such a bundle gets a `policy-stream-forked` warning for the bundle that gives the reason and lists
+  the modules that would have kept the vendor's streams at the source's path. An authored `policy_id` keeps a
+  module's stream wherever it is loaded from (plugins built on agent ≥ v0.9.0).
+- **Overrides and evidence streams (R75).** An override is compared with the vendor module it replaces by the seeds
+  plugins compute at the source's path. A changed `package` is a `policy-package-changed` warning; a `policy_id` that
+  differs from the vendor's (an own one, or a dropped vendor one) is a `policy-stream-forked` warning, which names the
+  vendor's `policy_id` when it has one.
 - **Plugin views (rule 1).** A plugin running in a view sees its working directory as the view: files it creates
   there (rather than through a mirrored directory) stay in the view and are removed with it.
   **Plugin contract:** plugins must not rely on creating new files or directories relative to their working

@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
+	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
@@ -23,8 +25,8 @@ import (
 // in policies/: every OCI source) and every enabled plugin that uses it can be given a view:
 // it does not also load the source or another bundle on the same path, and its other
 // relative paths still resolve in the view. Otherwise plugins receive the bundle at its own
-// path under inlineLinksDir and its modules start path-based streams (R88; OverrideStreams
-// warns).
+// path under inlineLinksDir and its modules start path-based streams (R88;
+// unshadowedWarnings says so per plugin).
 
 // shadowPlan is what prepareInline decided about shadowing, with the policy paths each
 // plugin receives for its non-inline entries (resolved once, reused for the views).
@@ -51,7 +53,21 @@ func (rc *reconciler) viewsRoot() string {
 func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Config, skip map[string]string, refs map[string]bool) shadowPlan {
 	plan := shadowPlan{shadow: map[string]bool{}, plugins: map[string]shadowPlugin{}, reasons: map[string]string{}}
 	resolve := rc.boundedResolver()
-	if resolve == nil || rc.store == nil || !rc.store.Writable() || !inlinepolicy.SymlinksSupported(rc.viewsRoot()) {
+	unavailable := ""
+	switch {
+	case resolve == nil:
+		unavailable = "no policy resolver"
+	case rc.store == nil || !rc.store.Writable():
+		unavailable = "plugin views need a writable state directory"
+	case !inlinepolicy.SymlinksSupported(rc.viewsRoot()):
+		unavailable = "plugin views need symlinks, which the file system does not support"
+	}
+	if unavailable != "" {
+		for name := range refs {
+			if b := resolved.PolicyBundles[name]; b != nil && b.Extends != nil {
+				plan.reasons[name] = unavailable
+			}
+		}
 		return plan
 	}
 	extendsPath := map[string]string{}
@@ -162,6 +178,48 @@ func (rc *reconciler) planShadowing(ctx context.Context, resolved agentconfig.Co
 		}
 	}
 	return plan
+}
+
+// unshadowedWarnings warns, once per enabled plugin and inline bundle it uses, about an
+// extends bundle that is not shadowed (R88): the plugin receives it at its own path, so the
+// modules that would keep the vendor's evidence streams at the source's path
+// (inlinepolicy.UnshadowedForks) start new ones. The reason is planShadowing's.
+func unshadowedWarnings(resolved agentconfig.Config, skip map[string]string, plan shadowPlan, materialized map[string]*inlinepolicy.Materialized) []agentconfig.PolicyError {
+	var out []agentconfig.PolicyError
+	for _, pluginName := range slices.Sorted(maps.Keys(resolved.Plugins)) {
+		p := resolved.Plugins[pluginName]
+		if p == nil || !p.IsEnabled() {
+			continue
+		}
+		if _, skipped := skip[pluginName]; skipped {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, e := range p.Policies {
+			name, ok := agentconfig.InlineBundleName(e)
+			if !ok || seen[name] || materialized[name] == nil {
+				continue
+			}
+			seen[name] = true
+			m := materialized[name]
+			forks := inlinepolicy.UnshadowedForks(m)
+			if len(forks) == 0 {
+				continue
+			}
+			why := plan.reasons[name]
+			if why == "" {
+				why = fmt.Sprintf("%s cannot be shadowed", m.ExtendsDir)
+			}
+			listed := forks
+			if len(listed) > 10 {
+				listed = append(slices.Clip(listed[:10]), fmt.Sprintf("and %d more", len(forks)-10))
+			}
+			out = append(out, agentconfig.PolicyError{Bundle: name, Severity: agentconfig.SeverityWarning, Code: inlinepolicy.CodePolicyStreamForked,
+				Message: fmt.Sprintf("plugin %s receives bundle %s at %s, not at the path of %s (%s), so %d of its modules (%s) record their evidence in new streams instead of the vendor's; a module keeps its stream wherever it is loaded from with an authored policy_id (plugins built on agent ≥ %s)",
+					pluginName, name, m.Path, m.Extends.Source, why, len(forks), strings.Join(listed, ", "), pluginlib.MinPolicyID)})
+		}
+	}
+	return out
 }
 
 // fallbackInlinePath is the path plugins receive for an inline bundle that is not shadowed,

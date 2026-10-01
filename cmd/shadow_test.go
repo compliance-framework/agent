@@ -293,7 +293,8 @@ func TestShadow_PluginAlsoLoadingTheSourceFallsBack(t *testing.T) {
 			t.Fatalf("an inherited module keeps the vendor bytes, got %q", raw)
 		}
 		forked := policyErrorsWithCode(h.remote.lastReport(t), inlinepolicy.CodePolicyStreamForked)
-		if len(forked) == 0 || forked[0].Path != "" || !strings.Contains(forked[0].Message, "inherited modules (banner.rego)") {
+		if len(forked) != 1 || forked[0].Path != "" || forked[0].Bundle != "ssh" || !strings.Contains(forked[0].Message, "plugin ssh receives bundle ssh") ||
+			!strings.Contains(forked[0].Message, "also loads") || !strings.Contains(forked[0].Message, "2 of its modules (banner.rego, keys.rego)") {
 			t.Fatalf("expected a policy-stream-forked warning for the inherited module, got %+v", h.remote.lastReport(t).PolicyErrors)
 		}
 		dups := policyErrorsWithCode(h.remote.lastReport(t), agentconfig.PolicyCodeDuplicatePolicyIdentity)
@@ -320,10 +321,13 @@ func TestShadow_PluginAlsoLoadingTheSourceFallsBack(t *testing.T) {
 }
 
 // TestShadow_AbsoluteExtendsIsNotShadowed: a bundle extending an absolute path cannot be
-// shadowed; an overlay editing it applies on an old plugin, its modules start new streams
-// (warned about) and the plugin gets no view.
+// shadowed; an overlay editing it applies on an old plugin, no plugin gets a view, and each
+// plugin that uses it is warned, with the reason, that its modules start new streams.
 func TestShadow_AbsoluteExtendsIsNotShadowed(t *testing.T) {
-	h, _ := newInlineHarness(t) // the vendor is an absolute temp dir
+	h, vendor := newInlineHarnessWith(t, strings.Replace(inlineBaseConfig, `    policies: ["inline:ssh"]`, `    policies: ["inline:ssh"]
+  other:
+    source: ghcr.io/compliance-framework/plugin-other:v1
+    policies: ["inline:ssh"]`, 1)) // the vendor is an absolute temp dir
 	withPluginLib(h, oldLib)
 	h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\n\ntitle := \"extra v2\"\n\nviolation[{\"id\": \"x\"}] if input.max > data.max\n"}}}}`)
 	active := mustStartup(t, h.rc)
@@ -331,10 +335,18 @@ func TestShadow_AbsoluteExtendsIsNotShadowed(t *testing.T) {
 	if active.overlay == nil || r.Status != agentconfig.StatusApplied {
 		t.Fatalf("expected applied, got %s/%s %+v", r.Status, r.Reason, r.PolicyErrors)
 	}
-	if forked := policyErrorsWithCode(r, inlinepolicy.CodePolicyStreamForked); len(forked) != 1 || forked[0].Severity != agentconfig.SeverityWarning {
-		t.Fatalf("expected one policy-stream-forked warning for the inherited module, got %+v", r.PolicyErrors)
+	forked := policyErrorsWithCode(r, inlinepolicy.CodePolicyStreamForked)
+	if len(forked) != 2 {
+		t.Fatalf("expected one policy-stream-forked warning per plugin, got %+v", r.PolicyErrors)
 	}
-	if active.runtime.pluginViews["ssh"] != nil {
+	for i, plugin := range []string{"other", "ssh"} {
+		if e := forked[i]; e.Severity != agentconfig.SeverityWarning || e.Bundle != "ssh" || e.Path != "" ||
+			!strings.Contains(e.Message, "plugin "+plugin+" receives bundle ssh") || !strings.Contains(e.Message, vendor+" is absolute") ||
+			!strings.Contains(e.Message, "(banner.rego)") || !strings.Contains(e.Message, "policy_id") {
+			t.Fatalf("warning %d = %+v", i, e)
+		}
+	}
+	if len(active.runtime.pluginViews) != 0 {
 		t.Fatal("an absolute extends path gets no view")
 	}
 }
@@ -559,6 +571,15 @@ func TestShadow_PlanDrops(t *testing.T) {
 			}
 			if !strings.Contains(logs.String(), "Inline bundle is not shadowed") || !strings.Contains(logs.String(), tc.reason) {
 				t.Fatalf("the reason must be logged (%q), got:\n%s", tc.reason, logs.String())
+			}
+			forked := policyErrorsWithCode(h.remote.lastReport(t), inlinepolicy.CodePolicyStreamForked)
+			if len(forked) == 0 {
+				t.Fatalf("expected policy-stream-forked warnings, got %+v", h.remote.lastReport(t).PolicyErrors)
+			}
+			for _, e := range forked {
+				if e.Path != "" || !strings.Contains(e.Message, "plugin ssh receives bundle "+e.Bundle) || !strings.Contains(e.Message, tc.reason) {
+					t.Fatalf("each unshadowed bundle's warning names the plugin and the reason: %+v", e)
+				}
 			}
 		})
 	}

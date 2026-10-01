@@ -18,7 +18,7 @@ import (
 // Evidence streams of an inline bundle that extends a vendor bundle: shadowed, plugins
 // receive the vendor's path and every module that keeps its package keeps its stream; not
 // shadowed, plugins receive the bundle's own path and its modules start path-based streams
-// (R88), which OverrideStreams warns about.
+// (R88), which UnshadowedForks lists.
 
 const (
 	// streamsVendor is where the agent extracts the vendor OCI bundle: relative to the
@@ -109,9 +109,9 @@ func shadowView(t *testing.T, m *Materialized) string {
 
 // TestStreams_UnshadowedBundleStartsPathStreams: a bundle plugins receive at its own path
 // keeps the vendor files as they are (no policy_id is added), so its inherited modules start
-// path-based streams under the relative _inline path, which is warned about once; a module
-// whose vendor package declares a policy_id keeps the vendor stream. Another revision keeps
-// the path and the streams (R67).
+// path-based streams under the relative _inline path (UnshadowedForks); a module whose
+// vendor package declares a policy_id keeps the vendor stream. Another revision keeps the
+// path and the streams (R67).
 func TestStreams_UnshadowedBundleStartsPathStreams(t *testing.T) {
 	l, resolve := streamsSetup(t)
 	m := streamsMaterialize(t, l, resolve, map[string]string{
@@ -137,12 +137,8 @@ func TestStreams_UnshadowedBundleStartsPathStreams(t *testing.T) {
 	assert.Equal(t, vendor["compliance_framework.deny_root_login"].uuid, got["compliance_framework.deny_root_login"].uuid,
 		"the vendor's own policy_id keeps the stream")
 
-	warnings := OverrideStreams(m)
-	require.Len(t, warnings, 1, "one warning for the inherited modules: %+v", warnings)
-	assert.Equal(t, CodePolicyStreamForked, warnings[0].Code)
-	assert.Equal(t, agentconfig.SeverityWarning, warnings[0].Severity)
-	assert.Empty(t, warnings[0].Path)
-	assert.Contains(t, warnings[0].Message, "inherited modules (banner.rego, ssh/require_key_based_ssh.rego)")
+	assert.Empty(t, OverrideStreams(m), "no override")
+	assert.Equal(t, []string{"banner.rego", "ssh/require_key_based_ssh.rego"}, UnshadowedForks(m))
 
 	// The report inventories the tree as written; the vendor files stay in the extends report.
 	assert.Equal(t, sha(streamsVendorFiles["banner.rego"]), fileSHA(m.Extends.Files, "banner.rego"))
@@ -174,6 +170,7 @@ func TestStreams_Shadowed(t *testing.T) {
 	assert.True(t, m.Shadowed)
 	assert.Equal(t, streamsVendor, m.Path, "plugins receive the vendor's path string")
 	assert.Empty(t, OverrideStreams(m))
+	assert.Empty(t, UnshadowedForks(m))
 
 	wd, err := os.Getwd()
 	require.NoError(t, err)
@@ -193,7 +190,8 @@ func TestStreams_Shadowed(t *testing.T) {
 	assert.Equal(t, streamsLinks+"/custom/policies", filepath.ToSlash(m.Path))
 }
 
-// TestStreams_Overrides: the R75 warnings about overrides, shadowed or not.
+// TestStreams_Overrides: the R75 warnings about overrides, shadowed or not, and what not
+// being shadowed costs.
 func TestStreams_Overrides(t *testing.T) {
 	const keyBased = "ssh/require_key_based_ssh.rego"
 	const rootLogin = "ssh/deny_root_login.rego"
@@ -212,6 +210,7 @@ func TestStreams_Overrides(t *testing.T) {
 		modules map[string]string
 		want    map[string]string // path -> code
 		hint    string            // a policy_id the warning suggests
+		forks   []string          // UnshadowedForks
 	}{
 		{
 			name:    "shadowed, same package",
@@ -241,12 +240,20 @@ func TestStreams_Overrides(t *testing.T) {
 		{
 			name:    "not shadowed, same package",
 			modules: map[string]string{keyBased: "package compliance_framework.require_key_based_ssh\n\nimport rego.v1\n\ntitle := \"tuned\"\n"},
+			want:    map[string]string{},
+			forks:   []string{"banner.rego", keyBased},
+		},
+		{
+			name:    "not shadowed, own policy_id",
+			modules: map[string]string{keyBased: "package compliance_framework.require_key_based_ssh\n\nimport rego.v1\n\npolicy_id := \"ssh-key-based\"\n\ntitle := \"tuned\"\n"},
 			want:    map[string]string{keyBased: CodePolicyStreamForked},
+			forks:   []string{"banner.rego"},
 		},
 		{
 			name:    "not shadowed, vendor policy_id kept",
 			modules: map[string]string{rootLogin: "package compliance_framework.deny_root_login\n\nimport rego.v1\n\npolicy_id := \"ssh-deny-root-login\"\n\ntitle := \"tuned\"\n"},
 			want:    map[string]string{},
+			forks:   []string{"banner.rego", keyBased},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -255,6 +262,7 @@ func TestStreams_Overrides(t *testing.T) {
 			require.Equal(t, tc.shadow, m.Shadowed)
 			warnings := OverrideStreams(m)
 			assert.Equal(t, tc.want, codes(warnings))
+			assert.Equal(t, tc.forks, UnshadowedForks(m))
 			for _, w := range warnings {
 				assert.Equal(t, agentconfig.SeverityWarning, w.Severity)
 				if tc.hint != "" && w.Path != "" {

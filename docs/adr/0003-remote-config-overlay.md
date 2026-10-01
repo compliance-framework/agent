@@ -85,8 +85,8 @@ package and bundle-relative file without `policy_id`) is `duplicate-policy-ident
 introduces them (it gives the plugin a policy entry the file does not, or changes a bundle involved), warnings
 otherwise (R34), so an overlay never fails on the file's own duplicates; what is left of R66 (the same package
 with different identities) stays a warning. For an `extends` bundle, an override is compared with the vendor module it
-replaces by the seeds plugins would compute from the extends source's path and the bundle's path: a changed
-`package` is `policy-package-changed`, any other difference `policy-stream-forked` (warnings).
+replaces by the seeds plugins would compute at the extends source's path: a changed `package` is
+`policy-package-changed`, a different `policy_id` `policy-stream-forked` (warnings).
 
 ### Path shadowing (R83, R88)
 
@@ -99,7 +99,7 @@ rejected the alternative of appending a continuity `policy_id` to every module t
 only worked for plugins rebuilt on agent ≥ v0.9.0 and gave added modules two identities depending on the shadowing
 decision. Where a view cannot represent the paths (absolute `extends`, a plugin loading the source and the bundle
 together, no symlinks) the bundle is given to plugins at its own `_inline` path and its modules start path-based
-streams, with `policy-stream-forked` warnings.
+streams; each plugin that uses it gets a `policy-stream-forked` warning with the reason.
 Risk: a plugin that relies on its working directory sees the view (mirrored, so reads and writes inside existing
 directories still reach the agent's; new top-level files stay in the view).
 Plugin contract (rule 1): plugins must not rely on creating new files relative to their working directory (use
