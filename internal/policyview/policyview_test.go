@@ -1,8 +1,11 @@
 package policyview
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -121,4 +124,212 @@ func TestEnsureNeverMirrorsTheViewIntoItself(t *testing.T) {
 	require.NoError(t, v.Ensure())
 	_, err := os.Lstat(filepath.Join(v.Dir, "state"))
 	assert.True(t, os.IsNotExist(err), "the directory holding the view is not mirrored")
+}
+
+// warnings records View.Warn calls.
+type warnings struct {
+	mu   sync.Mutex
+	logs []string
+}
+
+func (w *warnings) warn(msg string, args ...interface{}) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.logs = append(w.logs, fmt.Sprint(append([]interface{}{msg}, args...)...))
+}
+
+func (w *warnings) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.logs)
+}
+
+// shadowedView is a view of base with the bundle tree target linked at vendor/.
+func shadowedView(t *testing.T, base string, w *warnings) View {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "vendor", "policies"), 0o755))
+	target := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "policies"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "policies", "bundle.rego"), []byte("bundle"), 0o644))
+	links := map[string]string{"vendor": target}
+	v := View{Dir: DirFor(filepath.Join(t.TempDir(), "views"), "custodian", base, links), Base: base, Links: links}
+	if w != nil {
+		v.Warn = w.warn
+	}
+	if err := v.Ensure(); err != nil {
+		if os.IsPermission(err) {
+			t.Skip(err)
+		}
+		require.NoError(t, err)
+	}
+	return v
+}
+
+// TestEnsure_PluginOwnedEntriesAreKept (rule 1): a plugin that creates a directory relative to
+// its working directory (cloud-custodian's debug-standardized-payloads) creates it in its view;
+// when the agent's working directory later gets an entry of the same name, the plugin keeps
+// its own, Ensure warns once and succeeds.
+func TestEnsure_PluginOwnedEntriesAreKept(t *testing.T) {
+	base := t.TempDir()
+	w := &warnings{}
+	v := shadowedView(t, base, w)
+
+	// The plugin creates a directory and a file in its working directory.
+	owned := filepath.Join(v.Dir, "debug-standardized-payloads")
+	require.NoError(t, os.MkdirAll(owned, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(owned, "payload.json"), []byte("plugin"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(v.Dir, "out.log"), []byte("plugin log"), 0o644))
+	require.NoError(t, v.Ensure(), "entries only the view has are left alone")
+	assert.Zero(t, w.count())
+
+	// Later the agent's working directory gets the same names.
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "debug-standardized-payloads"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "debug-standardized-payloads", "agent.json"), []byte("agent"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "out.log"), []byte("agent log"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "fresh.txt"), []byte("fresh"), 0o644))
+
+	for range 3 {
+		require.NoError(t, v.Ensure(), "a plugin-owned entry never fails Ensure")
+	}
+	assert.Equal(t, 2, w.count(), "one warning per plugin-owned name, not one per Ensure: %v", w.logs)
+	assert.Contains(t, strings.Join(w.logs, "\n"), "debug-standardized-payloads")
+
+	info, err := os.Lstat(owned)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir() && info.Mode()&os.ModeSymlink == 0, "the plugin's directory is not replaced by a mirror link")
+	raw, err := os.ReadFile(filepath.Join(owned, "payload.json"))
+	require.NoError(t, err)
+	assert.Equal(t, "plugin", string(raw))
+	_, err = os.Stat(filepath.Join(owned, "agent.json"))
+	assert.True(t, os.IsNotExist(err), "the agent's entry is hidden from the plugin")
+	raw, err = os.ReadFile(filepath.Join(v.Dir, "out.log"))
+	require.NoError(t, err)
+	assert.Equal(t, "plugin log", string(raw))
+	raw, err = os.ReadFile(filepath.Join(base, "out.log"))
+	require.NoError(t, err)
+	assert.Equal(t, "agent log", string(raw), "the agent's entry is untouched")
+
+	// Other entries are still mirrored, and the shadowed path is still the bundle.
+	raw, err = os.ReadFile(filepath.Join(v.Dir, "fresh.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "fresh", string(raw))
+	raw, err = os.ReadFile(filepath.Join(v.Dir, "vendor", "policies", "bundle.rego"))
+	require.NoError(t, err)
+	assert.Equal(t, "bundle", string(raw))
+
+	// A view without a Warn hook behaves the same, silently.
+	silent := v
+	silent.Warn = nil
+	require.NoError(t, silent.Ensure())
+}
+
+// TestEnsure_PluginOwnedEntryInANestedViewDirectory: the same holds below the view root.
+func TestEnsure_PluginOwnedEntryInANestedViewDirectory(t *testing.T) {
+	base := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "a", "vendor", "policies"), 0o755))
+	target := t.TempDir()
+	links := map[string]string{"a/vendor": target}
+	w := &warnings{}
+	v := View{Dir: DirFor(filepath.Join(t.TempDir(), "views"), "p", base, links), Base: base, Links: links, Warn: w.warn}
+	require.NoError(t, v.Ensure())
+	require.NoError(t, os.WriteFile(filepath.Join(v.Dir, "a", "cache"), []byte("plugin"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "a", "cache"), []byte("agent"), 0o644))
+	require.NoError(t, v.Ensure())
+	require.NoError(t, v.Ensure())
+	assert.Equal(t, 1, w.count())
+	raw, err := os.ReadFile(filepath.Join(v.Dir, "a", "cache"))
+	require.NoError(t, err)
+	assert.Equal(t, "plugin", string(raw))
+}
+
+// TestEnsure_ConflictAtTheShadowLink: the shadow link is the agent's; a real entry at its
+// path (the plugin removed the link and created its own) is a clear error, and Ensure leaves
+// the entry alone.
+func TestEnsure_ConflictAtTheShadowLink(t *testing.T) {
+	base := t.TempDir()
+	v := shadowedView(t, base, &warnings{})
+	link := filepath.Join(v.Dir, "vendor")
+	require.NoError(t, os.Remove(link))
+	require.NoError(t, os.MkdirAll(filepath.Join(link, "policies"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(link, "policies", "mine.rego"), []byte("plugin"), 0o644))
+
+	err := v.Ensure()
+	var conflict *LinkConflictError
+	require.ErrorAs(t, err, &conflict)
+	assert.Equal(t, LinkConflictError{View: v.Dir, Link: "vendor"}, *conflict)
+	assert.Contains(t, err.Error(), "shadowed policy path")
+	raw, rerr := os.ReadFile(filepath.Join(link, "policies", "mine.rego"))
+	require.NoError(t, rerr, "the conflicting entry is not removed")
+	assert.Equal(t, "plugin", string(raw))
+
+	// Removing the view (GC, or by hand) rebuilds it cleanly.
+	require.NoError(t, os.RemoveAll(v.Dir))
+	require.NoError(t, v.Ensure())
+	raw, rerr = os.ReadFile(filepath.Join(link, "policies", "bundle.rego"))
+	require.NoError(t, rerr)
+	assert.Equal(t, "bundle", string(raw))
+}
+
+// TestEnsure_ReplacesAStaleMirrorLink: a mirror link to something else is the agent's and is
+// replaced atomically, leaving no temporary link behind.
+func TestEnsure_ReplacesAStaleMirrorLink(t *testing.T) {
+	base := t.TempDir()
+	v := shadowedView(t, base, nil)
+	require.NoError(t, os.WriteFile(filepath.Join(base, "cfg"), []byte("cfg"), 0o644))
+	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(v.Dir, "cfg")))
+	require.NoError(t, v.Ensure())
+	cur, err := os.Readlink(filepath.Join(v.Dir, "cfg"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(base, "cfg"), cur)
+	entries, err := os.ReadDir(v.Dir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), ".tmp-link", "no temporary link left behind")
+	}
+}
+
+// TestGC_RemovesPluginOwnedEntriesWithoutFollowingLinks: GC removes a whole view, plugin-owned
+// entries included, but never what a link (a mirror link, the shadow link, or a link the
+// plugin made itself) points to; and a view rebuilt in the same place warns again.
+func TestGC_RemovesPluginOwnedEntriesWithoutFollowingLinks(t *testing.T) {
+	base := t.TempDir()
+	w := &warnings{}
+	v := shadowedView(t, base, w)
+	outside := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "keep.txt"), []byte("keep"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "agent.txt"), []byte("agent"), 0o644))
+	owned := filepath.Join(v.Dir, "debug-standardized-payloads")
+	require.NoError(t, os.MkdirAll(owned, 0o755))
+	require.NoError(t, os.Symlink(outside, filepath.Join(owned, "elsewhere")))
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "debug-standardized-payloads"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "debug-standardized-payloads", "agent.json"), []byte("agent"), 0o644))
+	require.NoError(t, v.Ensure())
+	require.Equal(t, 1, w.count())
+
+	// A symlinked plugin directory under the root is not followed either.
+	root := filepath.Dir(filepath.Dir(v.Dir))
+	require.NoError(t, os.Symlink(outside, filepath.Join(root, "linked")))
+
+	require.NoError(t, GC(root, map[string]struct{}{}))
+	_, err := os.Lstat(v.Dir)
+	assert.True(t, os.IsNotExist(err), "the view, plugin-owned entries included, is removed")
+	for _, p := range []string{
+		filepath.Join(outside, "keep.txt"),
+		filepath.Join(base, "agent.txt"),
+		filepath.Join(base, "debug-standardized-payloads", "agent.json"),
+		filepath.Join(base, "vendor", "policies"),
+		filepath.Join(v.Links["vendor"], "policies", "bundle.rego"),
+	} {
+		_, err := os.Stat(p)
+		assert.NoError(t, err, "GC must not follow links: %s", p)
+	}
+	_, err = os.Lstat(filepath.Join(root, "linked"))
+	assert.NoError(t, err, "a symlinked plugin directory is skipped")
+
+	// Rebuilt in the same place, the view warns again for a new plugin-owned entry.
+	require.NoError(t, v.Ensure())
+	require.NoError(t, os.Remove(filepath.Join(v.Dir, "debug-standardized-payloads")))
+	require.NoError(t, os.MkdirAll(owned, 0o755))
+	require.NoError(t, v.Ensure())
+	assert.Equal(t, 2, w.count())
 }

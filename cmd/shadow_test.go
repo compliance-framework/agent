@@ -10,6 +10,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/agent/internal/pluginlib"
+	"github.com/compliance-framework/agent/internal/policyview"
 	policy_manager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/hashicorp/go-hclog"
@@ -420,5 +421,72 @@ func TestLibProblems_Shadowing(t *testing.T) {
 		if e.Severity != agentconfig.SeverityWarning {
 			t.Fatalf("file-origin problems must warn: %+v", e)
 		}
+	}
+}
+
+// TestShadow_PluginOwnedViewEntries (rule 1): a plugin that creates a directory relative to
+// its working directory creates it in its view. When the agent's working directory later
+// gets the same name, the plugin keeps its own; neither activation nor the plugin's run
+// fails, and the warning is logged once. A real entry at the shadow link itself is a
+// conflict: activation and the run fail with a clear error, and the entry is left alone.
+func TestShadow_PluginOwnedViewEntries(t *testing.T) {
+	h := shadowHarness(t, shadowConfig)
+	withPluginLib(h, oldLib)
+	var logs strings.Builder
+	h.rc.logger = hclog.New(&hclog.LoggerOptions{Output: &logs, Level: hclog.Warn})
+	active := mustStartup(t, h.rc)
+	if err := h.rc.activateInline(active); err != nil {
+		t.Fatal(err)
+	}
+	view := active.runtime.pluginViews["ssh"]
+	if view == nil {
+		t.Fatal("the plugin has no view")
+	}
+
+	// cloud-custodian writes debug-standardized-payloads/ relative to its working directory.
+	owned := filepath.Join(view.Dir, "debug-standardized-payloads")
+	if err := os.MkdirAll(owned, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(owned, "payload.json"), []byte("plugin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ... and later, so does something in the agent's working directory.
+	if err := os.MkdirAll("debug-standardized-payloads", 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		if err := h.rc.activateInline(active); err != nil {
+			t.Fatalf("activation must not fail on a plugin-owned entry: %v", err)
+		}
+		if dir, err := active.runtime.pluginWorkDir("ssh"); err != nil || dir != view.Dir {
+			t.Fatalf("the plugin's run must not fail on a plugin-owned entry: %q %v", dir, err)
+		}
+	}
+	if n := strings.Count(logs.String(), "path=debug-standardized-payloads"); n != 1 || strings.Count(logs.String(), "[WARN]") != 1 {
+		t.Fatalf("want one warning naming the entry, got %d:\n%s", n, logs.String())
+	}
+	if raw, err := os.ReadFile(filepath.Join(owned, "payload.json")); err != nil || string(raw) != "plugin" {
+		t.Fatalf("the plugin's entry must be kept: %q %v", raw, err)
+	}
+
+	// The shadow link is the agent's: a real entry there is a conflict, never removed.
+	link := filepath.Join(view.Dir, filepath.Dir(shadowExtracted))
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(link, "policies"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *policyview.LinkConflictError
+	if err := h.rc.activateInline(active); !errors.As(err, &conflict) {
+		t.Fatalf("activation must fail with a link conflict, got %v", err)
+	}
+	if _, err := active.runtime.pluginWorkDir("ssh"); !errors.As(err, &conflict) {
+		t.Fatalf("the run must fail with a link conflict, got %v", err)
+	}
+	if info, err := os.Lstat(link); err != nil || !info.IsDir() {
+		t.Fatalf("the conflicting entry must be left alone: %v", err)
 	}
 }

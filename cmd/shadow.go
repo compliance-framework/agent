@@ -230,6 +230,8 @@ func (rc *reconciler) buildViews(plan shadowPlan, materialized map[string]*inlin
 			Dir:   policyview.DirFor(root, pluginName, base, viewLinks),
 			Base:  base,
 			Links: viewLinks,
+			// Plugin-owned entries in the view (rule 1) are warnings, once per view and name.
+			Warn: rc.logger.Warn,
 		}
 	}
 	return views, nil

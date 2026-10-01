@@ -321,6 +321,14 @@ policy_bundles:
   path of the plugin cannot be represented in a view (e.g. a single-component path such as `policies`), or without
   symlinks. A plugin running in a view sees its working directory as the view: files it creates there (rather than
   through a mirrored directory) stay in the view and are removed with it.
+  **Plugin contract:** plugins must not rely on creating new files or directories relative to their working
+  directory; use absolute paths or `os.TempDir()`. Such entries are the plugin's (rule 1): they stay in the plugin's
+  view and are removed with it. If the agent's working directory later gets an entry with the same name, the plugin
+  keeps its own (and does not see the agent's); the agent logs one warning per view and name, and never fails the
+  plugin's run or the configuration's activation over it. The one exception is the shadowed path's link itself (the
+  parent of the vendor path), which is the agent's: a real entry there means the plugin replaced the link, so
+  activation and the plugin's run fail with an error naming it (the previous configuration keeps running), and the
+  agent does not remove it; deleting the view directory rebuilds it.
 - **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
   `.rego` file fails with `download-failed`.
 - **Where bundles live (R67, R82).** Inline bundles are never downloaded. Each revision of a bundle is a write-once

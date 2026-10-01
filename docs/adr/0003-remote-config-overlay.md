@@ -111,6 +111,14 @@ view (artifact uploads, source props). R82's `policy_id` remains the fallback wh
 (absolute `extends`, a plugin loading the source and the bundle together), and the R79 gate only applies there.
 Risk: a plugin that relies on its working directory sees the view (mirrored, so reads and writes inside existing
 directories still reach the agent's; new top-level files stay in the view).
+Plugin contract (rule 1): plugins must not rely on creating new files relative to their working directory (use
+absolute paths or `os.TempDir()`); such entries stay in the plugin's view and are removed with it. A real
+(non-symlink) entry in a view is plugin-owned: when the agent's working directory later gets the same name, the
+view keeps the plugin's entry instead of mirroring the agent's, warns once per view and name, and never fails a run
+or an activation. Only the shadow link is agent-owned: a real entry at its path is a conflict that fails activation
+and the run with a clear error and is not removed (falling back to R82 there would need the bundle re-materialized
+with continuity `policy_id`s, which is decided before materializing, so the previous configuration keeps running
+instead). View GC removes whole views, plugin-owned entries included, and never follows links.
 
 ### Stable inline paths (R67)
 
