@@ -82,6 +82,14 @@ type Materialized struct {
 	Authored      map[string]bool
 	AuthoredTests []string
 	Warnings      []agentconfig.PolicyError // delete of a missing path, skipped symlink, stray data file
+
+	// Identities are the evidence identities of the tree's policy modules, and
+	// ExtendsIdentities those of the extends tree (R75).
+	Identities, ExtendsIdentities []ModuleIdentity
+	// SetViolations are the authored modules that define violation as a set, which plugins
+	// built on an agent library older than v0.7.1 cannot evaluate; PolicyIDRules are the
+	// authored modules that declare policy_id, which plugins built before R74 ignore (R76).
+	SetViolations, PolicyIDRules []Site
 }
 
 // Materialize builds bundle name in the R17 order (extends tree, delete, modules, data),
@@ -129,6 +137,7 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 			Files:  inventory(baseFiles),
 		}
 		m.ExtendsDir = dir
+		m.ExtendsIdentities = Identities(baseFiles)
 		files = baseFiles
 	}
 
@@ -210,6 +219,8 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 	// 7. Inventory.
 	m.Files = inventory(files)
 	slices.Sort(m.AuthoredTests)
+	m.Identities = Identities(files)
+	m.SetViolations, m.PolicyIDRules = authoredSites(files, m.Authored)
 	return m, nil
 }
 
