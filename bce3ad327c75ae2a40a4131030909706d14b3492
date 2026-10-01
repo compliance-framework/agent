@@ -1,0 +1,78 @@
+lisa-addressed:
+---
+Comment (cmd/inline.go:332):
+**M1 (logic flaw, must fix).** `activateInline` joins every view's `Ensure()` error into its result, and an activation error fails the **whole** configuration; with no previous configuration (startup) `rc.run` returns it and the agent exits. Views are content-addressed and kept by GC, so the same conflict returns after restart → crash loop. The previous configuration usually shares the same view, so "last-known-good keeps running" doesn't hold either. Fix: log view `Ensure` errors here (Warn) instead of returning them — `pluginWorkDir`/`cmd/agent.go:2268` already re-runs `Ensure` before each run and fails just that plugin's run with the clear `LinkConflictError`. Add a test for the blast radius (one plugin's conflicting view doesn't stop another plugin or the activation), and correct the docs claim (configuration.md ~L330, ADR ~L118-120).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix (cmd/inline.go activateInline): keep Activate errors (stable links) returned, but log each view Ensure error with rc.logger.Warn (plugin, view, error) instead of joining it; pluginWorkDir (cmd/agent.go) already re-runs Ensure and fails only that plugin's run with the LinkConflictError. Test in cmd/shadow_test.go: two plugins with shadowed views, one with a real dir at its shadow link -> activateInline returns nil, the other plugin's view is ensured and its pluginWorkDir succeeds, the conflicting plugin's pluginWorkDir fails with *LinkConflictError. Update the existing TestShadow_PluginOwnedViewEntries expectation. Docs: configuration.md (~L330) and ADR (~L118-120) say a link conflict fails only that plugin's run.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/inline.go:23):
+**M2 (must fix before release — the path seeds evidence UUIDs of non-shadowed bundles).** `.compliance-framework/policies/inline` shares a namespace with the OCI cache (`internal/oci.go:158` extracts to `<AgentPolicyDir>/<RepositoryStr>/<tag>`): `ghcr.io/inline/foo:v1` lands in `…/policies/inline/foo/v1/policies`, colliding with an inline bundle `foo` (rename-over-dir failure, or OCI writes through the symlink into the write-once store). Use a name that can't be an OCI repository component, e.g. `.compliance-framework/policies/_inline` (components must start with `[a-z0-9]`). Update docs/tests accordingly.
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix: inlineLinksDir = filepath.Join(AgentPolicyDir, "_inline") (OCI repository components start with [a-z0-9], so it can't collide). Update the Layout doc in materialize.go, tests that assert .compliance-framework/policies/inline/..., configuration.md, ADR, and any README/AGENTS mention.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/identity.go:198):
+**Owner decision R88 (design §13.7): drop R82.** Shadowing is the only automatic continuity mechanism. Remove the automatic continuity `policy_id` injection (`continueVendorStreams`, `declaresPolicyID`, `Continued`, `CodeContinuityPolicyIDSkipped`/`policy-id-continuity-skipped`, `ContinuityPolicyID`) and its tests. When a bundle can't be shadowed, its modules start path-based streams with the existing `policy-stream-forked` warning. KEEP: authored `policy_id` support (R74 in policy-manager via `policyeval.SeedPath`), R75 identity checks (`duplicate-policy-identity`, etc.).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix (R88): delete continueVendorStreams, declaresPolicyID, ContinuityPolicyID, CodeContinuityPolicyIDSkipped, Materialized.Continued and the materialize step that calls it; the R82 tests in internal/inlinepolicy/continuity_test.go go (keep the shadowing Materialize test, minus Continued). OverrideStreams keeps policy-package-changed and policy-stream-forked; its hint suggests the vendor's own policy_id when it has one, otherwise just says the override starts a new stream. Keep SeedOf/policyeval.SeedPath (R74) and the R75 identity checks in cmd/identity.go.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/compat.go:49):
+R88 (cont.): remove the v0.9.0 gate (`pluginlib.MinInlinePolicy` branch, `plugin-lib-inline-unsupported`, `needsPolicyID`) and the `plugins[].inline-policies` report field (`inlineSupport`, `inlinePoliciesUnsupported` at L38 is already dead). Keep: set-form `violation contains` error for lib < v0.7.1 (`MinViolationSet`) and the `plugin-lib-policy-id-unsupported` warning for an authored `policy_id` on an older lib; `lib-version` stays in the report. Trim `internal/pluginlib` to what remains. The API (#465) removes these wire fields/codes in this round — re-pin `github.com/compliance-framework/api` to its new head once it's pushed.
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix (R88): cmd/compat.go drops inlineSupport, the inlinePolicies* consts, needsPolicyID and the plugin-lib-inline-unsupported branch of libProblems; PluginReport keeps Name/Source/LibVersion. Keep the set-form problem for lib < pluginlib.MinViolationSet (error when the overlay introduced it and the version is known, else warning) and the plugin-lib-policy-id-unsupported warning for an authored policy_id when lib < the policy_id release. In internal/pluginlib rename MinInlinePolicy to MinPolicyID (v0.9.0, the release that ships R74; only used for that warning) and trim docs/tests. Re-pin api to 52f0c63a6690.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/inline.go:155):
+R88 (cont.): the API removes `policy-bundles[].plugin-path` and `extends.plugin-path` from the report (they only served the UI's/R82 continuity). Stop filling them here and at L222; keep using the extends path internally for shadowing.
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix (R88): stop setting PolicyBundleReport.PluginPath (cmd/inline.go prepareInline and sourceReports) and Extends.PluginPath (materialize.go); the fields are gone from the API. Shadowing keeps using Materialized.ExtendsDir internally. Remove the R77/R78 plugin-path tests in cmd/inline_test.go and the plugin-path assertions in shadow_test.go.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/check.go:344):
+Shrink (pure refactor): `mergePolicyData` is the same algorithm as the API's exported `policyeval.MergeData` (its comment about an unexported `writePolicyData` is wrong). Use `policyeval.MergeData` and drop `TestMergePolicyDataParity`.
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix: replace mergePolicyData with policyeval.MergeData in internal/inlinepolicy/check.go and delete TestMergePolicyDataParity.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/identity.go:314):
+Shrink (pure refactor): `policyIDs`/`literalPolicyID`/`unconditional`/`ruleName`/`packageOf` (~L312-379) re-implement the API's static `policy_id` rule semantics. API #465 exports `policyeval.RuleName` and a static extractor in this round — switch to them so there is one definition of a valid `policy_id`. Likewise use the new regocheck Issue→PolicyError converter instead of the hand-written mapping in `contract.go:~109-120`, and drop the duplicate-module re-check in `contract.go:~122-145` (`CheckContract` already emits `duplicate-package-module`).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix: identity.go uses policyeval.StaticPolicyIDs (per package) and policyeval.RuleName; delete policyIDs/literalPolicyID/unconditional/ruleName (keep a one-line packageOf, shared with contract.go). contract.go staticContract builds each PolicyError with regocheck.ToPolicyError, rebasing Path to the bundle root and keeping the vendor-warning message/severity tweak. Drop the hand-written duplicate-module loop: run CheckContract on the whole tree and keep, for authored packages, only its duplicate-package-module issues (as warnings), for vendor-only packages every issue (warnings). Replace policyeval.Issue* codes with agentconfig.PolicyCode*. Add tests pinning the StaticPolicyIDs semantics the identity checks rely on.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/materialize.go:364):
+Shrink: `legacyCurrentLink`, the earlier-layout rebuild in `writeOnce`, the `!complete` removal in GC and `TestR82_MigratesTheR67Layout`/`TestMaterialize_RebuildsOldLayout` migrate layouts that only ever existed on this unreleased branch. Remove them (dev stacks just wipe state).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix: remove legacyCurrentLink, currentTmpPrefix, the earlier-layout RemoveAll in writeOnce, the !complete RemoveAll in GC (and the R67 wording in complete()), and the tests TestR82_MigratesTheR67Layout / TestMaterialize_RebuildsOldLayout.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (internal/inlinepolicy/materialize.go:595):
+Shrink (pure refactor): 8 hand-rolled sorted-key helpers (here, `policyview.go:398`, `cmd/config.go:454`, `cmd/agent.go:2186`, `cmd/inline.go:337/346/355/364`) → `slices.Sorted(maps.Keys(m))`.
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix: replace sortedKeys (materialize.go, policyview.go), sortedStringKeys (cmd/config.go), sortedSetKeys (cmd/agent.go), sortedBoolKeys/sortedMaterializedKeys/sortedPluginNames/sortedMapKeys (cmd/inline.go) with slices.Sorted(maps.Keys(m)) at the call sites; delete the helpers.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/shadow.go:14):
+Shadowing is now the shipped mechanism: drop the "prototype" labels (here, `policyview.go:3`, ADR `### Path shadowing (prototype)`, configuration.md L303) and rewrite those docs as primary (no R82 "above"). Also fix: AGENTS.md:120 "Plugin library gate" (v0.9.0), ADR L91-101 gate section (superseded), configuration.md L363 ("a moved state directory starts a new stream") and L399 ("Plugins must be rebuilt" — now only for authored `policy_id`), and `cmd/inline.go:309` comment (GC runs right after `swap()`, safe because the keep set covers the draining config). Trim comment prose that repeats configuration.md/ADR where it's long (policyview package doc, reconciler, materialize).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix docs/comments: drop 'prototype' (cmd/shadow.go, policyview.go package doc, ADR heading, configuration.md L303); describe shadowing as the primary mechanism with path-based streams under _inline as the fallback (no R82). Fix AGENTS.md:120 (no v0.9.0 gate; only set-form < v0.7.1 and the policy_id warning), ADR L91-101 gate section, configuration.md L363 (a moved state dir no longer forks streams: plugins get relative paths) and L399 (a rebuild is only needed for authored policy_id), and the cmd/inline.go:309 comment (GC runs right after swap(); safe because the keep set includes the draining configuration). Shorten comment prose in the policyview package doc, reconciler and materialize that repeats configuration.md/ADR.
+
+<!-- lisa-guidance-posted -->
+---
+Comment (cmd/agent.go:2268):
+Low: the plugin launch with `cmd.Dir = view` + absolute binary path (`getRunnerInstance`) has no unit coverage, nor do planShadowing's drops ("uses more than one bundle that extends", "Plan fails for the plugin"). Add focused tests; make the five R79 overlay scenarios in `cmd/compat_test.go` table-driven (or delete those that R88 removes).
+Replies:
+**lisa implementation guidance:** **lisa implementation guidance:** Fix tests: extract the exec.Cmd construction of getRunnerInstance into pluginCommand(path, workDir) and unit-test it (absolute binary path, Dir = view, env without the agent's API credentials). Add planShadowing tests for the 'uses more than one bundle that extends' and 'cannot be given a view' (policyview.Plan fails) drops. Make cmd/compat_test.go table-driven over the scenarios R88 keeps (set form / policy_id warning / unknown lib / file origin) and delete the gate scenarios.
+
+<!-- lisa-guidance-posted -->
