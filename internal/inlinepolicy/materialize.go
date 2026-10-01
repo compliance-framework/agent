@@ -2,8 +2,9 @@
 // remote overlay) into write-once directories that plugins load like any other policy path,
 // and checks them the way plugins will evaluate them (HLD §3.5, R17–R21).
 //
-// The package is a leaf: it imports api/pkg/agentconfig, api/pkg/agentconfig/regocheck,
-// api/pkg/policyeval, OPA v1 and the standard library, never cmd.
+// It imports api/pkg/agentconfig, api/pkg/policyeval, internal/policytree, policy-manager
+// (to dry-run bundles through the exact calls plugins make), OPA v1 and the standard
+// library, never cmd.
 package inlinepolicy
 
 import (
@@ -14,14 +15,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/compliance-framework/agent/internal/policytree"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"sigs.k8s.io/yaml"
@@ -51,13 +53,31 @@ func (p PolicyErrors) Error() string {
 }
 
 // Materialized is one bundle written to disk.
+//
+// Layout under root (R67):
+//
+//	<name>/<tree digest hex>/bundle/...   the tree, write-once and content-addressed (Dir)
+//	<name>/current -> <tree digest hex>   swapped atomically by Activate
+//
+// Plugins receive Path, <name>/current/bundle: the same path for every revision of the
+// bundle, so the policy_file of an unchanged package, and with it the evidence UUID that
+// policy-manager seeds with it, survives edits of other files. The symlink is an
+// intermediate path component on purpose: OPA's bundle loader does not descend into a
+// symlinked root directory, but resolves a symlink earlier in the path like any other.
 type Materialized struct {
-	Name   string
-	Dir    string // <root>/<name>/<tree digest hex>
+	Name string
+	// Dir is the tree itself (<root>/<name>/<hex>/bundle). The checks run on it and its
+	// contents never change.
+	Dir string
+	// Path is what plugins receive: <root>/<name>/current/bundle, or Dir when the file
+	// system has no symlinks (then evidence identity changes with each revision, as before).
+	Path   string
 	Digest string // agentconfig.BundleTreeDigest(files)
 	// Extends describes the vendor tree the bundle extends (nil when standalone).
 	Extends *agentconfig.PolicyBundleExtendsReport
-	Files   []agentconfig.PolicyFileReport
+	// ExtendsDir is the directory the extends tree was read from.
+	ExtendsDir string
+	Files      []agentconfig.PolicyFileReport
 	// Authored are the paths written from Modules (and data.json when Data is set).
 	Authored      map[string]bool
 	AuthoredTests []string
@@ -108,6 +128,7 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 			Digest: agentconfig.BundleTreeDigest(baseFiles),
 			Files:  inventory(baseFiles),
 		}
+		m.ExtendsDir = dir
 		files = baseFiles
 	}
 
@@ -180,7 +201,11 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 	if err := writeOnce(final, files); err != nil {
 		return nil, err
 	}
-	m.Dir = final
+	m.Dir = filepath.Join(final, treeDir)
+	m.Path = m.Dir
+	if symlinksSupported(root) {
+		m.Path = filepath.Join(root, name, currentLink, treeDir)
+	}
 
 	// 7. Inventory.
 	m.Files = inventory(files)
@@ -238,40 +263,9 @@ func mergeRootData(files map[string][]byte, data map[string]any) error {
 	return nil
 }
 
-// readTree reads the regular files under dir (paths relative, slash-separated). dir itself
-// may be a symlink (e.g. /etc/ccf/policies -> a versioned directory); symlinks inside the
-// tree are skipped and returned.
+// readTree reads a policy tree the way every consumer does (see policytree.ReadTree).
 func readTree(dir string) (map[string][]byte, []string, error) {
-	files := map[string][]byte{}
-	var skipped []string
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, nil, err
-	}
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, p)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		if d.Type()&fs.ModeSymlink != 0 {
-			skipped = append(skipped, rel)
-			return nil
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		files[rel] = raw
-		return nil
-	})
-	return files, skipped, err
+	return policytree.ReadTree(dir)
 }
 
 // Inventory digests and lists a policy directory (OCI or local sources) for the report.
@@ -298,25 +292,40 @@ func inventory(files map[string][]byte) []agentconfig.PolicyFileReport {
 	return out
 }
 
-// writeOnce writes files into final unless it already exists: a temp dir (dirs 0755, files
-// 0644) renamed into place. Losing a rename race reuses the winner's directory.
+const (
+	// treeDir is the directory holding the policy tree inside a materialized directory.
+	treeDir = "bundle"
+	// currentLink is the per-bundle symlink to the active materialized directory.
+	currentLink = "current"
+	// Name prefixes of transient entries in a bundle directory.
+	tmpPrefix         = ".tmp-"
+	currentTmpPrefix  = ".current-"
+	symlinkProbeEntry = ".symlink-probe-"
+)
+
+// writeOnce writes files under final/bundle unless that already exists: a temp dir (dirs
+// 0755, files 0644) renamed into place. Losing a rename race reuses the winner's directory.
 func writeOnce(final string, files map[string][]byte) error {
-	if info, err := os.Stat(final); err == nil && info.IsDir() {
+	if info, err := os.Stat(filepath.Join(final, treeDir)); err == nil && info.IsDir() {
 		return nil
+	}
+	if _, err := os.Lstat(final); err == nil {
+		// A directory in an older layout (the tree directly under final): rebuild it.
+		if err := os.RemoveAll(final); err != nil {
+			return err
+		}
 	}
 	parent := filepath.Dir(final)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	var rnd [6]byte
-	_, _ = rand.Read(rnd[:])
-	tmp := filepath.Join(parent, ".tmp-"+hex.EncodeToString(rnd[:]))
-	if err := os.MkdirAll(tmp, 0o755); err != nil {
+	tmp := filepath.Join(parent, tmpPrefix+randomSuffix())
+	if err := os.MkdirAll(filepath.Join(tmp, treeDir), 0o755); err != nil {
 		return err
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 	for p, content := range files {
-		dst := filepath.Join(tmp, filepath.FromSlash(p))
+		dst := filepath.Join(tmp, treeDir, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			cleanup()
 			return err
@@ -328,7 +337,7 @@ func writeOnce(final string, files map[string][]byte) error {
 	}
 	if err := os.Rename(tmp, final); err != nil {
 		cleanup()
-		if info, statErr := os.Stat(final); statErr == nil && info.IsDir() {
+		if info, statErr := os.Stat(filepath.Join(final, treeDir)); statErr == nil && info.IsDir() {
 			return nil
 		}
 		return err
@@ -336,8 +345,72 @@ func writeOnce(final string, files map[string][]byte) error {
 	return nil
 }
 
-// GC removes materialized directories under root except those in keep and the perBundle
-// newest per bundle, plus abandoned temp directories.
+func randomSuffix() string {
+	var rnd [6]byte
+	_, _ = rand.Read(rnd[:])
+	return hex.EncodeToString(rnd[:])
+}
+
+var symlinkSupport sync.Map // root -> bool
+
+// symlinksSupported reports, once per root, whether symlinks can be created under root
+// (not on Windows without the privilege, nor on some network or FAT file systems).
+func symlinksSupported(root string) bool {
+	if v, ok := symlinkSupport.Load(root); ok {
+		return v.(bool)
+	}
+	ok := func() bool {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return false
+		}
+		probe := filepath.Join(root, symlinkProbeEntry+randomSuffix())
+		defer func() { _ = os.Remove(probe) }()
+		return os.Symlink(".", probe) == nil
+	}()
+	symlinkSupport.Store(root, ok)
+	return ok
+}
+
+// Activate points bundle name's stable path (Materialized.Path) at dir, a Materialized.Dir
+// of that bundle under root. The swap is atomic: a temporary symlink renamed over
+// <name>/current, so on Linux a reader resolving the stable path sees either the previous
+// tree or the new one, never neither (macOS APFS may fail such a racing lookup with EINVAL).
+// It is not a snapshot for a reader walking the tree while it is swapped either. Callers
+// therefore swap only while no plugin of the previous configuration runs (the agent does it
+// between two configuration runs, after the reload drain), and serialize Activate with GC. It is a no-op when the tree is already active or the file system has no
+// symlinks (plugins then receive dir itself).
+func Activate(root, name, dir string) error {
+	bundleDir := filepath.Join(root, name)
+	versionDir := filepath.Dir(filepath.Clean(dir))
+	if filepath.Base(filepath.Clean(dir)) != treeDir || filepath.Dir(versionDir) != bundleDir {
+		return fmt.Errorf("activate %s: %s is not a materialized tree of the bundle", name, dir)
+	}
+	if !symlinksSupported(root) {
+		return nil
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return fmt.Errorf("activate %s: the materialized tree %s is missing", name, dir)
+	}
+	target := filepath.Base(versionDir)
+	link := filepath.Join(bundleDir, currentLink)
+	if cur, err := os.Readlink(link); err == nil && cur == target {
+		return nil
+	}
+	tmp := filepath.Join(bundleDir, currentTmpPrefix+randomSuffix())
+	if err := os.Symlink(target, tmp); err != nil {
+		return fmt.Errorf("activate %s: %w", name, err)
+	}
+	if err := os.Rename(tmp, link); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("activate %s: %w", name, err)
+	}
+	return nil
+}
+
+// GC removes materialized directories under root except those in keep (Materialized.Dir
+// values, or their parent), the one each bundle's current symlink points to, and the
+// perBundle newest per bundle, plus abandoned temporary entries. Callers serialize GC with
+// Activate.
 func GC(root string, keep map[string]struct{}, perBundle int) error {
 	bundles, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -357,6 +430,10 @@ func GC(root string, keep map[string]struct{}, perBundle int) error {
 			errs = append(errs, err)
 			continue
 		}
+		active := ""
+		if target, err := os.Readlink(filepath.Join(bundleDir, currentLink)); err == nil {
+			active = filepath.Join(bundleDir, target)
+		}
 		type dirInfo struct {
 			path string
 			mod  int64
@@ -364,7 +441,7 @@ func GC(root string, keep map[string]struct{}, perBundle int) error {
 		var dirs []dirInfo
 		for _, e := range entries {
 			p := filepath.Join(bundleDir, e.Name())
-			if strings.HasPrefix(e.Name(), ".tmp-") {
+			if strings.HasPrefix(e.Name(), tmpPrefix) || strings.HasPrefix(e.Name(), currentTmpPrefix) {
 				errs = append(errs, os.RemoveAll(p))
 				continue
 			}
@@ -380,7 +457,13 @@ func GC(root string, keep map[string]struct{}, perBundle int) error {
 		sort.Slice(dirs, func(i, j int) bool { return dirs[i].mod > dirs[j].mod })
 		kept := 0
 		for _, d := range dirs {
+			if d.path == active {
+				continue
+			}
 			if _, ok := keep[d.path]; ok {
+				continue
+			}
+			if _, ok := keep[filepath.Join(d.path, treeDir)]; ok {
 				continue
 			}
 			if kept < perBundle {

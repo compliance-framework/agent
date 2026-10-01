@@ -119,7 +119,7 @@ func TestMaterialize_R17Order(t *testing.T) {
 	if m.Extends == nil || m.Extends.Source != "ghcr.io/vendor/policies:v1" || len(m.Extends.Files) != 12 {
 		t.Fatalf("extends report wrong: %+v", m.Extends)
 	}
-	if !strings.HasPrefix(m.Digest, agentconfig.TreeDigestPrefix) || filepath.Base(m.Dir) != strings.TrimPrefix(m.Digest, agentconfig.TreeDigestPrefix) {
+	if !strings.HasPrefix(m.Digest, agentconfig.TreeDigestPrefix) || filepath.Base(filepath.Dir(m.Dir)) != strings.TrimPrefix(m.Digest, agentconfig.TreeDigestPrefix) {
 		t.Fatalf("digest/dir mismatch: %s %s", m.Digest, m.Dir)
 	}
 	for _, f := range m.Files {
