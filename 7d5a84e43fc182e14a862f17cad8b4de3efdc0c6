@@ -7,3 +7,10 @@ Round 3 (design §13.4, R74-R79) and the origin/main merge (#96/#97):
 - policy-stream-forked is an agent-local code (no API constant yet); the UI should label it. policy-package-changed uses the API constant.
 - R76/R79: the gate runs after Prefetch (binaries are local then), reads build info via debug/buildinfo (pluginlib.Cache keyed by path+size+mtime), and is skipped entirely when rc.pluginLib is nil (tests). MinInlinePolicy = v0.9.0 (pre-releases count; v0.8.0 is being cut without R74); pseudo-versions compare by their base tag; replace/(devel)/no build info/untagged pseudo => unknown => warnings only. Overlay-introduced + unsupported => error plugin-lib-inline-unsupported per bundle, plus a located plugin-lib-violation-set-unsupported when lib < v0.7.1. File-origin => warnings, plus per-module plugin-lib-policy-id-unsupported (superseded by the gate for overlay bundles). Policy rejections from the gate never set aerr.runtime (that would fire the startup-failure evidence hook).
 - R77: PluginPath = m.Path for inline, resolver output for OCI/local (the same string runPluginWith/DownloadPolicies pass).
+
+lisa-selfreview:
+Round 3 pass 1 (strict):
+- medium cmd/agent.go downloadPlugin: inserted between downloadPolicy's doc comment and its func, so downloadPolicy lost its doc and downloadPlugin's doc starts with the wrong sentence. Fix: move the comment.
+- medium cmd/agent.go Prefetch: duplicates downloadPlugin's platform/download call; the R76 lib read must read the binary Prefetch fetched. Fix: Prefetch calls downloadPlugin.
+- medium cmd/compat.go overlayTouchesInline: an overlay that changes plugins.<p>.source to an older plugin build while the plugin keeps file-defined inline bundles introduces the incompatibility but is only warned. Fix: count /plugins/<p>/source as overlay-introduced; test it.
+- low cmd/identity.go identityProblems: recomputes SeedPath for every pair (O(n^2) SeedPath calls). Fix: compute each module's seed once.
