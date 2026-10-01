@@ -98,7 +98,7 @@ func TestCompat_AssigningInlineBundleToOldLibIsRejected_R79(t *testing.T) {
 
 func TestCompat_SupportedLibApplies_R79(t *testing.T) {
 	h, _ := newInlineHarness(t)
-	withPluginLib(h, "v0.8.0")
+	withPluginLib(h, "v0.9.0")
 	h.remote.publish(1, inlineOverlay)
 	active := mustStartup(t, h.rc)
 	r := h.remote.lastReport(t)
@@ -110,7 +110,7 @@ func TestCompat_SupportedLibApplies_R79(t *testing.T) {
 			t.Fatalf("no %s expected for a supported plugin, got %+v", code, got)
 		}
 	}
-	if len(r.Plugins) != 1 || r.Plugins[0].LibVersion != "v0.8.0" || r.Plugins[0].InlinePolicies != agentconfig.InlinePoliciesSupported {
+	if len(r.Plugins) != 1 || r.Plugins[0].LibVersion != "v0.9.0" || r.Plugins[0].InlinePolicies != agentconfig.InlinePoliciesSupported {
 		t.Fatalf("plugins report = %+v", r.Plugins)
 	}
 }
@@ -171,9 +171,12 @@ func TestLibProblemsNameAnUntaggedVersion(t *testing.T) {
 func TestInlineSupport(t *testing.T) {
 	for version, want := range map[string]string{
 		"v0.9.0":                               inlinePoliciesSupported,
-		"v0.8.0":                               inlinePoliciesSupported,
-		"v0.8.1-0.20261001000000-abcdefabcdef": inlinePoliciesSupported,
-		"v0.8.0-rc4":                           inlinePoliciesUnsupported, // predates R74 (R80)
+		"v0.10.0":                              inlinePoliciesSupported,
+		"v0.9.1-0.20261001000000-abcdefabcdef": inlinePoliciesSupported,
+		"v0.9.0-rc1":                           inlinePoliciesUnsupported, // semver: before v0.9.0
+		"v0.8.1":                               inlinePoliciesUnsupported, // released without R74 (R81)
+		"v0.8.0":                               inlinePoliciesUnsupported, // released without R74 (R81)
+		"v0.8.0-rc4":                           inlinePoliciesUnsupported,
 		"v0.7.1":                               inlinePoliciesUnsupported,
 		"":                                     inlinePoliciesUnknown,
 		"(devel)":                              inlinePoliciesUnknown,
@@ -194,7 +197,7 @@ func TestCompat_OverlayMovingAnInlinePluginToAnOldBuildIsRejected_R79(t *testing
 		if source == "ghcr.io/compliance-framework/plugin-ssh:v0" {
 			return "v0.7.2", nil
 		}
-		return "v0.8.0", nil
+		return "v0.9.0", nil
 	}
 	h.remote.publish(1, `{"plugins":{"ssh":{"source":"ghcr.io/compliance-framework/plugin-ssh:v0"}}}`)
 	active := mustStartup(t, h.rc)

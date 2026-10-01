@@ -28,10 +28,12 @@ const (
 	MinViolationSet = "v0.7.1"
 	// MinInlinePolicy is the first agent library release with policy_id seeding (R74), and
 	// so the first whose plugins may use inline policy bundles (R79). It also covers
-	// MinViolationSet. R74 ships in v0.8.0 (R80); the v0.8.0-rc1 to -rc4 tags predate it,
-	// so the minimum is the final release and those pre-releases are older (AtLeast). If a
-	// later release candidate of v0.8.0 contains R74, lower it to that tag.
-	MinInlinePolicy = "v0.8.0"
+	// MinViolationSet. R74 ships in v0.9.0 (R81, superseding R80): v0.8.0 and v0.8.1 were
+	// released without it. The minimum is the final release, so v0.9.0 release candidates
+	// and pseudo-versions based on them are older (AtLeast).
+	//
+	// Update before tagging if agent#95 ships in a different release.
+	MinInlinePolicy = "v0.9.0"
 )
 
 // Version returns the version of AgentModule the plugin binary at path was built with, or ""
@@ -60,7 +62,7 @@ func Version(path string) (string, error) {
 // before it): then ok is false too. A pseudo-version counts as the tagged version it was
 // built after (v0.7.2-0.2026…-abc is v0.7.1 plus unreleased commits, which may not include
 // what min added). Versions compare as semver, so pre-releases of min are older than min
-// (v0.8.0-rc4 < v0.8.0): a release candidate cut before a feature landed does not have it.
+// (v0.9.0-rc1 < v0.9.0): a release candidate cut before a feature landed does not have it.
 func AtLeast(version, min string) (ok, known bool) {
 	base := version
 	if module.IsPseudoVersion(version) {

@@ -358,7 +358,7 @@ policy_id := "ssh-deny-password-auth"
 | change the overridden module's `package` | a new stream (`policy-package-changed`) |
 
 **Plugins must be rebuilt.** Plugins seed evidence with the `policy-manager` they embed, so `policy_id` only takes
-effect for plugins built on an agent library that includes it (agent ≥ v0.8.0, `pluginlib.MinInlinePolicy`).
+effect for plugins built on an agent library that includes it (agent ≥ v0.9.0, `pluginlib.MinInlinePolicy`).
 
 ### Plugin compatibility (R76, R79)
 
@@ -366,12 +366,12 @@ The agent reads each plugin's agent library version from the binary's Go build i
 reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `supported`, `unsupported` or
 `unknown`).
 
-- **Inline policies need agent ≥ v0.8.0** (the first release with `policy_id`; it also covers set-form violations).
-  The v0.8.0 release candidates (`v0.8.0-rc1` to `-rc4`) predate `policy_id` and count as older than v0.8.0, so
-  they are `unsupported`, as are pseudo-versions built after them.
+- **Inline policies need agent ≥ v0.9.0** (the first release with `policy_id`; it also covers set-form violations).
+  v0.8.0 and v0.8.1 were released without `policy_id`, and v0.9.0 release candidates (`v0.9.0-rc*`) count as older
+  than v0.9.0, so they are `unsupported`, as are pseudo-versions built after them.
   An overlay that gives an `inline:` entry to a plugin built on an older library, changes a bundle such a plugin
   uses, or moves a plugin that uses one to such a build (its `source`), is rejected before it is applied with `plugin-lib-inline-unsupported` ("plugin `<p>` (agent lib `<v>`) doesn't
-  support inline policies; upgrade the plugin to a build on agent ≥ v0.8.0"); the running configuration keeps
+  support inline policies; upgrade the plugin to a build on agent ≥ v0.9.0"); the running configuration keeps
   running.
 - **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
   `violation[{...}] if { ... }`. An authored module that uses them for such a plugin is also named
@@ -380,9 +380,9 @@ reports it as `plugins[]` (`name`, `source`, `lib-version`, `inline-policies`: `
   binary without build info. Local plugin builds therefore keep working.
 - **File-defined inline bundles only warn** (R34), and for them each authored `policy_id` the plugin would ignore is a
   `plugin-lib-policy-id-unsupported` warning ("this module starts a new evidence stream").
-- A pseudo-version counts as the tag it was built after: a plugin built on an unreleased commit after v0.7.x or a
-  v0.8.0 release candidate is `unsupported` until it moves to a v0.8.0 build (or a `replace`, which is `unknown`);
-  one built on a commit after v0.8.0 is `supported`.
+- A pseudo-version counts as the tag it was built after: a plugin built on an unreleased commit after v0.8.x or a
+  v0.9.0 release candidate is `unsupported` until it moves to a v0.9.0 build (or a `replace`, which is `unknown`);
+  one built on a commit after v0.9.0 is `supported`.
 
 ## Remote configuration
 
