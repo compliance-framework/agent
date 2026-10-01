@@ -1,2 +1,5 @@
 lisa-addressed:
 - round-2 self-review pass 2: fixed (riskReported per package; docs non-test wording; doc reflow).
+
+lisa-selfreview:
+- round-2 pass 3 (final, lenient): approve. build/vet/gofmt/test -race green, make check-opa-version OK (OPA v1.14.1 both), GOOS=windows build OK. Deferred (low, not fixed): GC keeps one tree per bundle name that was removed from the config (its current link target) until the bundle dir is removed by hand; a .symlink-probe- leftover after a crash in the inline root is not collected; dry-run error classification relies on policyeval.Execute's error wording (tests pin it at the current API version).
