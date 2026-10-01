@@ -1,2 +1,5 @@
 lisa-addressed:
 Round 3 pass 2: policyOrigin (newEntry/bundleTouched/pluginTouched) replaces pointer-touch origin for R75/R79 (test TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75); unknown-version message names untagged versions (TestLibProblemsNameAnUntaggedVersion).
+
+lisa-selfreview:
+Round 3 pass 3: approve. Verified build/vet/race tests/gofmt/check-opa-version green, go mod tidy clean, and pluginlib.Version on a real plugin binary built against agent v0.7.1 (reads v0.7.1, unsupported for inline). Deferred (not fixed, by design): risk template UUIDs still seed with policy_file (out of R74 scope); a non-clean local source (./policies) cannot be continued for plugins that label _policy_path until SeedPath cleans the file seed (API); policy-stream-forked has no API constant yet.
