@@ -13,6 +13,13 @@ import (
 const (
 	testPluginSource = "ghcr.io/compliance-framework/plugin-apt-versions:v0.4.0"
 	testPolicySource = "ghcr.io/compliance-framework/plugin-apt-versions-policies:v0.4.0"
+	testPluginDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	testPolicyDigest = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+)
+
+var (
+	testPlugin = Source{Reference: testPluginSource, Digest: testPluginDigest}
+	testPolicy = Source{Reference: testPolicySource, Digest: testPolicyDigest}
 )
 
 // sentProps returns each sent evidence's props by title, as name -> value.
@@ -34,7 +41,7 @@ func TestEvidenceRecordsPluginAndPolicySources(t *testing.T) {
 	bundle := writeBundle(t, "a")
 	api := &fakeAPI{}
 	helper := newTestHelper(t, api, bundle)
-	WithSources(testPluginSource, map[string]string{bundle + "/": testPolicySource})(helper)
+	WithSources(testPlugin, map[string]Source{bundle + "/": testPolicy})(helper)
 
 	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
 		evidenceFor("evaluated", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
@@ -43,16 +50,20 @@ func TestEvidenceRecordsPluginAndPolicySources(t *testing.T) {
 
 	props := sentProps(api)
 	assert.Equal(t, testPluginSource, props["evaluated"][PropPluginSource])
+	assert.Equal(t, testPluginDigest, props["evaluated"][PropPluginDigest])
 	assert.Equal(t, testPolicySource, props["evaluated"][PropPolicySource])
+	assert.Equal(t, testPolicyDigest, props["evaluated"][PropPolicyDigest])
 	assert.Equal(t, testPluginSource, props["no evaluation"][PropPluginSource])
+	assert.Equal(t, testPluginDigest, props["no evaluation"][PropPluginDigest])
 	assert.NotContains(t, props["no evaluation"], PropPolicySource, "without an evaluation the policy bundle is not known")
+	assert.NotContains(t, props["no evaluation"], PropPolicyDigest)
 }
 
 func TestStreamedReferencesRecordThePolicySource(t *testing.T) {
 	bundle := writeBundle(t, "a")
 	api := &fakeAPI{}
 	helper := newTestHelper(t, api, bundle)
-	WithSources(testPluginSource, map[string]string{bundle: testPolicySource})(helper)
+	WithSources(testPlugin, map[string]Source{bundle: testPolicy})(helper)
 	client := dialServer(t, newApiHelperGRPCServer(helper))
 
 	evaluation := &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}
@@ -64,13 +75,14 @@ func TestStreamedReferencesRecordThePolicySource(t *testing.T) {
 	props := sentProps(api)
 	assert.Equal(t, testPolicySource, props["first"][PropPolicySource])
 	assert.Equal(t, testPolicySource, props["second"][PropPolicySource])
+	assert.Equal(t, testPolicyDigest, props["second"][PropPolicyDigest])
 }
 
 func TestSourcesAreRecordedWhenArtifactsCannotBeStored(t *testing.T) {
 	bundle := writeBundle(t, "a")
 	api := &fakeAPI{artifactStatuses: []int{http.StatusNotFound}}
 	helper := newTestHelper(t, api, bundle)
-	WithSources(testPluginSource, map[string]string{bundle: testPolicySource})(helper)
+	WithSources(testPlugin, map[string]Source{bundle: testPolicy})(helper)
 
 	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
 		evidenceFor("old api", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
@@ -97,12 +109,14 @@ func TestPluginCannotSetTheSourceProps(t *testing.T) {
 	bundle := writeBundle(t, "a")
 	api := &fakeAPI{}
 	helper := newTestHelper(t, api, bundle)
-	WithSources(testPluginSource, map[string]string{bundle: testPolicySource})(helper)
+	WithSources(testPlugin, map[string]Source{bundle: testPolicy})(helper)
 
 	e := evidenceFor("spoofed", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)})
 	e.Props = []*proto.Property{
 		{Name: PropPluginSource, Value: "ghcr.io/elsewhere/plugin:v9"},
+		{Name: PropPluginDigest, Value: "sha256:spoofed"},
 		{Name: PropPolicySource, Value: "ghcr.io/elsewhere/policies:v9"},
+		{Name: PropPolicyDigest, Value: "sha256:spoofed"},
 		{Name: "_violation_id", Value: "kept"},
 	}
 	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{e}))
@@ -112,10 +126,27 @@ func TestPluginCannotSetTheSourceProps(t *testing.T) {
 	var sources []string
 	for _, p := range list {
 		prop := p.(map[string]any)
-		if prop["name"] == PropPluginSource || prop["name"] == PropPolicySource {
+		if isSourceProp(prop["name"].(string)) {
 			sources = append(sources, prop["value"].(string))
 		}
 	}
-	assert.ElementsMatch(t, []string{testPluginSource, testPolicySource}, sources, "only the agent's values are sent")
+	assert.ElementsMatch(t, []string{testPluginSource, testPluginDigest, testPolicySource, testPolicyDigest}, sources, "only the agent's values are sent")
 	assert.Equal(t, "kept", sentProps(api)["spoofed"]["_violation_id"])
+}
+
+func TestSourceWithoutDigestRecordsOnlyTheReference(t *testing.T) {
+	bundle := writeBundle(t, "a")
+	api := &fakeAPI{}
+	helper := newTestHelper(t, api, bundle)
+	// As for files extracted before digests were recorded.
+	WithSources(Source{Reference: testPluginSource}, map[string]Source{bundle: {Reference: testPolicySource}})(helper)
+
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
+		evidenceFor("old cache", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
+	}))
+	props := sentProps(api)["old cache"]
+	assert.Equal(t, testPluginSource, props[PropPluginSource])
+	assert.Equal(t, testPolicySource, props[PropPolicySource])
+	assert.NotContains(t, props, PropPluginDigest)
+	assert.NotContains(t, props, PropPolicyDigest)
 }

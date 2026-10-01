@@ -18,25 +18,45 @@ type apiHelper struct {
 	pluginName  string
 	artifacts   *artifactUploader
 
-	// pluginSource and policySources are the configured references the plugin and its
-	// policy bundles came from, recorded on evidence as _plugin_source and _policy_source.
-	pluginSource  string
-	policySources map[string]string
+	// pluginSource and policySources are where the plugin and its policy bundles came from,
+	// recorded on evidence as _plugin_source / _plugin_digest and _policy_source /
+	// _policy_digest.
+	pluginSource  Source
+	policySources map[string]Source
 }
 
-// Evidence props recording where the plugin and policy bundle came from: the configured
-// source, an OCI reference or a local path.
+// Source is where a plugin or policy bundle came from.
+type Source struct {
+	// Reference is the source configured for it: an OCI reference or a local path.
+	Reference string
+	// Digest is the registry digest the OCI reference resolved to when the agent downloaded
+	// it, or for a local plugin binary its SHA-256. Empty when not known.
+	Digest string
+}
+
+// Evidence props recording where the plugin and policy bundle came from. The agent owns
+// them; any a plugin sets are replaced.
 const (
 	PropPluginSource = "_plugin_source"
+	PropPluginDigest = "_plugin_digest"
 	PropPolicySource = "_policy_source"
+	PropPolicyDigest = "_policy_digest"
 )
 
-// WithSources sets the plugin's configured source and the configured source of each policy
-// bundle, keyed by the local path the agent gave the plugin.
-func WithSources(pluginSource string, policySources map[string]string) ApiHelperOption {
+func isSourceProp(name string) bool {
+	switch name {
+	case PropPluginSource, PropPluginDigest, PropPolicySource, PropPolicyDigest:
+		return true
+	}
+	return false
+}
+
+// WithSources sets where the plugin came from, and where each policy bundle came from, keyed
+// by the local path the agent gave the plugin.
+func WithSources(plugin Source, policies map[string]Source) ApiHelperOption {
 	return func(h *apiHelper) {
-		h.pluginSource = pluginSource
-		for path, source := range policySources {
+		h.pluginSource = plugin
+		for path, source := range policies {
 			h.policySources[filepath.Clean(path)] = source
 		}
 	}
@@ -63,7 +83,7 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 		pluginName:  pluginName,
 		artifacts:   newArtifactUploader(client),
 
-		policySources: map[string]string{},
+		policySources: map[string]Source{},
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -168,16 +188,13 @@ func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policy
 	// The agent owns the source props; any a plugin set are replaced.
 	props := evid.Props[:0]
 	for _, prop := range evid.Props {
-		if prop.Name != PropPluginSource && prop.Name != PropPolicySource {
+		if !isSourceProp(prop.Name) {
 			props = append(props, prop)
 		}
 	}
-	evid.Props = props
-	if h.pluginSource != "" {
-		evid.Props = append(evid.Props, types.Property{Name: PropPluginSource, Value: h.pluginSource})
-	}
-	if source := h.policySources[filepath.Clean(policyPath)]; policyPath != "" && source != "" {
-		evid.Props = append(evid.Props, types.Property{Name: PropPolicySource, Value: source})
+	evid.Props = appendSource(props, h.pluginSource, PropPluginSource, PropPluginDigest)
+	if policyPath != "" {
+		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(policyPath)], PropPolicySource, PropPolicyDigest)
 	}
 	labels := make(map[string]string)
 	for k, v := range h.agentLabels {
@@ -276,4 +293,15 @@ func withPluginSelectorLabel(labels []types.SubjectTemplateSelectorLabel, plugin
 		Key:   pluginSelectorLabel,
 		Value: pluginName,
 	})
+}
+
+func appendSource(props []types.Property, source Source, referenceProp, digestProp string) []types.Property {
+	if source.Reference == "" {
+		return props
+	}
+	props = append(props, types.Property{Name: referenceProp, Value: source.Reference})
+	if source.Digest != "" {
+		props = append(props, types.Property{Name: digestProp, Value: source.Digest})
+	}
+	return props
 }

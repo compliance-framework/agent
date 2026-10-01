@@ -2,9 +2,12 @@ package internal
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -162,6 +165,13 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return localPath, nil
 		}
 
+		// The registry digest the tag resolves to, recorded next to the extracted files so
+		// later runs, which skip the download, still know exactly what they run.
+		descriptor, headErr := remote.Head(tag, append([]remote.Option{remote.WithAuthFromKeychain(oci.ECRKeychain())}, option...)...)
+		if headErr != nil {
+			logger.Warn("Could not resolve the registry digest; evidence will not record it", "source", source, "error", headErr)
+		}
+
 		downloaderImpl, err := oci.NewDownloader(
 			tag,
 			outDir,
@@ -174,8 +184,64 @@ func Download(ctx context.Context, source string, outputDir string, binaryPath s
 			return "", err
 		}
 
+		if descriptor != nil {
+			if err := writeSourceRecord(outDir, source, descriptor.Digest.String()); err != nil {
+				logger.Warn("Could not record the registry digest; evidence will not record it", "source", source, "error", err)
+			}
+		}
+
 		return localPath, nil
 	}
 
 	return "", errors.New("downloadable item source cannot be found locally and does not look like OCI")
+}
+
+// sourceRecordFile is written next to an OCI artifact's extracted files when the agent
+// downloads it, recording the registry digest its tag resolved to.
+const sourceRecordFile = ".ccf-source.json"
+
+type sourceRecord struct {
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
+}
+
+func writeSourceRecord(outDir, reference, digest string) error {
+	record, err := json.Marshal(sourceRecord{Reference: reference, Digest: digest})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outDir, sourceRecordFile), record, 0o644)
+}
+
+// SourceDigest returns the digest of what the agent runs from source, extracted at
+// localPath. For an OCI source it is the registry digest recorded when the agent downloaded
+// it, or "" for files extracted before digests were recorded. For a local file, such as a
+// plugin binary, it is the file's SHA-256. Otherwise it is "".
+func SourceDigest(source, localPath string) string {
+	if IsOCI(source) {
+		raw, err := os.ReadFile(filepath.Join(filepath.Dir(localPath), sourceRecordFile))
+		if err != nil {
+			return ""
+		}
+		var record sourceRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return ""
+		}
+		return record.Digest
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	file, err := os.Open(localPath)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return ""
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
