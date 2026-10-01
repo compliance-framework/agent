@@ -119,6 +119,7 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 		PolicyBundles:     rc.withArtifactDigests(active.bundles),
 		Warnings:          active.warnings,
 		RemoteConfig:      &rcfg,
+		Plugins:           active.plugins,
 	}
 	report.PolicyErrors = append(report.PolicyErrors, active.policyWarnings...)
 	switch {

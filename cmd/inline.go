@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/pkg/agentconfig/regocheck"
-	"github.com/compliance-framework/api/pkg/policyeval"
 )
 
 // inlineGCKeepPerBundle is how many materialized versions of each bundle GC keeps besides the
@@ -28,7 +26,7 @@ func (rc *reconciler) inlineRoot() string {
 // way the plugin will load it. Any error rejects the revision (policy-errors); warnings are
 // kept for the report. No network is touched before the Classify gate: extends trees are
 // fetched here, after it.
-func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Config, skip map[string]string) (inlineResult, *applyError) {
+func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Config, skip map[string]string, touched []string) (inlineResult, *applyError) {
 	var res inlineResult
 	if len(resolved.PolicyBundles) == 0 {
 		return res, nil
@@ -106,14 +104,18 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 			})...)
 		}
 	}
+	for _, name := range sortedMaterializedKeys(materialized) {
+		problems = append(problems, inlinepolicy.OverrideStreams(materialized[name])...)
+	}
+	problems = append(problems, rc.policyIdentities(ctx, resolved, skip, materialized, touched)...)
 	if agentconfig.HasPolicyErrors(problems) {
 		return res, policyRejection(append(problems, res.warnings...))
 	}
 	res.warnings = append(res.warnings, problems...)
-	res.warnings = append(res.warnings, rc.duplicatePackages(ctx, resolved, skip, materialized)...)
 	res.warnings = dedupePolicyErrors(res.warnings)
 	agentconfig.SortPolicyErrors(res.warnings)
 
+	res.materialized = materialized
 	res.dirs = map[string]string{}
 	res.trees = map[string]string{}
 	res.digests = map[string]string{}
@@ -124,10 +126,11 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 		res.trees[entry] = m.Dir
 		res.digests[entry] = m.Digest
 		res.reports = append(res.reports, agentconfig.PolicyBundleReport{
-			Source:  entry,
-			Digest:  m.Digest,
-			Extends: m.Extends,
-			Files:   m.Files,
+			Source:     entry,
+			Digest:     m.Digest,
+			Extends:    m.Extends,
+			Files:      m.Files,
+			PluginPath: m.Path,
 		})
 		res.artifacts = append(res.artifacts, artifactTree{digest: m.Digest, dir: m.Dir})
 		if m.Extends != nil {
@@ -136,82 +139,6 @@ func (rc *reconciler) prepareInline(ctx context.Context, resolved agentconfig.Co
 	}
 	return res, nil
 }
-
-// duplicatePackages warns when a plugin that uses an inline bundle loads the same policy
-// package from two of its policy paths, typically a vendor source and an inline bundle that
-// extends it without replacing it (R66): the plugin then records evidence for that package
-// twice. A path that cannot be resolved here is skipped (prefetch reports it).
-func (rc *reconciler) duplicatePackages(ctx context.Context, resolved agentconfig.Config, skip map[string]string, materialized map[string]*inlinepolicy.Materialized) []agentconfig.PolicyError {
-	var out []agentconfig.PolicyError
-	for _, pluginName := range sortedPluginNames(resolved.Plugins) {
-		p := resolved.Plugins[pluginName]
-		if p == nil || !p.IsEnabled() || len(p.Policies) < 2 {
-			continue
-		}
-		if _, skipped := skip[pluginName]; skipped {
-			continue
-		}
-		type origin struct {
-			entry, bundle, file string
-		}
-		byPackage := map[string][]origin{}
-		usesInline := false
-		for _, e := range p.Policies {
-			var files []agentconfig.PolicyFileReport
-			bundle := ""
-			if name, ok := agentconfig.InlineBundleName(e); ok {
-				m := materialized[name]
-				if m == nil {
-					continue
-				}
-				usesInline, bundle, files = true, name, m.Files
-			} else {
-				_, r, err := rc.sourceInventory(ctx, string(e))
-				if err != nil {
-					continue
-				}
-				files = r.Files
-			}
-			seen := map[string]bool{}
-			for _, f := range files {
-				if f.Package == "" || seen[f.Package] || !policyeval.IsPolicyPackage(f.Package) || policyeval.IsTestFile(f.Path) {
-					continue
-				}
-				seen[f.Package] = true
-				byPackage[f.Package] = append(byPackage[f.Package], origin{entry: string(e), bundle: bundle, file: f.Path})
-			}
-		}
-		if !usesInline {
-			continue
-		}
-		for _, pkg := range sortedMapKeys(byPackage) {
-			origins := byPackage[pkg]
-			if len(origins) < 2 {
-				continue
-			}
-			var at origin
-			entries := make([]string, len(origins))
-			for i, o := range origins {
-				entries[i] = o.entry
-				if at.bundle == "" && o.bundle != "" {
-					at = o
-				}
-			}
-			out = append(out, agentconfig.PolicyError{
-				Bundle:   at.bundle,
-				Path:     at.file,
-				Severity: agentconfig.SeverityWarning,
-				Code:     codeDuplicatePolicyPackage,
-				Message: fmt.Sprintf("plugin %s: package %s is defined in more than one of its policy paths (%s), so the plugin records its evidence more than once; if one is an inline bundle that extends the other, replace the source with the bundle instead of listing both",
-					pluginName, pkg, strings.Join(entries, ", ")),
-			})
-		}
-	}
-	return out
-}
-
-// codeDuplicatePolicyPackage is the PolicyError code of R66.
-const codeDuplicatePolicyPackage = "duplicate-policy-package"
 
 // dedupePolicyErrors drops exact duplicates (the per-plugin checks of one bundle repeat
 // plugin-independent findings) and a warning superseded by an error with the same bundle,
@@ -269,6 +196,8 @@ func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) (
 		if err != nil {
 			continue
 		}
+		// The resolver returns the exact path string plugins receive for the source (R77).
+		r.PluginPath = dir
 		reports = append(reports, r)
 		trees = append(trees, artifactTree{digest: r.Digest, dir: dir})
 	}

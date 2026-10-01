@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -43,11 +44,18 @@ policy_bundles:
 
 func newInlineHarness(t *testing.T) (*remoteHarness, string) {
 	t.Helper()
+	return newInlineHarnessWith(t, inlineBaseConfig)
+}
+
+// newInlineHarnessWith is newInlineHarness on config, which may use the vendor source
+// ghcr.io/vendor/policies:v1.
+func newInlineHarnessWith(t *testing.T, config string) (*remoteHarness, string) {
+	t.Helper()
 	vendor := t.TempDir()
 	if err := os.WriteFile(filepath.Join(vendor, "banner.rego"), []byte("package compliance_framework.banner\n\nimport rego.v1\n\nviolation contains {\"remarks\": \"b\"} if not input.banner\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h := newRemoteHarness(t, inlineBaseConfig)
+	h := newRemoteHarness(t, config)
 	h.rc.resolvePolicy = func(_ context.Context, source string) (string, error) {
 		if source == "ghcr.io/vendor/policies:v1" {
 			return vendor, nil
@@ -165,38 +173,106 @@ func TestInline_GCAfterSwap(t *testing.T) {
 	}
 }
 
-// TestInline_DuplicatePackageAcrossPolicyPaths_R66: a plugin that loads both the vendor
-// source and an inline bundle extending it gets a warning naming both paths; the revision
-// still applies.
-func TestInline_DuplicatePackageAcrossPolicyPaths_R66(t *testing.T) {
-	h, vendor := newInlineHarness(t)
-	h.writeConfig(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["ghcr.io/vendor/policies:v1", "inline:ssh"]`, 1))
-	h.rc = h.newReconciler()
-	h.rc.resolvePolicy = func(context.Context, string) (string, error) { return vendor, nil }
+// TestInline_DuplicateIdentityAcrossPolicyPaths_R75: a plugin that loads both the vendor
+// source and an inline bundle extending it from the config file gets a warning naming both
+// paths (R34: file problems only warn); the revision still applies.
+func TestInline_DuplicateIdentityAcrossPolicyPaths_R75(t *testing.T) {
+	h, _ := newInlineHarnessWith(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["ghcr.io/vendor/policies:v1", "inline:ssh"]`, 1))
 	mustStartup(t, h.rc)
 	r := h.remote.lastReport(t)
 	if r.Status != agentconfig.StatusApplied && r.Status != agentconfig.StatusNotApplicable {
-		t.Fatalf("a duplicate package is a warning only, got %s/%s", r.Status, r.Reason)
+		t.Fatalf("a duplicate from the file is a warning only, got %s/%s", r.Status, r.Reason)
 	}
 	var found bool
 	for _, e := range r.PolicyErrors {
-		if e.Code == codeDuplicatePolicyPackage {
+		if e.Code == agentconfig.PolicyCodeDuplicatePolicyIdentity {
 			found = e.Severity == agentconfig.SeverityWarning && e.Bundle == "ssh" && e.Path == "banner.rego" &&
 				strings.Contains(e.Message, "compliance_framework.banner") &&
 				strings.Contains(e.Message, "ghcr.io/vendor/policies:v1") && strings.Contains(e.Message, "inline:ssh")
 		}
+		if e.Code == codeDuplicatePolicyPackage {
+			t.Fatalf("the identity problem replaces the package warning for the same package: %+v", e)
+		}
 	}
 	if !found {
-		t.Fatalf("expected a duplicate-policy-package warning naming both paths, got %+v", r.PolicyErrors)
+		t.Fatalf("expected a duplicate-policy-identity warning naming both paths, got %+v", r.PolicyErrors)
 	}
 
 	// Replacing the source with the inline bundle (the R22 swap) clears it.
 	h, _ = newInlineHarness(t)
 	mustStartup(t, h.rc)
 	for _, e := range h.remote.lastReport(t).PolicyErrors {
-		if e.Code == codeDuplicatePolicyPackage {
+		if e.Code == agentconfig.PolicyCodeDuplicatePolicyIdentity || e.Code == codeDuplicatePolicyPackage {
 			t.Fatalf("no warning expected without the duplicate path: %+v", e)
 		}
+	}
+}
+
+// TestInline_OverlayDuplicateIdentityRejected_R75: an overlay that lists the inline bundle
+// next to the source it extends is rejected.
+func TestInline_OverlayDuplicateIdentityRejected_R75(t *testing.T) {
+	h, _ := newInlineHarness(t)
+	h.remote.publish(1, `{"plugins":{"ssh":{"policies":["ghcr.io/vendor/policies:v1","inline:ssh"]}}}`)
+	active := mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	if active.overlay != nil || r.Status != agentconfig.StatusRejected || r.Reason != agentconfig.ReasonPolicyErrors {
+		t.Fatalf("expected rejected/policy-errors, got %s/%s", r.Status, r.Reason)
+	}
+	if errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyIdentity); len(errs) != 1 || errs[0].Path != "banner.rego" {
+		t.Fatalf("expected one duplicate-policy-identity error, got %+v", r.PolicyErrors)
+	}
+}
+
+// TestInline_PolicyIDIdentities_R75: a policy_id that continues the vendor stream collides
+// with the vendor module when both are loaded; a policy_id declared twice across a plugin's
+// paths is a duplicate-policy-id.
+func TestInline_PolicyIDIdentities_R75(t *testing.T) {
+	t.Run("continuing id next to the vendor source", func(t *testing.T) {
+		h, vendor := newInlineHarness(t)
+		// The policy_id the UI writes to continue the vendor stream: <plugin-path>/<file>.
+		override := fmt.Sprintf("package compliance_framework.banner\n\nimport rego.v1\n\npolicy_id := %q\n\ntitle := \"banner\"\n\nviolation[{\"id\": \"b\"}] if not input.banner\n", vendor+"/banner.rego")
+		src, _ := json.Marshal(override)
+		h.remote.publish(1, `{"plugins":{"ssh":{"policies":["ghcr.io/vendor/policies:v1","inline:ssh"]}},"policy_bundles":{"ssh":{"modules":{"banner.rego":`+string(src)+`}}}}`)
+		mustStartup(t, h.rc)
+		r := h.remote.lastReport(t)
+		errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyIdentity)
+		if r.Status != agentconfig.StatusRejected || len(errs) != 1 || errs[0].Path != "banner.rego" || !strings.Contains(errs[0].Message, "same evidence stream") {
+			t.Fatalf("expected a same-stream duplicate-policy-identity error, got %s %+v", r.Status, r.PolicyErrors)
+		}
+	})
+	t.Run("same policy_id in two paths", func(t *testing.T) {
+		h, vendor := newInlineHarness(t)
+		if err := os.WriteFile(filepath.Join(vendor, "motd.rego"), []byte("package compliance_framework.motd\n\nimport rego.v1\n\npolicy_id := \"shared\"\n\ntitle := \"motd\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\n\npolicy_id := \"shared\"\n\ntitle := \"extra\"\n"}}}}`)
+		mustStartup(t, h.rc)
+		r := h.remote.lastReport(t)
+		errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyID)
+		if r.Status != agentconfig.StatusRejected || len(errs) != 1 || errs[0].Path != "extra.rego" || !strings.Contains(errs[0].Message, `"shared"`) {
+			t.Fatalf("expected a duplicate-policy-id error at the authored module, got %s %+v", r.Status, r.PolicyErrors)
+		}
+	})
+}
+
+// TestInline_ReportsPluginPaths_R77: each policy bundle report carries the exact path the
+// agent passes plugins for it.
+func TestInline_ReportsPluginPaths_R77(t *testing.T) {
+	h, vendor := newInlineHarnessWith(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["inline:ssh"]
+  other:
+    source: ghcr.io/compliance-framework/plugin-other:v1
+    policies: ["ghcr.io/vendor/policies:v1"]`, 1))
+	active := mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	got := map[string]string{}
+	for _, b := range r.PolicyBundles {
+		got[b.Source] = b.PluginPath
+	}
+	if got["inline:ssh"] != active.runtime.inlinePolicyDirs["inline:ssh"] || !strings.HasSuffix(got["inline:ssh"], filepath.Join("inline", "ssh", "current", "bundle")) {
+		t.Fatalf("inline plugin-path = %q, want the stable path %q", got["inline:ssh"], active.runtime.inlinePolicyDirs["inline:ssh"])
+	}
+	if got["ghcr.io/vendor/policies:v1"] != vendor {
+		t.Fatalf("OCI plugin-path = %q, want %q", got["ghcr.io/vendor/policies:v1"], vendor)
 	}
 }
 

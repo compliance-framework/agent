@@ -63,6 +63,8 @@ type candidate struct {
 	trees          []artifactTree
 	warnings       []agentconfig.FieldError  // R34 file-origin warnings
 	policyWarnings []agentconfig.PolicyError // G3b severity=warning
+	// plugins are the runtime's plugins with their agent library versions (R76, R79).
+	plugins []agentconfig.PluginReport
 }
 
 // appliedRevision is the overlay revision the candidate applies, or nil for the file only.
@@ -204,8 +206,13 @@ type reconciler struct {
 	// resolvePolicy returns the policy root of an OCI or local policy source (downloading it
 	// into the shared cache); it serves inline bundles' extends and the report inventory.
 	resolvePolicy inlinepolicy.Resolver
-	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir").
+	// pluginLib reads the agent library version of a prefetched plugin source (R76, R79);
+	// nil skips the plugin compatibility checks and report.
+	pluginLib pluginLibFunc
+	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir"), and
+	// identityMemo their modules' evidence identities.
 	inventoryMemo map[string]agentconfig.PolicyBundleReport
+	identityMemo  map[string][]inlinepolicy.ModuleIdentity
 	// artifacts is the process-wide artifact uploader (shared with the plugins' API helpers).
 	artifacts *runnerpkg.ArtifactUploader
 	// artifactMemo maps a policy tree digest to the digest of its uploaded artifact ("" when
@@ -263,6 +270,7 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		loggedOnce: map[string]bool{},
 
 		inventoryMemo: map[string]agentconfig.PolicyBundleReport{},
+		identityMemo:  map[string][]inlinepolicy.ModuleIdentity{},
 		artifacts:     runnerpkg.NewArtifactUploader(),
 		artifactMemo:  map[string]string{},
 	}
@@ -583,7 +591,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		}
 	}
 
-	inline, aerr := rc.prepareInline(ctx, resolved, part.skip)
+	inline, aerr := rc.prepareInline(ctx, resolved, part.skip, touched)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -601,6 +609,14 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		aerr := failed(agentconfig.ReasonDownloadFailed, err)
 		aerr.runtime = runtime
 		return nil, aerr
+	}
+	compat, plugins := rc.pluginCompatibility(ctx, runtime, inline.materialized, touched)
+	if agentconfig.HasPolicyErrors(compat) {
+		return nil, policyRejection(append(compat, inline.warnings...))
+	}
+	if len(compat) > 0 {
+		inline.warnings = dedupePolicyErrors(append(inline.warnings, compat...))
+		agentconfig.SortPolicyErrors(inline.warnings)
 	}
 	if rcfg.Mode != agentconfig.ModeOff {
 		reports, trees := rc.sourceReports(ctx, runtime)
@@ -627,6 +643,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		trees:          inline.artifacts,
 		warnings:       append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
 		policyWarnings: inline.warnings,
+		plugins:        plugins,
 	}, nil
 }
 
@@ -638,6 +655,8 @@ type inlineResult struct {
 	reports   []agentconfig.PolicyBundleReport
 	artifacts []artifactTree
 	warnings  []agentconfig.PolicyError
+	// materialized are the bundles the enabled plugins use, by name.
+	materialized map[string]*inlinepolicy.Materialized
 }
 
 // overlayTouched returns the pointers an overlay changed, computed on the unresolved forms so

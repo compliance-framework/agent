@@ -31,6 +31,7 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/internal/agentstate"
+	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
@@ -375,6 +376,14 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	rc.artifacts = artifacts
 	rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
 		return ar.downloadPolicy(ctx, source, logger)
+	}
+	pluginLibs := &pluginlib.Cache{}
+	rc.pluginLib = func(ctx context.Context, source string) (string, error) {
+		binary, err := ar.downloadPlugin(ctx, source, logger)
+		if err != nil {
+			return "", err
+		}
+		return pluginLibs.Version(binary)
 	}
 	rc.onStartupFailure = ar.ReportStartupFailure
 
@@ -2131,6 +2140,19 @@ func (ar *AgentRunner) ReportStartupFailure(ctx context.Context, cfg *agentConfi
 }
 
 // downloadPolicy fetches one policy source into the shared policy cache.
+// downloadPlugin returns the plugin binary of source for this platform, downloading it into
+// the shared cache when it is not there yet (as runs and Prefetch do).
+func (ar *AgentRunner) downloadPlugin(ctx context.Context, source string, logger hclog.Logger) (string, error) {
+	if logger == nil {
+		logger = hclog.NewNullLogger()
+	}
+	platform := v1.Platform{
+		Architecture: runtime.GOARCH,
+		OS:           runtime.GOOS,
+	}
+	return ar.download(ctx, source, AgentPluginDir, "plugin", platformDownloadKey(platform), logger, remote.WithPlatform(platform))
+}
+
 func (ar *AgentRunner) downloadPolicy(ctx context.Context, source string, logger hclog.Logger) (string, error) {
 	if logger == nil {
 		logger = hclog.NewNullLogger()
