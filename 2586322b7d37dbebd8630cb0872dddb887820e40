@@ -1,0 +1,2 @@
+lisa-addressed:
+Round 3 pass 2: policyOrigin (newEntry/bundleTouched/pluginTouched) replaces pointer-touch origin for R75/R79 (test TestInline_FileDuplicateStaysAWarningUnderAnOverlay_R75); unknown-version message names untagged versions (TestLibProblemsNameAnUntaggedVersion).
