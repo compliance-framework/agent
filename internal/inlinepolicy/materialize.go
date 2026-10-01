@@ -135,6 +135,10 @@ func Materialize(ctx context.Context, root, name string, b *agentconfig.PolicyBu
 			Source: *b.Extends,
 			Digest: agentconfig.BundleTreeDigest(baseFiles),
 			Files:  inventory(baseFiles),
+			// The resolver output is the literal path plugins get for the source (R77), so a
+			// client can build continuity ids from it even when no plugin loads the source
+			// directly any more (R78).
+			PluginPath: dir,
 		}
 		m.ExtendsDir = dir
 		m.ExtendsIdentities = Identities(baseFiles)

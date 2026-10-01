@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/compliance-framework/agent/internal/inlinepolicy"
+	policy_manager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/api/pkg/agentconfig"
+	"github.com/hashicorp/go-hclog"
 )
 
 const inlineBaseConfig = `
@@ -273,6 +276,202 @@ func TestInline_ReportsPluginPaths_R77(t *testing.T) {
 	}
 	if got["ghcr.io/vendor/policies:v1"] != vendor {
 		t.Fatalf("OCI plugin-path = %q, want %q", got["ghcr.io/vendor/policies:v1"], vendor)
+	}
+}
+
+// r78Vendor is the vendor module of the R78 tests: a titled policy, so plugins record
+// evidence for it.
+const r78Vendor = "package compliance_framework.banner\n\nimport rego.v1\n\ntitle := \"Banner\"\n\nviolation contains {\"remarks\": \"b\"} if not input.banner\n"
+
+// r78Harness is an inline harness whose bundle extends source, resolved by resolve; with
+// direct, a second plugin also loads source directly.
+func r78Harness(t *testing.T, source string, direct bool, resolve func(context.Context, string) (string, error)) *remoteHarness {
+	t.Helper()
+	config := strings.Replace(inlineBaseConfig, "extends: ghcr.io/vendor/policies:v1", "extends: "+source, 1)
+	if direct {
+		config = strings.Replace(config, `policies: ["inline:ssh"]`, `policies: ["inline:ssh"]
+  other:
+    source: ghcr.io/compliance-framework/plugin-other:v1
+    policies: ["`+source+`"]`, 1)
+	}
+	h := newRemoteHarness(t, config)
+	h.rc.resolvePolicy = resolve
+	return h
+}
+
+// r78Report returns the inline bundle's report and the plugin-path of each source that has
+// its own policy-bundles entry.
+func r78Report(t *testing.T, h *remoteHarness) (agentconfig.PolicyBundleReport, map[string]string) {
+	t.Helper()
+	r := h.remote.lastReport(t)
+	if r.Status != agentconfig.StatusApplied {
+		t.Fatalf("expected applied, got %s/%s %v", r.Status, r.Reason, r.PolicyErrors)
+	}
+	var inline agentconfig.PolicyBundleReport
+	direct := map[string]string{}
+	for _, b := range r.PolicyBundles {
+		if b.Source == "inline:ssh" {
+			inline = b
+		} else {
+			direct[b.Source] = b.PluginPath
+		}
+	}
+	if inline.Extends == nil {
+		t.Fatalf("no extends report: %+v", r.PolicyBundles)
+	}
+	return inline, direct
+}
+
+// r78Evidence evaluates the policies at policyPath the way a plugin that labels _policy_path
+// does and returns the UUID of the banner policy's evidence.
+func r78Evidence(t *testing.T, policyPath string) string {
+	t.Helper()
+	labels := map[string]string{"type": "ssh", "hostname": "web-1", "_policy_path": policyPath}
+	evidence, err := policy_manager.NewPolicyProcessor(hclog.NewNullLogger(), labels, nil, nil, nil, nil, nil, nil).GenerateResults(context.Background(), policyPath, map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evidence {
+		if e.Labels["_policy"] == "compliance_framework.banner" {
+			return e.UUID
+		}
+	}
+	t.Fatalf("no banner evidence at %s", policyPath)
+	return ""
+}
+
+// TestInline_ExtendsPluginPath_R78: an inline bundle's extends report carries the literal path
+// plugins would get for the extends source, the same as the source's own plugin-path when a
+// plugin loads it directly, and still when none does (the bundle replaced the source, R66). A
+// module whose policy_id is extends.plugin-path + "/" + file continues the vendor's stream.
+func TestInline_ExtendsPluginPath_R78(t *testing.T) {
+	const source = "ghcr.io/vendor/policies:v1"
+	// Where an OCI source is extracted to: relative to the working directory, ending in the
+	// artifact's policies directory.
+	const extracted = ".compliance-framework/policies/vendor/policies/v1/policies"
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll(extracted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extracted, "banner.rego"), []byte(r78Vendor), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(_ context.Context, s string) (string, error) {
+		if s == source {
+			return extracted, nil
+		}
+		return "", errors.New("unknown source " + s)
+	}
+
+	loaded := r78Harness(t, source, true, resolve)
+	mustStartup(t, loaded.rc)
+	inline, direct := r78Report(t, loaded)
+	if inline.Extends.PluginPath != extracted || direct[source] != extracted {
+		t.Fatalf("extends plugin-path = %q, source plugin-path = %q, want both %q", inline.Extends.PluginPath, direct[source], extracted)
+	}
+
+	h := r78Harness(t, source, false, resolve)
+	h.remote.publish(0, `{}`)
+	mustStartup(t, h.rc)
+	inline, direct = r78Report(t, h)
+	if _, ok := direct[source]; ok {
+		t.Fatalf("no plugin loads %s directly, yet it is reported: %+v", source, direct)
+	}
+	if inline.Extends.PluginPath != extracted {
+		t.Fatalf("extends plugin-path = %q, want %q", inline.Extends.PluginPath, extracted)
+	}
+
+	// Override the vendor module with the continuity policy_id built from the report.
+	policyID := inline.Extends.PluginPath + "/banner.rego"
+	override := strings.Replace(r78Vendor, "title :=", fmt.Sprintf("policy_id := %q\n\ntitle :=", policyID), 1)
+	overlay, err := json.Marshal(map[string]any{"policy_bundles": map[string]any{"ssh": map[string]any{"modules": map[string]string{"banner.rego": override}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.remote.publish(1, string(overlay))
+	before := h.remote.reportCount()
+	active := h.poll(t)
+	if h.remote.reportCount() == before {
+		t.Fatal("the override revision was not reported")
+	}
+	r78Report(t, h)
+	if forked := policyErrorsWithCode(h.remote.lastReport(t), inlinepolicy.CodePolicyStreamForked); len(forked) != 0 {
+		t.Fatalf("the continuity policy_id must not fork the stream: %+v", forked)
+	}
+	// The run loop points the stable path at the new tree before the next run (R67).
+	if err := h.rc.activateInline(active); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := r78Evidence(t, active.runtime.inlinePolicyDirs["inline:ssh"]), r78Evidence(t, extracted); got != want {
+		t.Fatalf("override evidence UUID = %s, want the vendor's %s", got, want)
+	}
+}
+
+// TestInline_ExtendsPluginPathKeepsALocalSourceLiteral_R78: a local extends source configured
+// with a non-clean path is reported as configured, as plugins get it from the real resolver.
+func TestInline_ExtendsPluginPathKeepsALocalSourceLiteral_R78(t *testing.T) {
+	for _, source := range []string{"./policies", "./policies/", "policies/"} {
+		t.Run(source, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if err := os.MkdirAll("policies", 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join("policies", "banner.rego"), []byte(r78Vendor), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			ar := NewAgentRunner()
+			resolve := func(ctx context.Context, s string) (string, error) { return ar.downloadPolicy(ctx, s, nil) }
+
+			loaded := r78Harness(t, source, true, resolve)
+			mustStartup(t, loaded.rc)
+			inline, direct := r78Report(t, loaded)
+			if inline.Extends.PluginPath != source || direct[source] != source {
+				t.Fatalf("extends plugin-path = %q, source plugin-path = %q, want both the literal %q", inline.Extends.PluginPath, direct[source], source)
+			}
+
+			h := r78Harness(t, source, false, resolve)
+			mustStartup(t, h.rc)
+			if inline, _ := r78Report(t, h); inline.Extends.PluginPath != source {
+				t.Fatalf("extends plugin-path = %q, want the literal %q", inline.Extends.PluginPath, source)
+			}
+		})
+	}
+}
+
+// TestInline_ExtendsPluginPathSurvivesTruncation_R78: shrinking the report keeps both
+// plugin-paths whole, as it keeps artifact-digest. The agent never cuts a path: a cut path
+// would be a wrong one, so the API drops an oversized one whole (for both fields alike).
+func TestInline_ExtendsPluginPathSurvivesTruncation_R78(t *testing.T) {
+	h, vendor := newInlineHarness(t)
+	mustStartup(t, h.rc)
+	r := h.remote.lastReport(t)
+	if got := r.PolicyBundles[0].Extends.PluginPath; got != vendor {
+		t.Fatalf("extends plugin-path = %q, want %q", got, vendor)
+	}
+	ext := *r.PolicyBundles[0].Extends
+	r.PolicyBundles = append([]agentconfig.PolicyBundleReport(nil), r.PolicyBundles...)
+	r.PolicyBundles[0].Extends = &ext
+	long := strings.Repeat("p/", 2100) + "policies"
+	r.PolicyBundles[0].Extends.PluginPath = long
+	plugin := r.PolicyBundles[0].PluginPath
+
+	body, _, err := fitReport(&r, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := r.PolicyBundles[0]
+	if !r.Truncated || len(b.Files) != 0 || len(b.Extends.Files) != 0 {
+		t.Fatalf("the forced fit must drop the file lists: %+v", b)
+	}
+	if b.PluginPath != plugin || b.Extends.PluginPath != long {
+		t.Fatalf("truncation must keep both plugin-paths whole: %q, %q", b.PluginPath, b.Extends.PluginPath)
+	}
+	var sent agentconfig.Report
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent.PolicyBundles[0].Extends.PluginPath != long {
+		t.Fatal("the sent report must carry extends.plugin-path whole")
 	}
 }
 

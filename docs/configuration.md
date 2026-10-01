@@ -307,7 +307,8 @@ policy_bundles:
 - **Plugin paths (R77).** Each `policy-bundles[]` entry of the configuration report carries `plugin-path`, the exact
   path string the agent passes plugins for that source: the stable path for an inline bundle, and the path the
   agent extracted an OCI source to, or a local source as configured. It is what a continuity `policy_id` is built
-  from.
+  from. An inline bundle's `extends` also carries `plugin-path` (R78), the same path the source would get if a plugin
+  loaded it directly, so continuity ids use `extends.plugin-path` once the bundle has replaced the source everywhere.
 - **Sources for the UI (R62).** Outside mode `off`, the agent uploads every policy tree it reports (each inline
   bundle, the tree it extends, and each OCI or local source a plugin uses) as a policy bundle artifact, and reports
   its `artifact-digest` next to the tree digest, so the UI can show and pre-fill vendor sources. These are the same
