@@ -84,7 +84,9 @@ WantedBy=multi-user.target
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/ccf-agent agent -d
+WorkingDirectory=/var/lib/ccf-agent
+StateDirectory=ccf-agent
+ExecStart=/usr/local/bin/ccf-agent agent -d -c /etc/ccf-agent/config.yaml
 KillMode=process
 Delegate=yes
 LimitNOFILE=1048576
@@ -96,6 +98,12 @@ Restart=always
 RestartSec=5s
 EOF
 ```
+
+`WorkingDirectory` and `StateDirectory` give the agent a persistent place for its download caches and its
+per-instance state (`.compliance-framework/state/...`: the instance ID and the remote configuration cache). Without
+them the agent writes relative to `/`. The state directory must persist across restarts,
+otherwise every restart registers a new instance. See
+[State directory and instance ID](configuration.md#state-directory-and-instance-id).
 
 Now run the following command to reload the systemd configuration:
 
@@ -135,7 +143,10 @@ TODO
 
 ## Running as a server/container
 
-TODO
+Mount a volume for the agent's state and pin it with `CCF_STATE_DIR`: the default state directory is derived from the
+config file's absolute path, so a container that mounts its config elsewhere would otherwise get a new instance ID
+(R52). In Kubernetes jobs and CI one-shot runs, set `CCF_INSTANCE_ID` to a fixed UUID so repeated runs report as one
+instance; one-shot instances are pruned by the API after 24h.
 
 ## Running as a serverless process in AWS
 

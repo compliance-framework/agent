@@ -363,7 +363,7 @@ func submitEvidenceAPIConfig(apiURLFlag string) (*apiConfig, error) {
 	if config.Auth.ClientID == "" && config.Auth.ClientSecret == "" {
 		config.Auth = nil
 	}
-	if err := config.validate(); err != nil {
+	if err := validateAPIConfig(config); err != nil {
 		return nil, err
 	}
 	return config, nil

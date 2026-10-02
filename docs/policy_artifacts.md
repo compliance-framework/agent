@@ -74,7 +74,7 @@ Every evidence the agent sends also records where its plugin and policy bundle c
 | --- | --- |
 | `_plugin_source` | The plugin's configured `source`: an OCI reference such as `ghcr.io/compliance-framework/plugin-apt-versions:v0.4.0`, or a local path |
 | `_plugin_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it; for a local plugin binary, its SHA-256 |
-| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, so the bundle is known) |
+| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, or, from plugins built on an older agent library, a `_policy_path` label naming one of the plugin's policy paths, so the bundle is known) |
 | `_policy_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it. Not set for a local directory; `_policy_bundle_digest` covers its content |
 
 With `_plugin_source` and `_plugin_digest`, the image is pinned (`ref@digest`) even if the tag
@@ -85,6 +85,9 @@ it downloads them, so later runs, which skip the download, still report it. File
 before digests were recorded have no such record: their evidence carries the source but no
 digest until they are downloaded again (a new version, a cleared cache, or a fresh agent
 volume).
+
+The agent looks the policy source up by the path it gave the plugin, which is the path the
+plugin reports the evaluation under.
 
 The agent owns these props: any a plugin sets itself are replaced. They are recorded whether
 or not the evaluation's artifacts could be stored.
