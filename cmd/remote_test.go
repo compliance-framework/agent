@@ -3,8 +3,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,8 +32,6 @@ type fakeRemote struct {
 	reportErr func(n int, r agentconfig.Report) error
 	gets      []string
 	reports   []agentconfig.Report
-	uploads   []string
-	uploadErr func(n int) error
 }
 
 func (f *fakeRemote) Get(_ context.Context, ifNoneMatch string) (*sdk.AgentConfigResult, error) {
@@ -66,26 +61,6 @@ func (f *fakeRemote) Report(_ context.Context, _ uuid.UUID, r agentconfig.Report
 		return f.reportErr(len(f.reports), r)
 	}
 	return nil
-}
-
-// UploadArtifact records an artifact upload; uploadErr scripts failures.
-func (f *fakeRemote) UploadArtifact(_ context.Context, mediaType string, content []byte) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uploads = append(f.uploads, mediaType)
-	if f.uploadErr != nil {
-		if err := f.uploadErr(len(f.uploads)); err != nil {
-			return "", err
-		}
-	}
-	sum := sha256.Sum256(content)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
-
-func (f *fakeRemote) uploadCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.uploads)
 }
 
 // publish sets a new overlay revision with an opaque ETag.
@@ -441,29 +416,18 @@ func TestReport_OversizedIsTruncated(t *testing.T) {
 			"ssh": {Source: "ghcr.io/x/ssh:v1", Config: map[string]string{"blob": strings.Repeat("x", n)}},
 		}})
 	}
-	files := make([]agentconfig.PolicyFileReport, 20000) // ~3 MiB of file list
-	for i := range files {
-		files[i] = agentconfig.PolicyFileReport{Path: fmt.Sprintf("policies/m%05d.rego", i), SHA256: strings.Repeat("a", 64), Package: "compliance_framework.m"}
-	}
-	bundles := func() []agentconfig.PolicyBundleReport {
-		return []agentconfig.PolicyBundleReport{{Source: "ghcr.io/x/policies:v1", Digest: "sha256:t", ArtifactDigest: "sha256:a", Files: slices.Clone(files)}}
-	}
-
-	// Dropping the file lists is enough: base is kept.
-	report := agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(1 << 19), Effective: config(1 << 19), PolicyBundles: bundles()}
+	// A report under the target is sent whole.
+	report := agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(1 << 19), Effective: config(1 << 19)}
 	body, _, err := fitReport(&report, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.Truncated || len(body) > reportTargetBytes {
-		t.Fatalf("expected a truncated report under the target, got truncated=%v size=%d", report.Truncated, len(body))
-	}
-	if len(report.PolicyBundles[0].Files) != 0 || report.PolicyBundles[0].ArtifactDigest != "sha256:a" || string(report.Base) == "{}" {
-		t.Fatalf("expected the file lists dropped and base kept: %+v", report.PolicyBundles[0])
+	if report.Truncated || len(body) > reportTargetBytes || string(report.Base) == "{}" {
+		t.Fatalf("expected the report kept whole, got truncated=%v size=%d", report.Truncated, len(body))
 	}
 
-	// Then base is dropped.
-	report = agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(2 << 20), Effective: config(2 << 20), PolicyBundles: bundles()}
+	// An oversized one drops base.
+	report = agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(2 << 20), Effective: config(2 << 20)}
 	body, _, err = fitReport(&report, false)
 	if err != nil {
 		t.Fatal(err)

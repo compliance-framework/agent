@@ -16,14 +16,9 @@ type apiHelper struct {
 	client      *sdk.Client
 	agentLabels map[string]string
 	pluginName  string
-	artifacts   *ArtifactEndpoint
-	// policyPaths are the policy bundle paths the plugin was given (cleaned).
-	policyPaths map[string]struct{}
+	artifacts   *artifactUploader
 	// evidenceProps are appended to every evidence the plugin creates.
 	evidenceProps []types.Property
-
-	uploader *ArtifactUploader
-	apiURL   string
 
 	// pluginSource and policySources are where the plugin and its policy bundles came from,
 	// recorded on evidence as _plugin_source / _plugin_digest and _policy_source /
@@ -80,18 +75,7 @@ type ApiHelperOption func(*apiHelper)
 func WithPolicyPaths(paths []string) ApiHelperOption {
 	return func(h *apiHelper) {
 		for _, path := range paths {
-			h.policyPaths[filepath.Clean(path)] = struct{}{}
-		}
-	}
-}
-
-// WithArtifactUploader shares the process-wide uploader (R62), so what the reconciler or
-// another plugin run already uploaded to the API at apiURL is not uploaded again. Without it
-// the helper uses an uploader of its own.
-func WithArtifactUploader(u *ArtifactUploader, apiURL string) ApiHelperOption {
-	return func(h *apiHelper) {
-		if u != nil {
-			h.uploader, h.apiURL = u, apiURL
+			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
 		}
 	}
 }
@@ -112,21 +96,13 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 		client:      client,
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
-		policyPaths: map[string]struct{}{},
+		artifacts:   newArtifactUploader(client),
 
 		policySources: map[string]Source{},
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
-	if h.uploader == nil {
-		h.uploader = NewArtifactUploader()
-	}
-	var artifacts ArtifactClient
-	if client != nil {
-		artifacts = client.Artifact
-	}
-	h.artifacts = h.uploader.Endpoint(h.apiURL, artifacts)
 	return h
 }
 
@@ -192,9 +168,9 @@ func (s *apiEvidenceSender) outcome(evaluation *proto.PolicyEvaluation) evaluati
 		s.h.logger.Warn("Sending evidence without policy artifacts; it cannot be played back",
 			"error", unknownEvaluation(evaluation.GetId()))
 	} else {
-		refs, err := s.h.storeEvaluation(s.ctx, evaluation)
+		refs, err := s.h.artifacts.storeEvaluation(s.ctx, evaluation)
 		switch {
-		case errors.Is(err, ErrArtifactsUnsupported):
+		case errors.Is(err, errArtifactsUnsupported):
 			if !s.unsupported {
 				s.unsupported = true
 				s.h.logger.Warn("The API does not support policy artifacts; evidence is sent without them and cannot be played back. Upgrade the API.")

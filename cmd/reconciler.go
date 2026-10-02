@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/compliance-framework/agent/internal/agentstate"
-	runnerpkg "github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/fsnotify/fsnotify"
@@ -40,9 +39,9 @@ var (
 	// failedRetryMin / failedRetryMax bound the retry of a failed/* revision.
 	failedRetryMin = time.Minute
 	failedRetryMax = 10 * time.Minute
-	// prepareNetworkTimeout bounds each network step of prepare (plugin/policy prefetch, a
-	// report inventory), so a hung registry cannot stall the reconciler. A timeout is a
-	// failed/download-failed, which is retried with the failed backoff.
+	// prepareNetworkTimeout bounds the network step of prepare (plugin/policy prefetch), so a
+	// hung registry cannot stall the reconciler. A timeout is a failed/download-failed, which
+	// is retried with the failed backoff.
 	prepareNetworkTimeout = 5 * time.Minute
 )
 
@@ -58,9 +57,6 @@ type candidate struct {
 	// identity changes whenever anything that affects the runtime changes, including the
 	// values the digest masks or omits (api block, secrets). It never leaves the process.
 	identity string
-	bundles  []agentconfig.PolicyBundleReport
-	// trees are the policy trees bundles describe, uploaded as artifacts for the report (R62).
-	trees    []artifactTree
 	warnings []agentconfig.FieldError // R34 file-origin warnings
 	// plugins are the runtime's plugins with their agent library versions (R76).
 	plugins []agentconfig.PluginReport
@@ -122,27 +118,15 @@ type configReporter interface {
 	Report(ctx context.Context, instanceID uuid.UUID, r agentconfig.Report) error
 }
 
-// artifactUploader is the test seam over the shared artifact uploader (R62).
-type artifactUploader interface {
-	UploadArtifact(ctx context.Context, mediaType string, content []byte) (string, error)
-}
-
-// remoteAPI bundles the remote configuration calls and the artifact upload.
+// remoteAPI bundles the remote configuration calls.
 type remoteAPI interface {
 	overlayFetcher
 	configReporter
-	artifactUploader
 }
 
-// sdkRemote adapts the SDK client to remoteAPI. Artifacts go through the process-wide
-// uploader, shared with the plugins' API helpers.
+// sdkRemote adapts the SDK client to remoteAPI.
 type sdkRemote struct {
-	client    *sdk.Client
-	artifacts *runnerpkg.ArtifactEndpoint
-}
-
-func (s sdkRemote) UploadArtifact(ctx context.Context, mediaType string, content []byte) (string, error) {
-	return s.artifacts.Upload(ctx, mediaType, content)
+	client *sdk.Client
 }
 
 func (s sdkRemote) Get(ctx context.Context, ifNoneMatch string) (*sdk.AgentConfigResult, error) {
@@ -154,7 +138,7 @@ func (s sdkRemote) Report(ctx context.Context, instanceID uuid.UUID, r agentconf
 }
 
 // newSDKRemote builds the remote configuration client from the (locked, file-only) api block.
-func newSDKRemote(c agentconfig.Config, uploader *runnerpkg.ArtifactUploader) remoteAPI {
+func newSDKRemote(c agentconfig.Config) remoteAPI {
 	if c.API == nil {
 		return nil
 	}
@@ -165,8 +149,7 @@ func newSDKRemote(c agentconfig.Config, uploader *runnerpkg.ArtifactUploader) re
 			ClientSecret: strings.TrimSpace(c.API.Auth.ClientSecret),
 		}
 	}
-	client := sdk.NewClient(nil, cfg)
-	return sdkRemote{client: client, artifacts: uploader.Endpoint(cfg.BaseURL, client.Artifact)}
+	return sdkRemote{client: sdk.NewClient(nil, cfg)}
 }
 
 // runFunc runs one configuration until it is cancelled (daemon) or completes (one-shot).
@@ -201,20 +184,10 @@ type reconciler struct {
 	newRemote func(agentconfig.Config) remoteAPI
 	// lookupEnv resolves ${env:NAME} placeholders (a test seam).
 	lookupEnv func(string) (string, bool)
-	// resolvePolicy returns the policy root of an OCI or local policy source (downloading it
-	// into the shared cache) for the report inventory.
-	resolvePolicy policyResolver
 	// pluginLib reads the agent library version of a prefetched plugin source (R76);
 	// nil leaves the plugins report empty.
 	pluginLib pluginLibFunc
-	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir").
-	inventoryMemo map[string]agentconfig.PolicyBundleReport
-	// artifacts is the process-wide artifact uploader (shared with the plugins' API helpers).
-	artifacts *runnerpkg.ArtifactUploader
-	// artifactMemo maps a policy tree digest to the digest of its uploaded artifact ("" when
-	// the API refused it for good). Owned by the reconciler goroutine.
-	artifactMemo map[string]string
-	now          func() time.Time
+	now       func() time.Time
 
 	mu        sync.Mutex // guards active, pending, cancelRun
 	active    *candidate
@@ -258,12 +231,8 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		lookupEnv:  os.LookupEnv,
 		now:        time.Now,
 		loggedOnce: map[string]bool{},
-
-		inventoryMemo: map[string]agentconfig.PolicyBundleReport{},
-		artifacts:     runnerpkg.NewArtifactUploader(),
-		artifactMemo:  map[string]string{},
+		newRemote:  newSDKRemote,
 	}
-	rc.newRemote = func(c agentconfig.Config) remoteAPI { return newSDKRemote(c, rc.artifacts) }
 	return rc
 }
 
@@ -297,8 +266,6 @@ func (rc *reconciler) setBase(base *baseSnapshot) {
 		}
 		rc.remoteKey = key
 		rc.fetchBackoffUntil, rc.reportBackoffUntil = time.Time{}, time.Time{}
-		// Artifacts uploaded to the previous API are not in this one.
-		rc.artifactMemo = map[string]string{}
 	}
 
 	id := cacheIdentity(base.declared)
@@ -622,11 +589,8 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		aerr.runtime = runtime
 		return nil, aerr
 	}
-	var bundles []agentconfig.PolicyBundleReport
-	var trees []artifactTree
 	var plugins []agentconfig.PluginReport
 	if rcfg.Mode != agentconfig.ModeOff {
-		bundles, trees = rc.sourceReports(ctx, runtime)
 		plugins = rc.pluginReports(ctx, runtime)
 	}
 
@@ -645,8 +609,6 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		runtime:  runtime,
 		digest:   digest,
 		identity: candidateIdentity(declared),
-		bundles:  bundles,
-		trees:    trees,
 		warnings: append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
 		plugins:  plugins,
 	}, nil

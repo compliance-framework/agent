@@ -1,17 +1,20 @@
 package runner
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/compliance-framework/agent/internal/policytree"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
 	"github.com/compliance-framework/api/sdk/types"
@@ -22,10 +25,6 @@ import (
 // them once per evaluation, sends the evidence with the digests the API returns, and never
 // forwards the raw data. The API canonicalises and hashes; the agent only hashes locally to
 // avoid re-uploading content it already sent.
-//
-// The same artifact store is the agent's one channel for policy sources (R62): the
-// reconciler uploads the policy trees it reports, through the same ArtifactUploader, so a
-// tree uploaded at configuration time is not uploaded again at evaluation time.
 
 const (
 	artifactUploadAttempts = 3
@@ -35,119 +34,28 @@ const (
 	artifactsUnsupportedRecheck = 10 * time.Minute
 )
 
-// ErrArtifactsUnsupported means the API predates artifact storage.
-var ErrArtifactsUnsupported = errors.New("the API does not support policy artifacts")
+// errArtifactsUnsupported means the API predates artifact storage.
+var errArtifactsUnsupported = errors.New("the API does not support policy artifacts")
 
-// ArtifactClient is the artifact route of one API (sdk.Client.Artifact).
-type ArtifactClient interface {
-	Upload(ctx context.Context, mediaType string, content []byte) (*sdk.ArtifactInfo, error)
-}
-
-// ArtifactUploader uploads artifacts for the whole agent process: the reconciler and the API
-// helper of every plugin run share one, so content is uploaded once per API whoever needs
-// it first. It remembers what each API already has (by a local hash of the bytes), retries
-// temporary failures, and backs off from an API that predates artifact storage. It is safe
-// for concurrent use.
-type ArtifactUploader struct {
-	retryDelay time.Duration
-	now        func() time.Time
+type artifactUploader struct {
+	client      *sdk.Client
+	policyPaths map[string]struct{}
+	retryDelay  time.Duration
 
 	mu               sync.Mutex
-	uploaded         map[artifactKey]string // what each API already has -> its digest
-	unsupportedUntil map[string]time.Time   // per API
+	uploaded         map[[sha256.Size]byte]string // local hash of uploaded bytes -> API digest
+	unsupportedUntil time.Time
+	now              func() time.Time
 }
 
-type artifactKey struct {
-	api   string
-	local [sha256.Size]byte
-}
-
-// NewArtifactUploader returns an empty uploader.
-func NewArtifactUploader() *ArtifactUploader {
-	return &ArtifactUploader{
-		retryDelay:       250 * time.Millisecond,
-		now:              time.Now,
-		uploaded:         map[artifactKey]string{},
-		unsupportedUntil: map[string]time.Time{},
+func newArtifactUploader(client *sdk.Client) *artifactUploader {
+	return &artifactUploader{
+		client:      client,
+		policyPaths: map[string]struct{}{},
+		retryDelay:  250 * time.Millisecond,
+		uploaded:    map[[sha256.Size]byte]string{},
+		now:         time.Now,
 	}
-}
-
-// Endpoint binds the uploader to one API: api identifies it (its base URL) and client is its
-// artifact route. Endpoints of the same api share what was uploaded.
-func (u *ArtifactUploader) Endpoint(api string, client ArtifactClient) *ArtifactEndpoint {
-	return &ArtifactEndpoint{u: u, api: api, client: client}
-}
-
-// ArtifactEndpoint uploads to one API through a shared ArtifactUploader.
-type ArtifactEndpoint struct {
-	u      *ArtifactUploader
-	api    string
-	client ArtifactClient
-}
-
-// unsupported reports whether the API was found not to support artifacts recently.
-func (e *ArtifactEndpoint) unsupported() bool {
-	e.u.mu.Lock()
-	defer e.u.mu.Unlock()
-	return e.u.now().Before(e.u.unsupportedUntil[e.api])
-}
-
-// Upload stores content unless this agent already uploaded the same bytes to this API,
-// retrying temporary failures, and returns the digest the API assigned. A 404 or 405 means
-// the API predates artifacts: ErrArtifactsUnsupported, and no upload to it is attempted for
-// a while. Other failures are returned as they are (*sdk.ArtifactStatusError for a status).
-func (e *ArtifactEndpoint) Upload(ctx context.Context, mediaType string, content []byte) (string, error) {
-	u := e.u
-	key := artifactKey{api: e.api, local: sha256.Sum256(append([]byte(mediaType+"\x00"), content...))}
-	u.mu.Lock()
-	digest, ok := u.uploaded[key]
-	unsupported := u.now().Before(u.unsupportedUntil[e.api])
-	u.mu.Unlock()
-	if ok {
-		return digest, nil
-	}
-	if unsupported {
-		return "", ErrArtifactsUnsupported
-	}
-	if e.client == nil {
-		return "", errors.New("no API client")
-	}
-
-	var err error
-	for attempt := 1; attempt <= artifactUploadAttempts; attempt++ {
-		var info *sdk.ArtifactInfo
-		info, err = e.client.Upload(ctx, mediaType, content)
-		if err == nil {
-			u.remember(key, info.Digest)
-			return info.Digest, nil
-		}
-
-		var statusErr *sdk.ArtifactStatusError
-		if errors.As(err, &statusErr) && (statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusMethodNotAllowed) {
-			u.mu.Lock()
-			u.unsupportedUntil[e.api] = u.now().Add(artifactsUnsupportedRecheck)
-			u.mu.Unlock()
-			return "", ErrArtifactsUnsupported
-		}
-		if !retryable(ctx, err) || attempt == artifactUploadAttempts {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return "", errors.Join(err, ctx.Err())
-		case <-time.After(u.retryDelay * time.Duration(attempt)):
-		}
-	}
-	return "", err
-}
-
-func (u *ArtifactUploader) remember(key artifactKey, digest string) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if len(u.uploaded) >= artifactCacheLimit {
-		u.uploaded = map[artifactKey]string{}
-	}
-	u.uploaded[key] = digest
 }
 
 // evaluationKey identifies an evaluation: by its stream Id when it has one, otherwise by
@@ -165,38 +73,88 @@ func evaluationKey(e *proto.PolicyEvaluation) string {
 	return "content:" + hex.EncodeToString(h.Sum(nil))
 }
 
-// storeEvaluation uploads what one evaluation used: the policy bundle at the policy path the
-// plugin was given (see WithPolicyPaths), its input and its policy data.
-func (h *apiHelper) storeEvaluation(ctx context.Context, evaluation *proto.PolicyEvaluation) (*types.PolicyArtifacts, error) {
-	if h.artifacts.unsupported() {
-		return nil, ErrArtifactsUnsupported
+func (u *artifactUploader) storeEvaluation(ctx context.Context, evaluation *proto.PolicyEvaluation) (*types.PolicyArtifacts, error) {
+	u.mu.Lock()
+	unsupported := u.now().Before(u.unsupportedUntil)
+	u.mu.Unlock()
+	if unsupported {
+		return nil, errArtifactsUnsupported
 	}
+
 	policyPath := filepath.Clean(evaluation.GetPolicyPath())
-	if _, ok := h.policyPaths[policyPath]; !ok {
+	if _, ok := u.policyPaths[policyPath]; !ok {
 		return nil, fmt.Errorf("policy path %q is not one of the plugin's policy bundles", evaluation.GetPolicyPath())
 	}
 	if len(evaluation.GetInput()) == 0 {
 		return nil, errors.New("the evaluation has no input data")
 	}
 
-	bundle, err := policytree.TarDirectory(policyPath)
+	bundle, err := tarDirectory(policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("package policy bundle: %w", err)
 	}
 
 	refs := &types.PolicyArtifacts{}
-	if refs.BundleDigest, err = h.artifacts.Upload(ctx, sdk.ArtifactMediaTypePolicyBundle, bundle); err != nil {
+	if refs.BundleDigest, err = u.upload(ctx, sdk.ArtifactMediaTypePolicyBundle, bundle); err != nil {
 		return nil, fmt.Errorf("upload policy bundle: %w", err)
 	}
-	if refs.InputDigest, err = h.artifacts.Upload(ctx, sdk.ArtifactMediaTypeJSON, evaluation.GetInput()); err != nil {
+	if refs.InputDigest, err = u.upload(ctx, sdk.ArtifactMediaTypeJSON, evaluation.GetInput()); err != nil {
 		return nil, fmt.Errorf("upload input data: %w", err)
 	}
 	if len(evaluation.GetPolicyData()) > 0 {
-		if refs.PolicyDataDigest, err = h.artifacts.Upload(ctx, sdk.ArtifactMediaTypeJSON, evaluation.GetPolicyData()); err != nil {
+		if refs.PolicyDataDigest, err = u.upload(ctx, sdk.ArtifactMediaTypeJSON, evaluation.GetPolicyData()); err != nil {
 			return nil, fmt.Errorf("upload policy data: %w", err)
 		}
 	}
 	return refs, nil
+}
+
+// upload stores content unless this agent already uploaded the same bytes, retrying
+// temporary failures, and returns the digest the API assigned.
+func (u *artifactUploader) upload(ctx context.Context, mediaType string, content []byte) (string, error) {
+	local := sha256.Sum256(append([]byte(mediaType+"\x00"), content...))
+	u.mu.Lock()
+	digest, ok := u.uploaded[local]
+	u.mu.Unlock()
+	if ok {
+		return digest, nil
+	}
+
+	var err error
+	for attempt := 1; attempt <= artifactUploadAttempts; attempt++ {
+		var info *sdk.ArtifactInfo
+		info, err = u.client.Artifact.Upload(ctx, mediaType, content)
+		if err == nil {
+			u.remember(local, info.Digest)
+			return info.Digest, nil
+		}
+
+		var statusErr *sdk.ArtifactStatusError
+		if errors.As(err, &statusErr) && (statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusMethodNotAllowed) {
+			u.mu.Lock()
+			u.unsupportedUntil = u.now().Add(artifactsUnsupportedRecheck)
+			u.mu.Unlock()
+			return "", errArtifactsUnsupported
+		}
+		if !retryable(ctx, err) || attempt == artifactUploadAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", errors.Join(err, ctx.Err())
+		case <-time.After(u.retryDelay * time.Duration(attempt)):
+		}
+	}
+	return "", err
+}
+
+func (u *artifactUploader) remember(local [sha256.Size]byte, digest string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if len(u.uploaded) >= artifactCacheLimit {
+		u.uploaded = map[[sha256.Size]byte]string{}
+	}
+	u.uploaded[local] = digest
 }
 
 // retryable reports whether an upload failure may succeed if repeated: server errors, rate
@@ -210,4 +168,39 @@ func retryable(ctx context.Context, err error) bool {
 		return statusErr.StatusCode >= 500 || statusErr.StatusCode == http.StatusTooManyRequests
 	}
 	return true
+}
+
+// tarDirectory archives the regular files under dir. The API canonicalises the archive,
+// so file order, modes and times here do not affect the digest.
+func tarDirectory(dir string) ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", path)
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: filepath.ToSlash(rel), Mode: 0o644, Size: int64(len(content))}); err != nil {
+			return err
+		}
+		_, err = tw.Write(content)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

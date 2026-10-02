@@ -84,7 +84,6 @@ func (rc *reconciler) maybeReport(ctx context.Context, active *candidate, outcom
 	if rc.now().Before(rc.reportBackoffUntil) {
 		return
 	}
-	rc.uploadArtifacts(ctx, active)
 	report := rc.buildReport(active, outcome, rcfg)
 	body, fingerprint, err := fitReport(&report, false)
 	if err != nil {
@@ -144,7 +143,6 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 		Base:              marshalRaw(agentconfig.Redact(active.base.declared, opts...)),
 		Effective:         marshalRaw(agentconfig.Redact(active.declared, opts...)),
 		EffectiveDigest:   active.digest,
-		PolicyBundles:     rc.withArtifactDigests(active.bundles),
 		Warnings:          active.warnings,
 		RemoteConfig:      &rcfg,
 		Plugins:           active.plugins,
@@ -184,14 +182,13 @@ func truncateString(s string, n int) string {
 }
 
 // fitReport encodes the report, shrinking it to reportTargetBytes when needed (or always when
-// force is set, for a resend after a 413): first the policy bundle file lists are dropped, then
-// base is dropped. Any step sets Truncated. It returns the body and its fingerprint.
+// force is set, for a resend after a 413): base is dropped, which sets Truncated. It returns the body and its fingerprint.
 func fitReport(report *agentconfig.Report, force bool) ([]byte, string, error) {
 	body, err := json.Marshal(report)
 	if err != nil {
 		return nil, "", err
 	}
-	steps := []func(*agentconfig.Report){dropReportFileLists, dropReportBase}
+	steps := []func(*agentconfig.Report){dropReportBase}
 	for _, step := range steps {
 		if !force && len(body) <= reportTargetBytes {
 			break
@@ -204,12 +201,6 @@ func fitReport(report *agentconfig.Report, force bool) ([]byte, string, error) {
 	}
 	sum := sha256.Sum256(body)
 	return body, hex.EncodeToString(sum[:]), nil
-}
-
-func dropReportFileLists(report *agentconfig.Report) {
-	for i := range report.PolicyBundles {
-		report.PolicyBundles[i].Files = []agentconfig.PolicyFileReport{}
-	}
 }
 
 func dropReportBase(report *agentconfig.Report) {

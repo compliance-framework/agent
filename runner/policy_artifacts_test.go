@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/compliance-framework/agent/internal/policytree"
 	policyManager "github.com/compliance-framework/agent/policy-manager"
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -77,7 +76,7 @@ func newTestHelper(t *testing.T, api *fakeAPI, policyPaths ...string) *apiHelper
 	t.Cleanup(server.Close)
 	client := sdk.NewClient(server.Client(), &sdk.Config{BaseURL: server.URL})
 	helper := NewApiHelper(hclog.NewNullLogger(), client, map[string]string{"_agent": "test"}, "test-plugin", WithPolicyPaths(policyPaths))
-	helper.uploader.retryDelay = time.Millisecond
+	helper.artifacts.retryDelay = time.Millisecond
 	return helper
 }
 
@@ -163,7 +162,7 @@ func TestCreateEvidenceUnderAnOldAPISendsEvidenceWithoutArtifacts(t *testing.T) 
 	assert.Len(t, api.uploads, 1)
 
 	// ...but checks again later, so an upgraded API is picked up.
-	helper.uploader.now = func() time.Time { return time.Now().Add(artifactsUnsupportedRecheck + time.Minute) }
+	helper.artifacts.now = func() time.Time { return time.Now().Add(artifactsUnsupportedRecheck + time.Minute) }
 	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
 		evidenceFor("three", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
 	}))
@@ -352,37 +351,4 @@ violation contains {"id": "wget-version"} if input.wget != data.allowed_versions
 	assert.Equal(t, "sha256:"+hex.EncodeToString(inputSum[:]), refs["input-digest"])
 	assert.NotEmpty(t, refs["policy-data-digest"])
 	assert.True(t, strings.HasPrefix(refs["bundle-digest"].(string), "sha256:"))
-}
-
-// TestSharedUploaderUploadsOncePerAPI: helpers sharing the process-wide uploader do not
-// upload what another one (or the reconciler) already uploaded to the same API (R62).
-func TestSharedUploaderUploadsOncePerAPI(t *testing.T) {
-	bundle := writeBundle(t, "a")
-	api := &fakeAPI{}
-	server := httptest.NewServer(api)
-	t.Cleanup(server.Close)
-	client := sdk.NewClient(server.Client(), &sdk.Config{BaseURL: server.URL})
-	shared := NewArtifactUploader()
-
-	send := func(apiURL, title string) {
-		helper := NewApiHelper(hclog.NewNullLogger(), client, nil, "p", WithPolicyPaths([]string{bundle}), WithArtifactUploader(shared, apiURL))
-		require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
-			evidenceFor(title, &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
-		}))
-	}
-	send(server.URL, "one")
-	send(server.URL, "two")
-	assert.Len(t, api.uploads, 2, "bundle and input once for both helpers")
-
-	// The reconciler's endpoint for the same API sees them too.
-	tarball, err := policytree.TarDirectory(bundle)
-	require.NoError(t, err)
-	digest, err := shared.Endpoint(server.URL, client.Artifact).Upload(context.Background(), sdk.ArtifactMediaTypePolicyBundle, tarball)
-	require.NoError(t, err)
-	assert.NotEmpty(t, digest)
-	assert.Len(t, api.uploads, 2)
-
-	// Another API does not have them.
-	send("http://other.example", "three")
-	assert.Len(t, api.uploads, 4)
 }

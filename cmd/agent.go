@@ -360,16 +360,9 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	// file silently creates a new instance. Say where state lives.
 	logger.Info("Agent state", "state_dir", stateDir, "state_dir_source", stateDirSource, "instance_id", id.String(), "instance_id_persisted", persisted)
 
-	// One artifact uploader for the process: the reconciler's policy tree uploads and every
-	// plugin run's evidence artifacts share what each API already has (R62).
-	artifacts := runner.NewArtifactUploader()
-	ar := NewAgentRunner(WithInstanceID(id), WithSharedArtifactUploader(artifacts))
+	ar := NewAgentRunner(WithInstanceID(id))
 	rc := newReconciler(cmd, configPath, store, ar, logger)
 	rc.instanceID = id
-	rc.artifacts = artifacts
-	rc.resolvePolicy = func(ctx context.Context, source string) (string, error) {
-		return ar.downloadPolicy(ctx, source, logger)
-	}
 	pluginLibs := &pluginlib.Cache{}
 	rc.pluginLib = func(ctx context.Context, source string) (string, error) {
 		binary, err := ar.downloadPlugin(ctx, source, logger)
@@ -459,8 +452,6 @@ type AgentRunner struct {
 
 	// instanceID is this agent instance's stable ID (R31); set once at construction.
 	instanceID uuid.UUID
-	// artifacts is the process-wide artifact uploader, shared with the reconciler (R62).
-	artifacts *runner.ArtifactUploader
 
 	// protocolCache maps a plugin source to the protocol version its OCI annotations
 	// declared. It survives reloads so a registry outage during a reload cannot silently
@@ -477,11 +468,6 @@ func WithInstanceID(id uuid.UUID) AgentRunnerOption {
 	return func(ar *AgentRunner) { ar.instanceID = id }
 }
 
-// WithSharedArtifactUploader makes every plugin run upload through u (R62).
-func WithSharedArtifactUploader(u *runner.ArtifactUploader) AgentRunnerOption {
-	return func(ar *AgentRunner) { ar.artifacts = u }
-}
-
 func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
 	ar := &AgentRunner{
 		pluginLocations:     map[string]string{},
@@ -492,7 +478,6 @@ func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
 		httpClient:          http.DefaultClient,
 		instanceID:          uuid.New(),
 		protocolCache:       map[string]int32{},
-		artifacts:           runner.NewArtifactUploader(),
 	}
 	for _, opt := range opts {
 		opt(ar)
@@ -1471,7 +1456,6 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
 				runner.WithPolicyPaths(policyPaths),
 				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
-				runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 				runner.WithEvidenceProps(configRevisionProps(config)...),
 			)
 
@@ -1617,7 +1601,6 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
 		runner.WithPolicyPaths(policyPaths),
 		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
-		runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 		runner.WithEvidenceProps(configRevisionProps(config)...),
 	)
 
