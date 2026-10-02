@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +36,32 @@ func SetAgentVersion(v string) {
 		}
 	}
 	agentVersion = v
+}
+
+// pluginLibFunc returns the agent library version the binary of a plugin source was built
+// with ("" when unknown). The source has been prefetched.
+type pluginLibFunc func(ctx context.Context, source string) (string, error)
+
+// pluginReports lists the plugins of runtime with the agent library each was built with (R76),
+// read from the plugin binary's build info: diagnostics for the UI. A version that cannot be
+// read is reported as unknown (empty). Without a pluginLib function it reports nothing.
+func (rc *reconciler) pluginReports(ctx context.Context, runtime *agentConfig) []agentconfig.PluginReport {
+	if rc.pluginLib == nil || runtime == nil {
+		return nil
+	}
+	var reports []agentconfig.PluginReport
+	for _, name := range slices.Sorted(maps.Keys(runtime.Plugins)) {
+		p := runtime.Plugins[name]
+		version, err := rc.pluginLib(ctx, p.Source)
+		if err != nil {
+			version = ""
+			if rc.logOnce("plugin-lib\x00" + p.Source + "\x00" + err.Error()) {
+				rc.logger.Warn("Could not read the agent library version of a plugin; reporting it as unknown", "plugin", name, "source", p.Source, "error", err)
+			}
+		}
+		reports = append(reports, agentconfig.PluginReport{Name: name, Source: p.Source, LibVersion: version})
+	}
+	return reports
 }
 
 // reportState is the reconciler's report bookkeeping.
@@ -158,15 +186,14 @@ func truncateString(s string, n int) string {
 }
 
 // fitReport encodes the report, shrinking it to reportTargetBytes when needed (or always when
-// force is set, for a resend after a 413): first every policy bundle module in base and
-// effective becomes "sha256:<hex>", then the policy bundle file lists are dropped, then base
-// is dropped. Any step sets Truncated. It returns the body and its fingerprint.
+// force is set, for a resend after a 413): first the policy bundle file lists are dropped, then
+// base is dropped. Any step sets Truncated. It returns the body and its fingerprint.
 func fitReport(report *agentconfig.Report, force bool) ([]byte, string, error) {
 	body, err := json.Marshal(report)
 	if err != nil {
 		return nil, "", err
 	}
-	steps := []func(*agentconfig.Report){hashReportModules, dropReportFileLists, dropReportBase}
+	steps := []func(*agentconfig.Report){dropReportFileLists, dropReportBase}
 	for _, step := range steps {
 		if !force && len(body) <= reportTargetBytes {
 			break
@@ -181,45 +208,9 @@ func fitReport(report *agentconfig.Report, force bool) ([]byte, string, error) {
 	return body, hex.EncodeToString(sum[:]), nil
 }
 
-func hashReportModules(report *agentconfig.Report) {
-	report.Base = hashDocModules(report.Base)
-	report.Effective = hashDocModules(report.Effective)
-}
-
-// hashDocModules replaces policy_bundles.*.modules.* values with "sha256:<hex>".
-func hashDocModules(doc json.RawMessage) json.RawMessage {
-	var obj map[string]any
-	dec := json.NewDecoder(strings.NewReader(string(doc)))
-	dec.UseNumber()
-	if err := dec.Decode(&obj); err != nil {
-		return doc
-	}
-	bundles, _ := obj["policy_bundles"].(map[string]any)
-	for _, raw := range bundles {
-		b, _ := raw.(map[string]any)
-		modules, _ := b["modules"].(map[string]any)
-		for p, src := range modules {
-			if s, ok := src.(string); ok {
-				sum := sha256.Sum256([]byte(s))
-				modules[p] = "sha256:" + hex.EncodeToString(sum[:])
-			}
-		}
-	}
-	out, err := json.Marshal(obj)
-	if err != nil {
-		return doc
-	}
-	return out
-}
-
 func dropReportFileLists(report *agentconfig.Report) {
 	for i := range report.PolicyBundles {
 		report.PolicyBundles[i].Files = []agentconfig.PolicyFileReport{}
-		if report.PolicyBundles[i].Extends != nil {
-			ext := *report.PolicyBundles[i].Extends
-			ext.Files = []agentconfig.PolicyFileReport{}
-			report.PolicyBundles[i].Extends = &ext
-		}
 	}
 }
 

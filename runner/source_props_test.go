@@ -3,9 +3,6 @@ package runner
 import (
 	"context"
 	"net/http"
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/compliance-framework/agent/runner/proto"
@@ -154,46 +151,23 @@ func TestSourceWithoutDigestRecordsOnlyTheReference(t *testing.T) {
 	assert.NotContains(t, props, PropPolicyDigest)
 }
 
-// TestInlineBundleRecordsItsEntryAndArtifactDigest: an inline bundle is keyed by the stable
-// path the plugin receives (R67), a symlink to the bundle's tree, and records its entry and
-// the artifact digest of the bundle the evaluation stored (design §13.4).
-func TestInlineBundleRecordsItsEntryAndArtifactDigest(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need privileges on Windows")
-	}
-	base := t.TempDir()
-	tree := filepath.Join(base, "0123abcd")
-	require.NoError(t, os.MkdirAll(filepath.Join(tree, "bundle"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(tree, "bundle", "p.rego"), []byte("package compliance_framework.p\n\ntitle := \"p\"\n"), 0o644))
-	require.NoError(t, os.Symlink("0123abcd", filepath.Join(base, "current")))
-	stable := filepath.Join(base, "current", "bundle")
-
-	inline := Source{Reference: "inline:ssh", Digest: "tree:sha256:3333", BundleArtifact: true}
-	api := &fakeAPI{}
-	helper := newTestHelper(t, api, stable)
-	WithSources(testPlugin, map[string]Source{stable: inline})(helper)
-
-	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
-		evidenceFor("inline", &proto.PolicyEvaluation{PolicyPath: stable, Input: []byte(`{}`)}),
-	}))
-	props := sentProps(api)["inline"]
-	refs := artifactsOf(api)["inline"].(map[string]any)
-	assert.Equal(t, "inline:ssh", props[PropPolicySource])
-	assert.Equal(t, refs["bundle-digest"], props[PropPolicyDigest], "the bundle's artifact digest")
-}
-
-func TestInlineBundleFallsBackToItsTreeDigest(t *testing.T) {
+// TestPolicyPathLabelRecordsThePolicySource: evidence without a policy evaluation (plugins
+// built on an older agent library) records the source of the policy path it is labelled with,
+// when that path is one the plugin was given.
+func TestPolicyPathLabelRecordsThePolicySource(t *testing.T) {
 	bundle := writeBundle(t, "a")
-	inline := Source{Reference: "inline:ssh", Digest: "tree:sha256:3333", BundleArtifact: true}
-	api := &fakeAPI{artifactStatuses: []int{http.StatusRequestEntityTooLarge}}
+	api := &fakeAPI{}
 	helper := newTestHelper(t, api, bundle)
-	WithSources(testPlugin, map[string]Source{bundle: inline})(helper)
+	WithSources(testPlugin, map[string]Source{bundle: testPolicy})(helper)
 
-	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
-		evidenceFor("too large", &proto.PolicyEvaluation{PolicyPath: bundle, Input: []byte(`{}`)}),
-	}))
-	props := sentProps(api)["too large"]
-	assert.Nil(t, artifactsOf(api)["too large"])
-	assert.Equal(t, "inline:ssh", props[PropPolicySource])
-	assert.Equal(t, "tree:sha256:3333", props[PropPolicyDigest])
+	labelled := evidenceFor("labelled", nil)
+	labelled.Labels = map[string]string{LabelPolicyPath: bundle + "/"}
+	unknown := evidenceFor("unknown path", nil)
+	unknown.Labels = map[string]string{LabelPolicyPath: "/elsewhere/policies"}
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{labelled, unknown}))
+
+	props := sentProps(api)
+	assert.Equal(t, testPolicySource, props["labelled"][PropPolicySource])
+	assert.Equal(t, testPolicyDigest, props["labelled"][PropPolicyDigest])
+	assert.NotContains(t, props["unknown path"], PropPolicySource, "a path the plugin was not given records nothing")
 }

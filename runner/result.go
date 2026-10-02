@@ -17,13 +17,8 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 	artifacts   *ArtifactEndpoint
-	// policyPaths maps each policy path the plugin was given (cleaned) to the directory it
-	// resolved to when the helper was created.
-	policyPaths map[string]string
-	// rawPolicyPaths and policyRoot are what WithPolicyPaths and WithPolicyRoot set;
-	// NewApiHelper resolves them into policyPaths.
-	rawPolicyPaths []string
-	policyRoot     string
+	// policyPaths are the policy bundle paths the plugin was given (cleaned).
+	policyPaths map[string]struct{}
 	// evidenceProps are appended to every evidence the plugin creates.
 	evidenceProps []types.Property
 
@@ -44,11 +39,6 @@ type Source struct {
 	// Digest is the registry digest the OCI reference resolved to when the agent downloaded
 	// it, or for a local plugin binary its SHA-256. Empty when not known.
 	Digest string
-	// BundleArtifact marks a policy bundle whose digest is the artifact digest the API
-	// assigned to the bundle: an inline bundle, which has no registry digest. Evidence then
-	// records the digest of the bundle its evaluation stored, and Digest (the bundle's tree
-	// digest) only when the bundle could not be stored.
-	BundleArtifact bool
 }
 
 // Evidence props recording where the plugin and policy bundle came from. The agent owns
@@ -86,37 +76,12 @@ func WithSources(plugin Source, policies map[string]Source) ApiHelperOption {
 type ApiHelperOption func(*apiHelper)
 
 // WithPolicyPaths sets the policy bundle paths the plugin was given. The agent uploads only
-// these bundles as artifacts, so a plugin cannot make the agent read anything else. Each
-// path is resolved now: an inline bundle's stable path is a symlink the agent swaps between
-// configuration runs, and the artifact must be the tree this run evaluated.
+// these bundles as artifacts, so a plugin cannot make the agent read anything else.
 func WithPolicyPaths(paths []string) ApiHelperOption {
 	return func(h *apiHelper) {
-		h.rawPolicyPaths = append(h.rawPolicyPaths, paths...)
-	}
-}
-
-// WithPolicyRoot sets the working directory the plugin runs in (its view, when it receives
-// a shadowed inline bundle): relative policy paths resolve against it, as they do for the
-// plugin, so the agent reads the tree the plugin evaluated. Empty means the agent's own
-// working directory.
-func WithPolicyRoot(dir string) ApiHelperOption {
-	return func(h *apiHelper) {
-		h.policyRoot = dir
-	}
-}
-
-// resolvePolicyPaths fills policyPaths from rawPolicyPaths and policyRoot.
-func (h *apiHelper) resolvePolicyPaths() {
-	for _, path := range h.rawPolicyPaths {
-		clean := filepath.Clean(path)
-		dir := clean
-		if h.policyRoot != "" && !filepath.IsAbs(clean) {
-			dir = filepath.Join(h.policyRoot, clean)
+		for _, path := range paths {
+			h.policyPaths[filepath.Clean(path)] = struct{}{}
 		}
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			dir = resolved
-		}
-		h.policyPaths[clean] = dir
 	}
 }
 
@@ -147,14 +112,13 @@ func NewApiHelper(logger hclog.Logger, client *sdk.Client, agentLabels map[strin
 		client:      client,
 		agentLabels: agentLabels,
 		pluginName:  pluginName,
-		policyPaths: map[string]string{},
+		policyPaths: map[string]struct{}{},
 
 		policySources: map[string]Source{},
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
-	h.resolvePolicyPaths()
 	if h.uploader == nil {
 		h.uploader = NewArtifactUploader()
 	}
@@ -277,7 +241,7 @@ func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Ev
 		}
 	}
 	if outcome.policyPath != "" {
-		evid.Props = appendSource(evid.Props, h.policySource(outcome), PropPolicySource, PropPolicyDigest)
+		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(outcome.policyPath)], PropPolicySource, PropPolicyDigest)
 	}
 	labels := make(map[string]string)
 	for k, v := range h.agentLabels {
@@ -394,17 +358,6 @@ func withPluginSelectorLabel(labels []types.SubjectTemplateSelectorLabel, plugin
 		Key:   pluginSelectorLabel,
 		Value: pluginName,
 	})
-}
-
-// policySource is the source of the policy bundle an evaluation used, keyed by the path the
-// plugin was given. For an inline bundle the digest is the artifact digest of the bundle the
-// evaluation stored, when it was stored.
-func (h *apiHelper) policySource(outcome evaluationOutcome) Source {
-	source := h.policySources[filepath.Clean(outcome.policyPath)]
-	if source.BundleArtifact && outcome.refs != nil && outcome.refs.BundleDigest != "" {
-		source.Digest = outcome.refs.BundleDigest
-	}
-	return source
 }
 
 func appendSource(props []types.Property, source Source, referenceProp, digestProp string) []types.Property {

@@ -3,11 +3,15 @@ package policytree
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/compliance-framework/api/pkg/agentconfig"
 )
 
 func write(t *testing.T, path, content string) {
@@ -93,5 +97,51 @@ func TestTarFiles_DeterministicAndSorted(t *testing.T) {
 	}
 	if len(names) != 3 || names[0] != "a/b.rego" || names[1] != "m.json" || names[2] != "z.rego" {
 		t.Fatalf("entries = %v", names)
+	}
+}
+
+func TestInventory(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "banner.rego"), "package compliance_framework.banner\n\nviolation contains {\"id\": \"b\"} if not input.banner\n")
+	write(t, filepath.Join(dir, "legacy", "v0.rego"), "package compliance_framework.legacy\n\nviolation[{\"id\": \"l\"}] { input.bad }\n")
+	write(t, filepath.Join(dir, "broken.rego"), "package\n")
+	write(t, filepath.Join(dir, "data.json"), "{}")
+
+	digest, files, err := Inventory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, _, err := ReadTree(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := agentconfig.BundleTreeDigest(tree); digest != want {
+		t.Fatalf("digest = %q, want the tree digest %q", digest, want)
+	}
+	want := map[string]string{
+		"banner.rego":    "compliance_framework.banner",
+		"broken.rego":    "",
+		"data.json":      "",
+		"legacy/v0.rego": "compliance_framework.legacy",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("files = %+v", files)
+	}
+	for i, f := range files {
+		if i > 0 && files[i-1].Path >= f.Path {
+			t.Fatalf("files must be sorted by path: %+v", files)
+		}
+		pkg, ok := want[f.Path]
+		if !ok || f.Package != pkg {
+			t.Fatalf("file %s: package %q, want %q (known %v)", f.Path, f.Package, pkg, ok)
+		}
+		sum := sha256.Sum256(tree[f.Path])
+		if f.SHA256 != hex.EncodeToString(sum[:]) {
+			t.Fatalf("file %s: sha256 %s", f.Path, f.SHA256)
+		}
+	}
+
+	if _, _, err := Inventory(filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("a missing tree must be an error")
 	}
 }

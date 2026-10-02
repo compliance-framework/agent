@@ -165,23 +165,21 @@ func evaluationKey(e *proto.PolicyEvaluation) string {
 	return "content:" + hex.EncodeToString(h.Sum(nil))
 }
 
-// storeEvaluation uploads what one evaluation used. The bundle is read from the directory
-// the plugin's policy path resolved to when the helper was created (see WithPolicyPaths), so
-// it is the tree the run evaluated even if the path is a symlink swapped afterwards.
+// storeEvaluation uploads what one evaluation used: the policy bundle at the policy path the
+// plugin was given (see WithPolicyPaths), its input and its policy data.
 func (h *apiHelper) storeEvaluation(ctx context.Context, evaluation *proto.PolicyEvaluation) (*types.PolicyArtifacts, error) {
 	if h.artifacts.unsupported() {
 		return nil, ErrArtifactsUnsupported
 	}
 	policyPath := filepath.Clean(evaluation.GetPolicyPath())
-	dir, ok := h.policyPaths[policyPath]
-	if !ok {
+	if _, ok := h.policyPaths[policyPath]; !ok {
 		return nil, fmt.Errorf("policy path %q is not one of the plugin's policy bundles", evaluation.GetPolicyPath())
 	}
 	if len(evaluation.GetInput()) == 0 {
 		return nil, errors.New("the evaluation has no input data")
 	}
 
-	bundle, err := policytree.TarDirectory(dir)
+	bundle, err := policytree.TarDirectory(policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("package policy bundle: %w", err)
 	}

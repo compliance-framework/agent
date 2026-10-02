@@ -188,7 +188,7 @@ plugins:
 				t.Fatalf("Error reading config: %v", err)
 			}
 
-			_, err = baseFromViper(AgentCmd(), v, []byte(test.configYamlContent), "yaml")
+			_, err = baseFromViper(AgentCmd(), v, []byte(test.configYamlContent))
 			if (err == nil) != test.valid {
 				t.Errorf("Expected validity of config to be %v, got %v", test.valid, err)
 			}
@@ -335,7 +335,7 @@ plugins:
 				t.Fatalf("Error reading config: %v", err)
 			}
 
-			_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
+			_, err = baseFromViper(AgentCmd(), v, nil)
 			if err == nil {
 				t.Fatal("expected validate to fail when only one api auth env var is set")
 			}
@@ -442,7 +442,7 @@ func TestMergeConfig_RejectsUnsupportedExplicitProtocolVersion(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
+	_, err = baseFromViper(AgentCmd(), v, nil)
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for unsupported protocol version")
 	}
@@ -461,7 +461,7 @@ func TestMergeConfig_RejectsExplicitZeroProtocolVersion(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
+	_, err = baseFromViper(AgentCmd(), v, nil)
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for explicit zero protocol version")
 	}
@@ -480,7 +480,7 @@ func TestMergeConfig_RejectsNullPluginConfiguration(t *testing.T) {
 		t.Fatalf("Error reading config: %v", err)
 	}
 
-	_, err = baseFromViper(AgentCmd(), v, nil, "yaml")
+	_, err = baseFromViper(AgentCmd(), v, nil)
 	if err == nil {
 		t.Fatalf("Expected config validation to fail for null plugin configuration")
 	}
@@ -2061,7 +2061,7 @@ func mergeConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return toRuntime(declared, nil, nil)
+	return toRuntime(declared, nil)
 }
 
 // validateRuntimeForTest validates the declared equivalent of a runtime config.
@@ -2163,5 +2163,29 @@ func jsonResponse(statusCode int, body string) *http.Response {
 		StatusCode: statusCode,
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
+	}
+}
+
+// TestPluginCommandStripsAPICredentials: plugins get the host environment without the agent's
+// API credentials (R26).
+func TestPluginCommandStripsAPICredentials(t *testing.T) {
+	t.Setenv("CCF_API_AUTH_CLIENT_SECRET", "s3cret")
+	t.Setenv("ccf_api_auth_client_id", "id")
+	t.Setenv("CCF_PLUGIN_SETTING", "kept")
+
+	cmd := pluginCommand("/bin/plugin")
+	if cmd.Path != "/bin/plugin" || cmd.Dir != "" {
+		t.Fatalf("path = %q, dir = %q", cmd.Path, cmd.Dir)
+	}
+	var kept bool
+	for _, kv := range cmd.Env {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "CCF_API_AUTH_") {
+			t.Fatalf("the plugin must not see %s", name)
+		}
+		kept = kept || kv == "CCF_PLUGIN_SETTING=kept"
+	}
+	if !kept {
+		t.Fatal("other variables must be passed through")
 	}
 }

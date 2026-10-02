@@ -34,7 +34,6 @@ import (
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/internal/pluginlib"
-	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
@@ -96,21 +95,6 @@ type agentConfig struct {
 	Plugins       map[string]*agentPlugin `mapstructure:"plugins"`
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 
-	// inlinePolicyDirs maps "inline:<name>" policy entries to the path plugins receive: the
-	// extends source's path for a shadowed bundle (resolved in the plugin's view), else the
-	// bundle's stable path (.compliance-framework/policies/_inline/<name>/policies), which the
-	// reconciler points at inlineTrees before each run (R67).
-	inlinePolicyDirs map[string]string
-	// inlineTrees maps "inline:<name>" policy entries to their materialized, content-addressed
-	// tree (inlinepolicy.Materialized.Dir).
-	inlineTrees map[string]string
-	// inlineDigests maps "inline:<name>" policy entries to their tree digest, the evidence
-	// _policy_digest fallback when a bundle's artifact digest is not known.
-	inlineDigests map[string]string
-	// pluginViews are the working directories of the plugins that receive a shadowed inline
-	// bundle (path shadowing): the plugin process runs in its view, where the bundle's
-	// plugin path (the extends source's own path) resolves to the bundle's tree.
-	pluginViews map[string]*policyview.View
 	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
 	// Read it with syncInfo; nil means the zero syncMeta.
 	sync *atomic.Pointer[syncMeta]
@@ -261,7 +245,7 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringP("config", "c", "", "Location of config file")
 	agentCmd.MarkFlagRequired("config")
 
-	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID, remote config cache, inline policies); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
+	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID, remote config cache); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
 	agentCmd.Flags().String("instance-id", "", "Pin this instance's UUID (not persisted); overrides CCF_INSTANCE_ID")
 
 	return agentCmd
@@ -1442,15 +1426,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			return err
 		}
 
-		workDir, err := config.pluginWorkDir(pluginName)
-		if err != nil {
-			ar.markPluginRunFinished(pluginName, err)
-			if evidenceErr := ar.sendAgentRunEvidenceAfterCompleteRun(ctx); evidenceErr != nil {
-				logger.Error("Error sending agent run evidence", "error", evidenceErr)
-			}
-			return err
-		}
-		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion, workDir)
+		runnerInstance, cleanupRunner, err := ar.getRunnerInstance(logger, source, pluginConfig.ProtocolVersion)
 
 		if err != nil {
 			ar.markPluginRunFinished(pluginName, err)
@@ -1483,7 +1459,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			for _, inputBundle := range pluginConfig.Policies {
 				policyLocation := ar.policyLocations[string(inputBundle)]
 				policyPaths = append(policyPaths, policyLocation)
-				policySources[policyLocation] = config.policySource(string(inputBundle), policyLocation)
+				policySources[policyLocation] = sourceOf(string(inputBundle), policyLocation)
 			}
 
 			// Create a new results helper for the plugin to send results back to
@@ -1494,7 +1470,6 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			)
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
 				runner.WithPolicyPaths(policyPaths),
-				runner.WithPolicyRoot(workDir),
 				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
 				runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 				runner.WithEvidenceProps(configRevisionProps(config)...),
@@ -1587,17 +1562,12 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	policyPaths := make([]string, 0)
 	policySources := make(map[string]runner.Source, len(plugin.Policies))
 	for _, inputBundle := range plugin.Policies {
-		if dir, ok := config.inlinePolicyDirs[string(inputBundle)]; ok {
-			policyPaths = append(policyPaths, dir)
-			policySources[dir] = config.policySource(string(inputBundle), dir)
-			continue
-		}
 		policyLocation, err := ar.download(ctx, string(inputBundle), AgentPolicyDir, "policies", "", logger)
 		if err != nil {
 			return err
 		}
 		policyPaths = append(policyPaths, policyLocation)
-		policySources[policyLocation] = config.policySource(string(inputBundle), policyLocation)
+		policySources[policyLocation] = sourceOf(string(inputBundle), policyLocation)
 	}
 
 	platform := v1.Platform{
@@ -1627,11 +1597,7 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 		return err
 	}
 
-	workDir, err := config.pluginWorkDir(name)
-	if err != nil {
-		return err
-	}
-	runnerInstance, cleanupRunner, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion, workDir)
+	runnerInstance, cleanupRunner, err := ar.getRunnerInstance(pluginLogger, pluginExecutable, plugin.ProtocolVersion)
 
 	if err != nil {
 		return err
@@ -1650,7 +1616,6 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	)
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
 		runner.WithPolicyPaths(policyPaths),
-		runner.WithPolicyRoot(workDir),
 		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
 		runner.WithArtifactUploader(ar.artifacts, apiBaseURL(config)),
 		runner.WithEvidenceProps(configRevisionProps(config)...),
@@ -1958,24 +1923,18 @@ func safePluginErrorFilename(pluginName string) string {
 	return b.String() + "-error.txt"
 }
 
-// pluginCommand is the command that starts the plugin binary at path in workDir ("" for the
-// agent's own working directory). The binary is started by its absolute path, since a
-// relative one would resolve against workDir: a plugin that receives a shadowed inline
-// bundle runs in its view (path shadowing). Plugins get the host environment minus the
-// agent's own API credentials (R26); go-plugin would otherwise append the whole environment.
-func pluginCommand(path, workDir string) *exec.Cmd {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
+// pluginCommand is the command that starts the plugin binary at path. Plugins get the host
+// environment minus the agent's own API credentials (R26); go-plugin would otherwise append
+// the whole environment.
+func pluginCommand(path string) *exec.Cmd {
 	cmd := exec.Command(path)
-	cmd.Dir = workDir
 	cmd.Env = pluginEnviron(os.Environ())
 	return cmd
 }
 
-func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32, workDir string) (runner.RunnerV2, func(), error) {
+func (ar *AgentRunner) getRunnerInstance(logger hclog.Logger, path string, protocolVersion int32) (runner.RunnerV2, func(), error) {
 	// We're a host! Start by launching the plugin process.
-	cmd := pluginCommand(path, workDir)
+	cmd := pluginCommand(path)
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig:  runner.HandshakeConfig,
 		Plugins:          runner.PluginMap,
@@ -2067,11 +2026,6 @@ func (ar *AgentRunner) DownloadPolicies(ctx context.Context) error {
 	}
 
 	for source := range policySources {
-		// Inline bundles were materialized by the reconciler; they are never downloaded.
-		if dir, ok := config.inlinePolicyDirs[source]; ok {
-			ar.policyLocations[source] = dir
-			continue
-		}
 		out, err := ar.download(ctx, source, AgentPolicyDir, "policies", "", logger)
 
 		if err != nil {
@@ -2099,7 +2053,7 @@ func pluginEnviron(environ []string) []string {
 	return out
 }
 
-// Prefetch downloads every plugin and (non-inline) policy source of cfg and resolves plugin
+// Prefetch downloads every plugin and policy source of cfg and resolves plugin
 // protocol versions, WITHOUT touching the running configuration's pluginLocations or
 // policyLocations. The reconciler calls it before cancelling the running configuration, so a
 // download failure never tears down a working agent (prepare-then-cancel, R32).
@@ -2113,9 +2067,6 @@ func (ar *AgentRunner) Prefetch(ctx context.Context, cfg *agentConfig) error {
 	for _, pluginConfig := range cfg.Plugins {
 		pluginSources[pluginConfig.Source] = struct{}{}
 		for _, policy := range pluginConfig.Policies {
-			if _, inline := cfg.inlinePolicyDirs[string(policy)]; inline {
-				continue
-			}
 			policySources[string(policy)] = struct{}{}
 		}
 	}
@@ -2171,8 +2122,8 @@ func (ar *AgentRunner) ReportStartupFailure(ctx context.Context, cfg *agentConfi
 }
 
 // downloadPlugin returns the plugin binary of source for this platform, downloading it into
-// the shared plugin cache when it is not there yet. Prefetch uses it, so the reconciler's
-// plugin library check (R76) reads the binary Prefetch fetched.
+// the shared plugin cache when it is not there yet. Prefetch uses it, so the plugins report
+// (R76) reads the agent library version from the binary Prefetch fetched.
 func (ar *AgentRunner) downloadPlugin(ctx context.Context, source string, logger hclog.Logger) (string, error) {
 	if logger == nil {
 		logger = hclog.NewNullLogger()
@@ -2256,28 +2207,4 @@ func (ar *AgentRunner) trackPluginClient(client *plugin.Client) func() {
 // source and, where known, the digest of what the agent extracted at location.
 func sourceOf(source, location string) runner.Source {
 	return runner.Source{Reference: source, Digest: internal.SourceDigest(source, location)}
-}
-
-// pluginWorkDir returns the working directory plugin runs in: its view, made sure to exist
-// and refreshed (path shadowing), or "" for the agent's own working directory.
-func (c *agentConfig) pluginWorkDir(plugin string) (string, error) {
-	view := c.pluginViews[plugin]
-	if view == nil {
-		return "", nil
-	}
-	if err := view.Ensure(); err != nil {
-		return "", fmt.Errorf("plugin %s: %w", plugin, err)
-	}
-	return view.Dir, nil
-}
-
-// policySource describes where the policy entry, which plugins receive at location, came from.
-// An inline bundle is recorded as its entry (inline:<name>) with its artifact digest, or its
-// tree digest when the evaluation could not store the bundle; location is then the bundle's
-// stable path (R67), the same key the plugin reports evaluations under.
-func (c *agentConfig) policySource(entry, location string) runner.Source {
-	if _, inline := c.inlinePolicyDirs[entry]; inline {
-		return runner.Source{Reference: entry, Digest: c.inlineDigests[entry], BundleArtifact: true}
-	}
-	return sourceOf(entry, location)
 }

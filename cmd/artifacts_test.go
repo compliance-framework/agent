@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -27,32 +28,66 @@ func tarDigest(t *testing.T, dir string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// TestArtifacts_ReportNamesTheSources_R62: the report carries the artifact digest of the
-// inline tree and of the vendor tree it extends, and they are the digests a plugin's
-// evaluation-time upload of the same directories produces.
+// vendorBaseConfig runs plugin ssh with the OCI policy source ghcr.io/vendor/policies:v1.
+const vendorBaseConfig = `
+daemon: true
+api:
+  url: http://api.test
+  auth:
+    client_id: 123e4567-e89b-12d3-a456-426614174000
+    client_secret: s3cret
+remote_config:
+  mode: apply_safe
+plugins:
+  ssh:
+    source: ghcr.io/compliance-framework/plugin-ssh:v1
+    policies: ["ghcr.io/vendor/policies:v1"]
+`
+
+// newVendorHarness is a remote harness on config whose policy resolver serves
+// ghcr.io/vendor/policies:v1 from a temporary tree, which it returns.
+func newVendorHarness(t *testing.T, config string) (*remoteHarness, string) {
+	t.Helper()
+	vendor := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vendor, "banner.rego"), []byte("package compliance_framework.banner\n\nimport rego.v1\n\nviolation contains {\"remarks\": \"b\"} if not input.banner\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := newRemoteHarness(t, config)
+	h.rc.resolvePolicy = func(_ context.Context, source string) (string, error) {
+		if source == "ghcr.io/vendor/policies:v1" {
+			return vendor, nil
+		}
+		return "", errors.New("unknown source " + source)
+	}
+	return h, vendor
+}
+
+// TestArtifacts_ReportNamesTheSources_R62: the report inventories the policy source and
+// carries the artifact digest of its tree, the digest a plugin's evaluation-time upload of
+// the same directory produces.
 func TestArtifacts_ReportNamesTheSources_R62(t *testing.T) {
-	h, vendor := newInlineHarness(t)
+	h, vendor := newVendorHarness(t, vendorBaseConfig)
 	active := mustStartup(t, h.rc)
 
 	r := h.remote.lastReport(t)
-	if len(r.PolicyBundles) != 1 || r.PolicyBundles[0].Extends == nil {
+	if len(r.PolicyBundles) != 1 {
 		t.Fatalf("unexpected policy-bundles %+v", r.PolicyBundles)
 	}
 	b := r.PolicyBundles[0]
-	if want := tarDigest(t, active.runtime.inlinePolicyDirs["inline:ssh"]); b.ArtifactDigest != want {
-		t.Fatalf("inline artifact-digest = %q, want the digest of the stable path's tree %q", b.ArtifactDigest, want)
+	if b.Source != "ghcr.io/vendor/policies:v1" || len(b.Files) != 1 || b.Files[0].Path != "banner.rego" || b.Files[0].Package != "compliance_framework.banner" {
+		t.Fatalf("unexpected inventory %+v", b)
 	}
-	if want := tarDigest(t, vendor); b.Extends.ArtifactDigest != want {
-		t.Fatalf("extends artifact-digest = %q, want %q", b.Extends.ArtifactDigest, want)
+	if want := tarDigest(t, vendor); b.ArtifactDigest != want {
+		t.Fatalf("artifact-digest = %q, want %q", b.ArtifactDigest, want)
 	}
-	if n := h.remote.uploadCount(); n != 2 {
+	if n := h.remote.uploadCount(); n != 1 {
 		t.Fatalf("expected one upload per tree, got %d", n)
 	}
 
 	// Memoized: later reports upload nothing.
 	h.clock.Advance(reportResendInterval + 1)
 	h.rc.maybeReport(context.Background(), active, nil)
-	if n := h.remote.uploadCount(); n != 2 {
+	if n := h.remote.uploadCount(); n != 1 {
 		t.Fatalf("trees must be uploaded once, got %d uploads", n)
 	}
 
@@ -61,7 +96,7 @@ func TestArtifacts_ReportNamesTheSources_R62(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.PolicyBundles[0].Files) != 0 || r.PolicyBundles[0].ArtifactDigest != b.ArtifactDigest || r.PolicyBundles[0].Extends.ArtifactDigest != b.Extends.ArtifactDigest {
+	if len(r.PolicyBundles[0].Files) != 0 || r.PolicyBundles[0].ArtifactDigest != b.ArtifactDigest {
 		t.Fatalf("truncation must keep artifact-digest: %+v", r.PolicyBundles[0])
 	}
 }
@@ -71,7 +106,7 @@ func TestArtifacts_SourcesAreUploaded(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(local, "p.rego"), []byte("package compliance_framework.p\n\ntitle := \"p\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h := newRemoteHarness(t, strings.Replace(inlineBaseConfig, `policies: ["inline:ssh"]`, `policies: ["inline:ssh", "`+local+`"]`, 1))
+	h := newRemoteHarness(t, strings.Replace(vendorBaseConfig, `policies: ["ghcr.io/vendor/policies:v1"]`, `policies: ["ghcr.io/vendor/policies:v1", "`+local+`"]`, 1))
 	h.rc.resolvePolicy = func(_ context.Context, source string) (string, error) {
 		switch source {
 		case "ghcr.io/vendor/policies:v1":
@@ -112,7 +147,7 @@ func TestArtifacts_FailuresNeverRejectOrFail(t *testing.T) {
 		"timeout":         {err: context.DeadlineExceeded, wantRetried: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h, _ := newInlineHarness(t)
+			h, _ := newVendorHarness(t, vendorBaseConfig)
 			failing := true
 			h.remote.uploadErr = func(int) error {
 				if failing {
@@ -125,7 +160,7 @@ func TestArtifacts_FailuresNeverRejectOrFail(t *testing.T) {
 			if r.Status == agentconfig.StatusRejected || r.Status == agentconfig.StatusFailed {
 				t.Fatalf("an artifact failure must not reject or fail: %s/%s", r.Status, r.Reason)
 			}
-			if r.PolicyBundles[0].ArtifactDigest != "" || r.PolicyBundles[0].Extends.ArtifactDigest != "" {
+			if r.PolicyBundles[0].ArtifactDigest != "" {
 				t.Fatalf("a failed upload must leave artifact-digest empty: %+v", r.PolicyBundles[0])
 			}
 
@@ -151,13 +186,34 @@ func TestArtifacts_FailuresNeverRejectOrFail(t *testing.T) {
 
 // TestArtifacts_ModeOffUploadsNothing: no report, no upload.
 func TestArtifacts_ModeOffUploadsNothing(t *testing.T) {
-	h, vendor := newInlineHarness(t)
-	h.writeConfig(t, strings.Replace(inlineBaseConfig, "mode: apply_safe", `mode: "off"`, 1))
-	h.rc = h.newReconciler()
-	h.rc.resolvePolicy = func(context.Context, string) (string, error) { return vendor, nil }
+	h, _ := newVendorHarness(t, strings.Replace(vendorBaseConfig, "mode: apply_safe", `mode: "off"`, 1))
 	mustStartup(t, h.rc)
 	if n := h.remote.uploadCount(); n != 0 {
 		t.Fatalf("mode off must not upload, got %d", n)
+	}
+}
+
+// TestReport_PluginsCarryTheirLibVersion_R76: the report lists every plugin with the agent
+// library its binary was built with; a version that cannot be read is reported as unknown.
+func TestReport_PluginsCarryTheirLibVersion_R76(t *testing.T) {
+	config := vendorBaseConfig + `  aws:
+    source: ghcr.io/compliance-framework/plugin-aws:v1
+`
+	h, _ := newVendorHarness(t, config)
+	h.rc.pluginLib = func(_ context.Context, source string) (string, error) {
+		if source == "ghcr.io/compliance-framework/plugin-ssh:v1" {
+			return "v0.7.1", nil
+		}
+		return "", errors.New("not a Go binary")
+	}
+	mustStartup(t, h.rc)
+	got := h.remote.lastReport(t).Plugins
+	want := []agentconfig.PluginReport{
+		{Name: "aws", Source: "ghcr.io/compliance-framework/plugin-aws:v1"},
+		{Name: "ssh", Source: "ghcr.io/compliance-framework/plugin-ssh:v1", LibVersion: "v0.7.1"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("plugins = %+v, want %+v", got, want)
 	}
 }
 

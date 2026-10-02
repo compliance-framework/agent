@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 
 	"github.com/compliance-framework/agent/internal/policytree"
 	"github.com/compliance-framework/agent/runner"
@@ -14,8 +16,7 @@ import (
 )
 
 // Policy sources through the artifact store (R62). The report names every policy tree the
-// agent runs (inline bundles, the vendor trees they extend, OCI and local sources) by tree
-// digest. The agent also uploads each tree as a policy bundle artifact, through the same
+// agent runs (OCI and local sources) by tree digest. The agent also uploads each tree as a policy bundle artifact, through the same
 // process-wide uploader the plugins' evidence uses, and reports the artifact digest next to
 // the tree digest, so the UI can read the sources (GET /api/artifacts/{digest}/files).
 //
@@ -31,6 +32,59 @@ var artifactDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 // errTreeChanged: a local tree no longer has the digest it was inventoried with.
 var errTreeChanged = errors.New("the policy tree changed since it was inventoried")
+
+// policyResolver returns the local directory of an OCI or local policy source, downloading it
+// into the shared policy cache when needed.
+type policyResolver func(ctx context.Context, source string) (dir string, err error)
+
+// sourceReports inventories the policy sources of runtime for the report, with the trees to
+// upload as artifacts. A source that cannot be resolved or read is left out.
+func (rc *reconciler) sourceReports(ctx context.Context, runtime *agentConfig) ([]agentconfig.PolicyBundleReport, []artifactTree) {
+	sources := map[string]struct{}{}
+	for _, p := range runtime.Plugins {
+		for _, e := range p.Policies {
+			sources[string(e)] = struct{}{}
+		}
+	}
+	var reports []agentconfig.PolicyBundleReport
+	var trees []artifactTree
+	for _, source := range slices.Sorted(maps.Keys(sources)) {
+		dir, r, err := rc.sourceInventory(ctx, source)
+		if err != nil {
+			continue
+		}
+		reports = append(reports, r)
+		trees = append(trees, artifactTree{digest: r.Digest, dir: dir})
+	}
+	return reports, trees
+}
+
+// sourceInventory resolves an OCI or local policy source and inventories its tree. OCI trees
+// are memoized per (source, dir); local trees are re-read.
+func (rc *reconciler) sourceInventory(ctx context.Context, source string) (string, agentconfig.PolicyBundleReport, error) {
+	if rc.resolvePolicy == nil {
+		return "", agentconfig.PolicyBundleReport{}, errors.New("no policy resolver")
+	}
+	resolveCtx, cancel := context.WithTimeout(ctx, prepareNetworkTimeout)
+	dir, err := rc.resolvePolicy(resolveCtx, source)
+	cancel()
+	if err != nil {
+		return "", agentconfig.PolicyBundleReport{}, err
+	}
+	key := source + "\x00" + dir
+	if r, ok := rc.inventoryMemo[key]; ok {
+		return dir, r, nil
+	}
+	digest, files, err := policytree.Inventory(dir)
+	if err != nil {
+		return "", agentconfig.PolicyBundleReport{}, err
+	}
+	r := agentconfig.PolicyBundleReport{Source: source, Digest: digest, Files: files}
+	if agentconfig.KindOf(source) == agentconfig.SourceKindOCI {
+		rc.inventoryMemo[key] = r
+	}
+	return dir, r, nil
+}
 
 // artifactTree is a policy tree the report names, and the directory it was read from.
 type artifactTree struct {
@@ -141,11 +195,6 @@ func (rc *reconciler) withArtifactDigests(bundles []agentconfig.PolicyBundleRepo
 	out := append([]agentconfig.PolicyBundleReport(nil), bundles...)
 	for i := range out {
 		out[i].ArtifactDigest = rc.artifactMemo[out[i].Digest]
-		if out[i].Extends != nil {
-			ext := *out[i].Extends
-			ext.ArtifactDigest = rc.artifactMemo[ext.Digest]
-			out[i].Extends = &ext
-		}
 	}
 	return out
 }

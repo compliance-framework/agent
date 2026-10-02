@@ -1,25 +1,30 @@
-// Package policytree reads policy trees from disk and archives them. It is the one place
-// that decides which files a policy tree has, so every consumer sees the same tree: inline
-// bundle materialization, the report inventory, and the policy bundle artifacts uploaded at
-// configuration time (the reconciler) and at evaluation time (the plugins' API helper).
-// Uploading the same directory from either place therefore produces the same bytes, and the
-// API assigns the same artifact digest (R62).
-//
-// The package is a leaf: it imports only the standard library.
+// Package policytree reads policy trees from disk, inventories them and archives them. It is
+// the one place that decides which files a policy tree has, so every consumer sees the same
+// tree: the report inventory, and the policy bundle artifacts uploaded at configuration time
+// (the reconciler) and at evaluation time (the plugins' API helper). Uploading the same
+// directory from either place therefore produces the same bytes, and the API assigns the
+// same artifact digest (R62).
 package policytree
 
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+
+	"github.com/compliance-framework/api/pkg/agentconfig"
+	"github.com/open-policy-agent/opa/v1/ast"
 )
 
 // ReadTree reads the regular files under dir, keyed by their slash-separated path relative
 // to dir. dir itself may be a symlink (for example /etc/ccf/policies -> a versioned
-// directory, or an inline bundle's stable path); symlinks inside the tree are skipped and
+// directory); symlinks inside the tree are skipped and
 // returned, as OPA's bundle loader skips them too. Other non-regular files are ignored.
 func ReadTree(dir string) (files map[string][]byte, skipped []string, err error) {
 	files = map[string][]byte{}
@@ -90,4 +95,41 @@ func TarDirectory(dir string) ([]byte, error) {
 		return nil, err
 	}
 	return TarFiles(files)
+}
+
+// Inventory digests and lists the policy tree at dir (an OCI or local policy source) for the
+// config report: the tree digest (agentconfig.BundleTreeDigest) and every file with its
+// SHA-256 and, for a Rego module, its package.
+func Inventory(dir string) (string, []agentconfig.PolicyFileReport, error) {
+	files, _, err := ReadTree(dir)
+	if err != nil {
+		return "", nil, err
+	}
+	return agentconfig.BundleTreeDigest(files), inventory(files), nil
+}
+
+func inventory(files map[string][]byte) []agentconfig.PolicyFileReport {
+	out := make([]agentconfig.PolicyFileReport, 0, len(files))
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		sum := sha256.Sum256(files[p])
+		r := agentconfig.PolicyFileReport{Path: p, SHA256: hex.EncodeToString(sum[:])}
+		if strings.HasSuffix(p, ".rego") {
+			r.Package = packageOf(p, files[p])
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// packageOf returns the package of a Rego module without the leading "data.", parsing it as
+// Rego v1, then as Rego v0, as plugins on either OPA major would load it. It is "" when the
+// module does not parse.
+func packageOf(p string, src []byte) string {
+	for _, v := range []ast.RegoVersion{ast.RegoV1, ast.RegoV0} {
+		mod, err := ast.ParseModuleWithOpts(p, string(src), ast.ParserOptions{RegoVersion: v})
+		if err == nil && mod != nil && mod.Package != nil {
+			return strings.TrimPrefix(mod.Package.Path.String(), "data.")
+		}
+	}
+	return ""
 }

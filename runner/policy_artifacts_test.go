@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -386,36 +385,4 @@ func TestSharedUploaderUploadsOncePerAPI(t *testing.T) {
 	// Another API does not have them.
 	send("http://other.example", "three")
 	assert.Len(t, api.uploads, 4)
-}
-
-// TestPolicyPathIsResolvedWhenTheHelperIsCreated: the artifact of an inline bundle's stable
-// path is the tree it pointed to when the run started, even if the agent swaps it later.
-func TestPolicyPathIsResolvedWhenTheHelperIsCreated(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need privileges on Windows")
-	}
-	base := t.TempDir()
-	first, second := filepath.Join(base, "v1"), filepath.Join(base, "v2")
-	for dir, title := range map[string]string{first: "one", second: "two"} {
-		require.NoError(t, os.MkdirAll(dir, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "p.rego"), []byte("package compliance_framework.p\n\ntitle := \""+title+"\"\n"), 0o644))
-	}
-	require.NoError(t, os.Symlink("v1", filepath.Join(base, "current")))
-	stable := filepath.Join(base, "current", ".")
-
-	api := &fakeAPI{}
-	helper := newTestHelper(t, api, stable)
-
-	// The agent swaps the link after the run started.
-	require.NoError(t, os.Symlink("v2", filepath.Join(base, "next")))
-	require.NoError(t, os.Rename(filepath.Join(base, "next"), filepath.Join(base, "current")))
-
-	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{
-		evidenceFor("one", &proto.PolicyEvaluation{PolicyPath: stable, Input: []byte(`{}`)}),
-	}))
-	tarball, err := policytree.TarDirectory(first)
-	require.NoError(t, err)
-	sum := sha256.Sum256(tarball)
-	refs := artifactsOf(api)["one"].(map[string]any)
-	assert.Equal(t, "sha256:"+hex.EncodeToString(sum[:]), refs["bundle-digest"], "the bundle must be the tree the run started with")
 }

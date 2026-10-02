@@ -122,7 +122,7 @@ func loadGoldenFixture(t *testing.T, yaml string) *agentConfig {
 	if err != nil {
 		t.Fatalf("load fixture: %v", err)
 	}
-	config, err := toRuntime(base.declared, nil, base.skip)
+	config, err := toRuntime(base.declared, base.skip)
 	if err != nil {
 		t.Fatalf("runtime fixture: %v", err)
 	}

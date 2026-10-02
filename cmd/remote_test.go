@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -189,7 +190,6 @@ func newRemoteHarness(t *testing.T, content string) *remoteHarness {
 // newReconciler builds a reconciler on the harness's files (a "restart").
 func (h *remoteHarness) newReconciler() *reconciler {
 	rc := newReconciler(AgentCmd(), h.path, agentstate.Open(filepath.Join(h.dir, "state"), nil), h.pf, nil)
-	rc.inlineLinks = filepath.Join(h.dir, "policies", "_inline")
 	rc.newRemote = func(agentconfig.Config) remoteAPI { return h.remote }
 	rc.now = h.clock.Now
 	rc.lookupEnv = func(string) (string, bool) { return "", false }
@@ -209,9 +209,7 @@ func mustStartup(t *testing.T, rc *reconciler) *candidate {
 	if err != nil {
 		t.Fatalf("startup: %v", err)
 	}
-	if err := rc.start(active, nil, func() {}); err != nil {
-		t.Fatalf("start: %v", err)
-	}
+	rc.bind(active, func() {})
 	return active
 }
 
@@ -220,9 +218,7 @@ func (h *remoteHarness) poll(t *testing.T) *candidate {
 	t.Helper()
 	h.rc.reconcile(context.Background(), triggerPoll)
 	if next := h.rc.takePending(); next != nil {
-		if err := h.rc.start(next, nil, func() {}); err != nil {
-			t.Fatalf("start: %v", err)
-		}
+		h.rc.bind(next, func() {})
 	}
 	return h.rc.current()
 }
@@ -439,24 +435,41 @@ func TestRemoteErrors_Backoffs(t *testing.T) {
 }
 
 func TestReport_OversizedIsTruncated(t *testing.T) {
-	big := strings.Repeat("# padding\n", 30000) // ~300 KiB per module
-	modules := map[string]string{}
-	for i := 0; i < 14; i++ {
-		modules[fmt.Sprintf("m%02d.rego", i)] = "package compliance_framework.m\n" + big
+	// config is a declared document of about n bytes.
+	config := func(n int) json.RawMessage {
+		return marshalRaw(agentconfig.Config{Plugins: map[string]*agentconfig.Plugin{
+			"ssh": {Source: "ghcr.io/x/ssh:v1", Config: map[string]string{"blob": strings.Repeat("x", n)}},
+		}})
 	}
-	report := agentconfig.Report{Mode: "apply_safe", Status: "applied"}
-	doc := agentconfig.Config{PolicyBundles: map[string]*agentconfig.PolicyBundle{"b": {Modules: modules}}}
-	report.Base = marshalRaw(doc)
-	report.Effective = marshalRaw(doc)
+	files := make([]agentconfig.PolicyFileReport, 20000) // ~3 MiB of file list
+	for i := range files {
+		files[i] = agentconfig.PolicyFileReport{Path: fmt.Sprintf("policies/m%05d.rego", i), SHA256: strings.Repeat("a", 64), Package: "compliance_framework.m"}
+	}
+	bundles := func() []agentconfig.PolicyBundleReport {
+		return []agentconfig.PolicyBundleReport{{Source: "ghcr.io/x/policies:v1", Digest: "sha256:t", ArtifactDigest: "sha256:a", Files: slices.Clone(files)}}
+	}
+
+	// Dropping the file lists is enough: base is kept.
+	report := agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(1 << 19), Effective: config(1 << 19), PolicyBundles: bundles()}
 	body, _, err := fitReport(&report, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.Truncated || len(body) > agentconfig.MaxReportBytes {
-		t.Fatalf("expected a truncated report under the limit, got truncated=%v size=%d", report.Truncated, len(body))
+	if !report.Truncated || len(body) > reportTargetBytes {
+		t.Fatalf("expected a truncated report under the target, got truncated=%v size=%d", report.Truncated, len(body))
 	}
-	if !strings.Contains(string(report.Effective), `"sha256:`) {
-		t.Fatalf("expected modules to be replaced by digests")
+	if len(report.PolicyBundles[0].Files) != 0 || report.PolicyBundles[0].ArtifactDigest != "sha256:a" || string(report.Base) == "{}" {
+		t.Fatalf("expected the file lists dropped and base kept: %+v", report.PolicyBundles[0])
+	}
+
+	// Then base is dropped.
+	report = agentconfig.Report{Mode: "apply_safe", Status: "applied", Base: config(2 << 20), Effective: config(2 << 20), PolicyBundles: bundles()}
+	body, _, err = fitReport(&report, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Truncated || len(body) > agentconfig.MaxReportBytes || string(report.Base) != "{}" {
+		t.Fatalf("expected base dropped and a report under the limit, got truncated=%v size=%d", report.Truncated, len(body))
 	}
 }
 
@@ -567,7 +580,6 @@ func TestApply_ClassifyGate(t *testing.T) {
 		{"R27 non-string config value", "apply_all", "", `{"plugins":{"ssh":{"config":{"port":2222}}}}`, "rejected", "invalid-type"},
 		{"R27 unknown field", "apply_all", "", `{"evidence_capture":{}}`, "rejected", "unknown-field"},
 		{"R28 mixed-case plugin name", "apply_all", "", `{"plugins":{"GitHub":{"source":"ghcr.io/trusted/gh:v1"}}}`, "rejected", "invalid-config"},
-		{"R28 mixed-case bundle name", "apply_all", "", `{"policy_bundles":{"MyBundle":{"modules":{"a.rego":"package compliance_framework.a"}}}}`, "rejected", "invalid-config"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

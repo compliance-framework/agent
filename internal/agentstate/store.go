@@ -1,5 +1,5 @@
 // Package agentstate owns the agent's per-instance state directory: the stable instance ID
-// (R31), the remote configuration cache (R7) and the materialized inline policy bundles.
+// (R31) and the remote configuration cache (R7).
 //
 // Layout (the OCI download caches under .compliance-framework/{plugins,policies} are shared
 // and unchanged):
@@ -7,7 +7,6 @@
 //	.compliance-framework/state/<key>/   key = hex(sha256(abs config path))[:16]; dir 0700
 //	  instance-id                         0644, UUID + "\n"
 //	  remote-config.json                  0600
-//	  inline/<bundle>/<tree-digest-hex>/  materialized inline policy bundles
 //
 // The package is a leaf: it never imports cmd.
 package agentstate

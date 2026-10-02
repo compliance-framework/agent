@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
@@ -31,64 +30,6 @@ func mustLoadBase(t *testing.T, ext, content string) *baseSnapshot {
 		t.Fatalf("loadBase: %v", err)
 	}
 	return base
-}
-
-func TestDecodePolicyBundles_PreservesModuleKeys(t *testing.T) {
-	tests := []struct {
-		ext     string
-		content string
-	}{
-		{
-			ext: "yaml",
-			content: `
-api:
-  url: http://localhost:8080
-policy_bundles:
-  ssh:
-    modules:
-      Policies/Max.Auth.rego: |
-        package compliance_framework.max_auth
-      a.b/c.rego: "package compliance_framework.c"
-`,
-		},
-		{
-			ext: "json",
-			content: `{
-  "api": {"url": "http://localhost:8080"},
-  "policy_bundles": {"ssh": {"modules": {
-    "Policies/Max.Auth.rego": "package compliance_framework.max_auth\n",
-    "a.b/c.rego": "package compliance_framework.c"
-  }}}
-}`,
-		},
-		{
-			ext: "toml",
-			content: `
-[api]
-url = "http://localhost:8080"
-
-[policy_bundles.ssh.modules]
-"Policies/Max.Auth.rego" = """package compliance_framework.max_auth
-"""
-"a.b/c.rego" = "package compliance_framework.c"
-`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.ext, func(t *testing.T) {
-			base := mustLoadBase(t, tt.ext, tt.content)
-			bundle := base.declared.PolicyBundles["ssh"]
-			if bundle == nil {
-				t.Fatalf("expected ssh bundle, got %#v", base.declared.PolicyBundles)
-			}
-			if got := bundle.Modules["Policies/Max.Auth.rego"]; got != "package compliance_framework.max_auth\n" {
-				t.Fatalf("mixed-case module lost or altered: %q (modules %v)", got, bundle.Modules)
-			}
-			if got := bundle.Modules["a.b/c.rego"]; got != "package compliance_framework.c" {
-				t.Fatalf("dotted module lost or altered: %q (modules %v)", got, bundle.Modules)
-			}
-		})
-	}
 }
 
 const weakTypedConfig = `
@@ -116,7 +57,7 @@ func TestLoadBase_WeakDecodingUnchanged(t *testing.T) {
 	if len(base.warnings) != 0 || len(base.skip) != 0 {
 		t.Fatalf("expected no warnings or skips, got %v %v", base.warnings, base.skip)
 	}
-	rt, err := toRuntime(base.declared, nil, base.skip)
+	rt, err := toRuntime(base.declared, base.skip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +71,7 @@ func TestLoadBase_WeakDecodingUnchanged(t *testing.T) {
 // leaves the plugin's config and policy_data unchanged on the wire (R51).
 func TestWeakDecoding_SurvivesUnrelatedOverlay(t *testing.T) {
 	base := mustLoadBase(t, "yaml", weakTypedConfig)
-	fileOnly, err := toRuntime(base.declared, nil, nil)
+	fileOnly, err := toRuntime(base.declared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +79,7 @@ func TestWeakDecoding_SurvivesUnrelatedOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	withOverlay, err := toRuntime(merged, nil, nil)
+	withOverlay, err := toRuntime(merged, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +136,7 @@ plugins:
 	if len(base.warnings) != 1 || base.warnings[0].Path != "/plugins/ssh/schedule" || base.warnings[0].Code != agentconfig.FieldCodeCron {
 		t.Fatalf("expected one cron warning, got %#v", base.warnings)
 	}
-	rt, err := toRuntime(base.declared, nil, base.skip)
+	rt, err := toRuntime(base.declared, base.skip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +200,7 @@ func TestLoadBase_FileOriginWarnOnly(t *testing.T) {
 			if len(base.skip) != 0 {
 				t.Fatalf("a warn-only problem must not skip a plugin, got %v", base.skip)
 			}
-			rt, err := toRuntime(base.declared, nil, base.skip)
+			rt, err := toRuntime(base.declared, base.skip)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -280,24 +221,18 @@ func TestLoadBase_FileOriginWarnOnly(t *testing.T) {
 			t.Fatalf("overlay-introduced values must be strict, got %#v", p)
 		}
 	})
-	t.Run("policy_bundles env-location stays fatal", func(t *testing.T) {
-		errs := agentconfig.ValidationErrors{{Path: "/policy_bundles/b/modules/x.rego", Code: agentconfig.FieldCodeEnvLocation, Message: "env"}}
-		if p := partitionByOrigin(errs, nil); len(p.fatal) != 1 {
-			t.Fatalf("policy_bundles is a new feature and stays strict, got %#v", p)
-		}
-	})
 }
 
-// TestLoadBase_NoPolicyBundlesTakesMainPath: without policy_bundles the file never goes through
-// the JSON conversion, so YAML that JSON cannot represent loads as on main.
-func TestLoadBase_NoPolicyBundlesTakesMainPath(t *testing.T) {
+// TestLoadBase_LoadsAsOnMain: YAML that JSON cannot represent loads, and a key the agent does
+// not know (here a leftover policy_bundles block) is ignored, as on main.
+func TestLoadBase_LoadsAsOnMain(t *testing.T) {
 	base := mustLoadBase(t, "yaml", "api:\n  url: http://localhost:8080\nplugins:\n  ssh:\n    source: ./plugin-ssh\n    policy_data:\n      ratio: .nan\n      max: .inf\n")
-	if base.declared.PolicyBundles != nil {
-		t.Fatalf("no bundles expected, got %v", base.declared.PolicyBundles)
+	if base.declared.Plugins["ssh"] == nil {
+		t.Fatalf("plugin ssh missing: %#v", base.declared.Plugins)
 	}
-	base = mustLoadBase(t, "yaml", "api:\n  url: http://localhost:8080\npolicy_bundles:\nplugins:\n  ssh:\n    source: ./plugin-ssh\n")
-	if base.declared.PolicyBundles != nil {
-		t.Fatalf("a null policy_bundles must load as none, got %v", base.declared.PolicyBundles)
+	base = mustLoadBase(t, "yaml", "api:\n  url: http://localhost:8080\npolicy_bundles:\n  ssh:\n    modules:\n      a.rego: package a\nplugins:\n  ssh:\n    source: ./plugin-ssh\n")
+	if base.declared.Plugins["ssh"] == nil || len(base.warnings) != 0 {
+		t.Fatalf("an unknown key must be ignored: %#v %#v", base.declared.Plugins, base.warnings)
 	}
 }
 
@@ -366,7 +301,7 @@ plugins:
   github:
     source: ./plugin-github
 `)
-	rt, err := toRuntime(base.declared, nil, nil)
+	rt, err := toRuntime(base.declared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +324,7 @@ plugins:
     source: ./plugin-b
     protocol_version: 2
 `)
-	rt, err := toRuntime(base.declared, nil, nil)
+	rt, err := toRuntime(base.declared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,12 +333,5 @@ plugins:
 	}
 	if p := rt.Plugins["pinned"]; !p.protocolSet || p.ProtocolVersion != RunnerV2ProtocolVersion {
 		t.Fatalf("pinned plugin: %#v", p)
-	}
-}
-
-func TestLoadBase_PolicyBundlesUnsupportedFormat(t *testing.T) {
-	_, err := loadBase(AgentCmd(), writeConfigFile(t, "env", "API.URL=http://localhost:8080\nPOLICY_BUNDLES=x\n"))
-	if err == nil || !strings.Contains(err.Error(), "policy_bundles is only supported") {
-		t.Fatalf("expected unsupported-format error, got %v", err)
 	}
 }

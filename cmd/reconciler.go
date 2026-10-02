@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/compliance-framework/agent/internal/agentstate"
-	"github.com/compliance-framework/agent/internal/inlinepolicy"
-	"github.com/compliance-framework/agent/internal/policyview"
 	runnerpkg "github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
@@ -42,8 +40,8 @@ var (
 	// failedRetryMin / failedRetryMax bound the retry of a failed/* revision.
 	failedRetryMin = time.Minute
 	failedRetryMax = 10 * time.Minute
-	// prepareNetworkTimeout bounds each network step of prepare (plugin/policy prefetch, an
-	// extends tree, a report inventory), so a hung registry cannot stall the reconciler. A
+	// prepareNetworkTimeout bounds each network step of prepare (plugin/policy prefetch, a
+	// report inventory), so a hung registry cannot stall the reconciler. A
 	// timeout is a failed/download-failed, which is retried with the failed backoff.
 	prepareNetworkTimeout = 5 * time.Minute
 )
@@ -59,7 +57,7 @@ type candidate struct {
 	base     *baseSnapshot
 	overlay  *agentstate.OverlayRecord // nil = file only
 	declared agentconfig.Config        // merged, ${env:} NOT resolved: reported and digested
-	runtime  *agentConfig              // resolved, enabled-only, skipped plugins removed, inline dirs set
+	runtime  *agentConfig              // resolved, enabled-only, skipped plugins removed
 	digest   string                    // agentconfig.Digest(declared, base.redactOpts()...) (R55)
 	// identity changes whenever anything that affects the runtime changes, including the
 	// values the digest masks or omits (api block, secrets). It never leaves the process.
@@ -210,18 +208,13 @@ type reconciler struct {
 	// lookupEnv resolves ${env:NAME} placeholders (a test seam).
 	lookupEnv func(string) (string, bool)
 	// resolvePolicy returns the policy root of an OCI or local policy source (downloading it
-	// into the shared cache); it serves inline bundles' extends and the report inventory.
-	resolvePolicy inlinepolicy.Resolver
-	// inlineLinks overrides inlineLinksDir, where plugins receive inline bundles (a test
-	// seam: the default is relative to the working directory).
-	inlineLinks string
+	// into the shared cache) for the report inventory.
+	resolvePolicy policyResolver
 	// pluginLib reads the agent library version of a prefetched plugin source (R76);
-	// nil skips the plugin compatibility checks and report.
+	// nil leaves the plugins report empty.
 	pluginLib pluginLibFunc
-	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir"), and
-	// identityMemo their modules' evidence identities.
+	// inventoryMemo caches the report inventory of OCI policy trees ("source\x00dir").
 	inventoryMemo map[string]agentconfig.PolicyBundleReport
-	identityMemo  map[string][]inlinepolicy.ModuleIdentity
 	// artifacts is the process-wide artifact uploader (shared with the plugins' API helpers).
 	artifacts *runnerpkg.ArtifactUploader
 	// artifactMemo maps a policy tree digest to the digest of its uploaded artifact ("" when
@@ -229,16 +222,10 @@ type reconciler struct {
 	artifactMemo map[string]string
 	now          func() time.Time
 
-	mu      sync.Mutex // guards active, pending, starting, fallback, cancelRun
-	active  *candidate
-	pending *candidate
-	// starting is the candidate the run loop took from pending and is about to bind;
-	// fallback is the one it falls back to if the running one fails. GC keeps their trees.
-	starting  *candidate
-	fallback  *candidate
+	mu        sync.Mutex // guards active, pending, cancelRun
+	active    *candidate
+	pending   *candidate
 	cancelRun context.CancelFunc
-	// inlineMu serializes activating inline trees (run loop) with GC (reconciler goroutine).
-	inlineMu sync.Mutex
 
 	// Everything below is owned by the reconciler goroutine (startup runs before loop).
 	base        *baseSnapshot
@@ -279,7 +266,6 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		loggedOnce: map[string]bool{},
 
 		inventoryMemo: map[string]agentconfig.PolicyBundleReport{},
-		identityMemo:  map[string][]inlinepolicy.ModuleIdentity{},
 		artifacts:     runnerpkg.NewArtifactUploader(),
 		artifactMemo:  map[string]string{},
 	}
@@ -427,7 +413,6 @@ func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 		rc.lastOutcome = outcome
 	}
 	rc.maybeReport(ctx, active, rc.lastOutcome)
-	rc.afterStartup(active)
 	return active, nil
 }
 
@@ -633,19 +618,10 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		}
 	}
 
-	origin := newPolicyOrigin(base.declared, touched)
-	inline, aerr := rc.prepareInline(ctx, resolved, part.skip, origin)
-	if aerr != nil {
-		return nil, aerr
-	}
-
-	runtime, err := toRuntime(resolved, inline.dirs, part.skip)
+	runtime, err := toRuntime(resolved, part.skip)
 	if err != nil {
 		return nil, failed(agentconfig.ReasonInvalidConfig, err)
 	}
-	runtime.inlineTrees = inline.trees
-	runtime.inlineDigests = inline.digests
-	runtime.pluginViews = inline.views
 	prefetchCtx, cancelPrefetch := context.WithTimeout(ctx, prepareNetworkTimeout)
 	err = rc.runner.Prefetch(prefetchCtx, runtime)
 	cancelPrefetch()
@@ -654,18 +630,12 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		aerr.runtime = runtime
 		return nil, aerr
 	}
-	compat, plugins := rc.pluginCompatibility(ctx, runtime, inline.materialized, origin)
-	if agentconfig.HasPolicyErrors(compat) {
-		return nil, policyRejection(append(compat, inline.warnings...))
-	}
-	if len(compat) > 0 {
-		inline.warnings = dedupePolicyErrors(append(inline.warnings, compat...))
-		agentconfig.SortPolicyErrors(inline.warnings)
-	}
+	var bundles []agentconfig.PolicyBundleReport
+	var trees []artifactTree
+	var plugins []agentconfig.PluginReport
 	if rcfg.Mode != agentconfig.ModeOff {
-		reports, trees := rc.sourceReports(ctx, runtime)
-		inline.reports = append(inline.reports, reports...)
-		inline.artifacts = append(inline.artifacts, trees...)
+		bundles, trees = rc.sourceReports(ctx, runtime)
+		plugins = rc.pluginReports(ctx, runtime)
 	}
 
 	// The digest is over the UNRESOLVED form with the same masking as the reported effective
@@ -677,32 +647,17 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 	}
 	runtime.setSync(meta)
 	return &candidate{
-		base:           base,
-		overlay:        ov,
-		declared:       declared,
-		runtime:        runtime,
-		digest:         digest,
-		identity:       candidateIdentity(declared, inline.trees),
-		bundles:        inline.reports,
-		trees:          inline.artifacts,
-		warnings:       append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
-		policyWarnings: inline.warnings,
-		plugins:        plugins,
+		base:     base,
+		overlay:  ov,
+		declared: declared,
+		runtime:  runtime,
+		digest:   digest,
+		identity: candidateIdentity(declared),
+		bundles:  bundles,
+		trees:    trees,
+		warnings: append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
+		plugins:  plugins,
 	}, nil
-}
-
-// inlineResult is what the inline bundle step contributes to a candidate (G3b).
-type inlineResult struct {
-	dirs      map[string]string // "inline:<name>" -> the stable path plugins receive
-	trees     map[string]string // "inline:<name>" -> the materialized tree
-	digests   map[string]string // "inline:<name>" -> the materialized tree's digest
-	reports   []agentconfig.PolicyBundleReport
-	artifacts []artifactTree
-	warnings  []agentconfig.PolicyError
-	// materialized are the bundles the enabled plugins use, by name.
-	materialized map[string]*inlinepolicy.Materialized
-	// views are the working directories of the plugins that receive a shadowed bundle.
-	views map[string]*policyview.View
 }
 
 // overlayTouched returns the pointers an overlay changed, computed on the unresolved forms so
@@ -759,13 +714,12 @@ func overlayValidationError(err error) *applyError {
 	return rejected(reason, errs)
 }
 
-// candidateIdentity hashes the declared config and the materialized inline trees (not the
-// stable paths, which never change), so a different tree is a different configuration.
-func candidateIdentity(c agentconfig.Config, inlineDirs map[string]string) string {
+// candidateIdentity hashes the declared config, including the values the digest masks or
+// omits, so any change that affects the runtime is a different configuration.
+func candidateIdentity(c agentconfig.Config) string {
 	raw, err := agentconfig.CanonicalJSON(struct {
-		Config     agentconfig.Config `json:"config"`
-		InlineDirs map[string]string  `json:"inline_dirs,omitempty"`
-	}{c, inlineDirs})
+		Config agentconfig.Config `json:"config"`
+	}{c})
 	if err != nil {
 		raw = []byte(err.Error())
 	}
@@ -779,7 +733,6 @@ func (rc *reconciler) bind(active *candidate, cancel context.CancelFunc) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	rc.active = active
-	rc.starting = nil
 	rc.cancelRun = cancel
 	if rc.pending != nil {
 		cancel()
@@ -818,13 +771,6 @@ func (rc *reconciler) record(c *candidate) *candidate {
 	return c
 }
 
-// running returns the candidate the run loop has bound (it may still be draining after a swap).
-func (rc *reconciler) running() *candidate {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-	return rc.active
-}
-
 // swap makes next the pending candidate and cancels the running one.
 func (rc *reconciler) swap(next *candidate) {
 	rc.mu.Lock()
@@ -840,23 +786,7 @@ func (rc *reconciler) takePending() *candidate {
 	defer rc.mu.Unlock()
 	next := rc.pending
 	rc.pending = nil
-	if next != nil {
-		rc.starting = next
-	}
 	return next
-}
-
-// start activates c's inline bundles (activateInline), then records c as the running
-// candidate and fallback as the one to fall back to. The run loop calls it only once the
-// previous configuration's run returned (R67). starting and fallback are set first, so GC
-// keeps the trees of both throughout.
-func (rc *reconciler) start(c, fallback *candidate, cancel context.CancelFunc) error {
-	rc.mu.Lock()
-	rc.starting, rc.fallback = c, fallback
-	rc.mu.Unlock()
-	err := rc.activateInline(c)
-	rc.bind(c, cancel)
-	return err
 }
 
 // current returns the candidate that is running, or about to run when a swap is pending.
@@ -875,18 +805,14 @@ func (rc *reconciler) run(active *candidate, run runFunc) error {
 	var previous, failedRun *candidate
 	for {
 		runCtx, cancel := context.WithCancel(context.Background())
-		runErr := rc.start(active, previous, cancel)
+		rc.bind(active, cancel)
 		if failedRun != nil {
 			// Notify only once the fallback is bound, so the reconciler's current() is the
 			// fallback, never the candidate that failed.
 			rc.notifyRunFailed(failedRun)
 			failedRun = nil
 		}
-		if runErr != nil {
-			rc.logger.Error("Could not activate the inline policy bundles", "error", runErr)
-		} else {
-			runErr = run(runCtx, active.runtime)
-		}
+		runErr := run(runCtx, active.runtime)
 		reload := runCtx.Err() != nil
 		cancel()
 		active = rc.record(active)
@@ -1016,7 +942,7 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 	if target != nil && rc.rememberedRejected(target) {
 		// The only overlay left (the applied one) was rejected for this base, e.g. after a
 		// conflicting file edit: keep the last-known-good configuration instead of
-		// re-preparing (and re-running inline policy checks) on every poll (§5.4, G3.4).
+		// re-preparing it on every poll (§5.4, G3.4).
 		rc.maybeReport(ctx, active, rc.lastOutcome)
 		return
 	}
@@ -1046,7 +972,6 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 	}
 	rc.logger.Info("Applying the new configuration", "revision", revisionForLog(target))
 	rc.swap(cand)
-	rc.gcInline(rc.running(), active, cand)
 	rc.maybeReport(ctx, cand, rc.lastOutcome)
 }
 

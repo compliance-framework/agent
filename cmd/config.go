@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -13,10 +12,8 @@ import (
 	"strings"
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
-	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"sigs.k8s.io/yaml"
 )
 
 // baseSnapshot is one load of the local configuration: the file merged with CLI flags and
@@ -26,7 +23,7 @@ import (
 // validated, redacted, digested and reported. The runtime form (*agentConfig) is built from
 // it by toRuntime.
 type baseSnapshot struct {
-	declared agentconfig.Config // file ⊕ CLI flags ⊕ bound env; PolicyBundles decoded from raw bytes
+	declared agentconfig.Config // file ⊕ CLI flags ⊕ bound env
 	raw      []byte             // exact bytes read (one read per load)
 	// envSourced are the JSON pointers of plugin leaves whose value came from a CCF_* env
 	// variable (R25). They are masked in reports and in the digest.
@@ -72,17 +69,8 @@ func isToleratedFileRule(e agentconfig.FieldError) bool {
 //   - a negative verbosity: hclog.Info - v, i.e. a quieter agent (-1 = Warn);
 //   - a literal ${env:...} outside plugins.*.config (labels, policy_data, ...): an opaque
 //     string handed to the plugin or to Rego, never resolved.
-//
-// policy_bundles is a new feature, so its env-location errors stay fatal.
 func isWarnOnlyFileRule(e agentconfig.FieldError) bool {
-	switch {
-	case e.Path == "/verbosity":
-		return true
-	case e.Code == agentconfig.FieldCodeEnvLocation:
-		segs := agentconfig.SplitPointer(e.Path)
-		return len(segs) == 0 || segs[0] != "policy_bundles"
-	}
-	return false
+	return e.Path == "/verbosity" || e.Code == agentconfig.FieldCodeEnvLocation
 }
 
 // newAgentViper builds a fresh viper for one load (R32): the watcher goroutine and the loader
@@ -149,7 +137,6 @@ func applyFlagOverrides(cmd *cobra.Command, v *viper.Viper) error {
 // declaredFromViper decodes the declared config from a viper that has read the file. It uses
 // viper's default (weakly typed) decoder, exactly as the agent always has (R51): for example
 // a YAML `false` plugin config value becomes "0" and a number becomes its decimal string.
-// PolicyBundles are not decoded here (see decodePolicyBundles).
 func declaredFromViper(cmd *cobra.Command, v *viper.Viper) (agentconfig.Config, error) {
 	if err := applyFlagOverrides(cmd, v); err != nil {
 		return agentconfig.Config{}, err
@@ -206,48 +193,6 @@ func checkExplicitZeroProtocol(v *viper.Viper, declared agentconfig.Config) erro
 	return fmt.Errorf("plugin %s has unsupported protocol_version=0; supported values are %d and %d", names[0], DefaultProtocolVersion, RunnerV2ProtocolVersion)
 }
 
-// decodePolicyBundles decodes the file's policy_bundles block WITHOUT viper (HLD §3.5.6):
-// viper lowercases keys and splits them on dots, which would corrupt module paths such as
-// "Policies/Max.Auth.rego".
-func decodePolicyBundles(raw []byte, ext string) (map[string]*agentconfig.PolicyBundle, error) {
-	var jsonDoc []byte
-	switch ext {
-	case "yaml", "yml":
-		converted, err := yaml.YAMLToJSON(raw)
-		if err != nil {
-			return nil, fmt.Errorf("decode policy_bundles: %w", err)
-		}
-		jsonDoc = converted
-	case "json":
-		jsonDoc = raw
-	case "toml":
-		var doc map[string]any
-		if err := toml.Unmarshal(raw, &doc); err != nil {
-			return nil, fmt.Errorf("decode policy_bundles: %w", err)
-		}
-		converted, err := json.Marshal(map[string]any{"policy_bundles": doc["policy_bundles"]})
-		if err != nil {
-			return nil, fmt.Errorf("decode policy_bundles: %w", err)
-		}
-		jsonDoc = converted
-	default:
-		return nil, nil
-	}
-
-	if len(bytes.TrimSpace(jsonDoc)) == 0 || bytes.Equal(bytes.TrimSpace(jsonDoc), []byte("null")) {
-		return nil, nil
-	}
-	var doc struct {
-		PolicyBundles map[string]*agentconfig.PolicyBundle `json:"policy_bundles"`
-	}
-	dec := json.NewDecoder(bytes.NewReader(jsonDoc))
-	dec.UseNumber()
-	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("decode policy_bundles: %w", err)
-	}
-	return doc.PolicyBundles, nil
-}
-
 // envSourcedPointers returns the JSON pointers of plugin leaves whose value viper took from a
 // CCF_* environment variable (R25). AutomaticEnv only overrides keys viper already knows (the
 // file's keys), so checking the file's keys is exhaustive.
@@ -281,28 +226,14 @@ func loadBase(cmd *cobra.Command, configPath string) (*baseSnapshot, error) {
 	if err := v.ReadConfig(bytes.NewReader(raw)); err != nil {
 		return nil, err
 	}
-	return baseFromViper(cmd, v, raw, configExt(configPath))
+	return baseFromViper(cmd, v, raw)
 }
 
 // baseFromViper finishes loadBase on a viper that has read raw.
-func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte, ext string) (*baseSnapshot, error) {
+func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapshot, error) {
 	declared, err := declaredFromViper(cmd, v)
 	if err != nil {
 		return nil, err
-	}
-	// Only a file that sets policy_bundles takes the non-viper decode, so every other file
-	// loads exactly as on main (e.g. a YAML .nan, which JSON cannot represent).
-	if v.IsSet("policy_bundles") {
-		switch ext {
-		case "yaml", "yml", "json", "toml":
-		default:
-			return nil, fmt.Errorf("policy_bundles is only supported in yaml, json and toml config files")
-		}
-		bundles, err := decodePolicyBundles(raw, ext)
-		if err != nil {
-			return nil, err
-		}
-		declared.PolicyBundles = bundles
 	}
 
 	base := &baseSnapshot{
@@ -454,13 +385,12 @@ func basePluginConfigValue(base agentconfig.Config, plugin, key string) string {
 // toRuntime converts a merged, env-resolved declared config into the runtime structs.
 // Disabled plugins and plugins named in skip (R34) are dropped: they get no cron, no download
 // and no run state, but they stay in the declared form and in reports.
-func toRuntime(c agentconfig.Config, inlineDirs map[string]string, skip map[string]string) (*agentConfig, error) {
+func toRuntime(c agentconfig.Config, skip map[string]string) (*agentConfig, error) {
 	out := &agentConfig{
-		Daemon:           c.Daemon,
-		Verbosity:        c.Verbosity,
-		Plugins:          map[string]*agentPlugin{},
-		inlinePolicyDirs: inlineDirs,
-		remote:           c.EffectiveRemoteConfig(),
+		Daemon:    c.Daemon,
+		Verbosity: c.Verbosity,
+		Plugins:   map[string]*agentPlugin{},
+		remote:    c.EffectiveRemoteConfig(),
 	}
 	if c.API != nil {
 		out.ApiConfig = &apiConfig{Url: c.API.URL}
