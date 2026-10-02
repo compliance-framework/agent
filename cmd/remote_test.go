@@ -207,6 +207,7 @@ func TestStartupReport_RedactsAndDescribes(t *testing.T) {
     config:
       token: from-file
       org: "${env:GITHUB_ORG}"
+      endpoint: https://bot:hunter2@git.example
 `)
 	h.rc.lookupEnv = func(n string) (string, bool) { return "acme", n == "GITHUB_ORG" }
 	h.remote.publish(0, `{}`)
@@ -226,6 +227,9 @@ func TestStartupReport_RedactsAndDescribes(t *testing.T) {
 		}
 		if strings.Contains(s, "acme") {
 			t.Fatalf("resolved env value leaked: %s", s)
+		}
+		if strings.Contains(s, "hunter2") {
+			t.Fatalf("a password in a URL must be masked by value: %s", s)
 		}
 		if !strings.Contains(s, `"github":{`) || !strings.Contains(s, `"enabled":false`) {
 			t.Fatalf("disabled plugin must be reported: %s", s)
@@ -815,8 +819,18 @@ func TestEnvPlaceholders(t *testing.T) {
 	if cfg["host"] != "db.internal" || cfg["dsn"] != "pg://db.internal:5432/db" {
 		t.Fatalf("placeholders not resolved whole/embedded: %#v", cfg)
 	}
-	if !strings.Contains(string(h.remote.lastReport(t).Effective), "${env:HOST}") {
-		t.Fatal("the report must carry the unresolved placeholder")
+	var eff agentconfig.Config
+	if err := json.Unmarshal(h.remote.lastReport(t).Effective, &eff); err != nil {
+		t.Fatal(err)
+	}
+	reported := eff.Plugins["ssh"].Config
+	if reported["host"] != "${env:HOST}" {
+		t.Fatalf("the report must carry the unresolved placeholder, got %#v", reported)
+	}
+	// Literal text mixed with a placeholder under a secret-like key is masked; the API's
+	// agentconfig redaction is the source of truth.
+	if reported["dsn"] != agentconfig.MaskedValue {
+		t.Fatalf("a dsn mixing literal text and placeholders must be masked, got %#v", reported)
 	}
 	digest := active.digest
 	env["HOST"] = "rotated"
