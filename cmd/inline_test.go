@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -224,38 +223,6 @@ func TestInline_OverlayDuplicateIdentityRejected_R75(t *testing.T) {
 	if errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyIdentity); len(errs) != 1 || errs[0].Path != "banner.rego" {
 		t.Fatalf("expected one duplicate-policy-identity error, got %+v", r.PolicyErrors)
 	}
-}
-
-// TestInline_PolicyIDIdentities_R75: a policy_id that continues the vendor stream collides
-// with the vendor module when both are loaded; a policy_id declared twice across a plugin's
-// paths is a duplicate-policy-id.
-func TestInline_PolicyIDIdentities_R75(t *testing.T) {
-	t.Run("continuing id next to the vendor source", func(t *testing.T) {
-		h, vendor := newInlineHarness(t)
-		// A policy_id that continues the vendor stream: <vendor plugin path>/<file>.
-		override := fmt.Sprintf("package compliance_framework.banner\n\nimport rego.v1\n\npolicy_id := %q\n\ntitle := \"banner\"\n\nviolation[{\"id\": \"b\"}] if not input.banner\n", vendor+"/banner.rego")
-		src, _ := json.Marshal(override)
-		h.remote.publish(1, `{"plugins":{"ssh":{"policies":["ghcr.io/vendor/policies:v1","inline:ssh"]}},"policy_bundles":{"ssh":{"modules":{"banner.rego":`+string(src)+`}}}}`)
-		mustStartup(t, h.rc)
-		r := h.remote.lastReport(t)
-		errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyIdentity)
-		if r.Status != agentconfig.StatusRejected || len(errs) != 1 || errs[0].Path != "banner.rego" || !strings.Contains(errs[0].Message, "same evidence stream") {
-			t.Fatalf("expected a same-stream duplicate-policy-identity error, got %s %+v", r.Status, r.PolicyErrors)
-		}
-	})
-	t.Run("same policy_id in two paths", func(t *testing.T) {
-		h, vendor := newInlineHarness(t)
-		if err := os.WriteFile(filepath.Join(vendor, "motd.rego"), []byte("package compliance_framework.motd\n\nimport rego.v1\n\npolicy_id := \"shared\"\n\ntitle := \"motd\"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"extra.rego":"package compliance_framework.extra\n\nimport rego.v1\n\npolicy_id := \"shared\"\n\ntitle := \"extra\"\n"}}}}`)
-		mustStartup(t, h.rc)
-		r := h.remote.lastReport(t)
-		errs := rejectionErrors(r, agentconfig.PolicyCodeDuplicatePolicyID)
-		if r.Status != agentconfig.StatusRejected || len(errs) != 1 || errs[0].Path != "extra.rego" || !strings.Contains(errs[0].Message, `"shared"`) {
-			t.Fatalf("expected a duplicate-policy-id error at the authored module, got %s %+v", r.Status, r.PolicyErrors)
-		}
-	})
 }
 
 // TestInline_StablePathSwapsOnlyBetweenRuns_R67: a revision prepared while a run is in

@@ -23,8 +23,7 @@ const (
 	shadowSource = "ghcr.io/vendor/policies:v1"
 	// Where the agent extracts the OCI source: relative to its working directory.
 	shadowExtracted = ".compliance-framework/policies/vendor/policies/v1/policies"
-	// A plugin built on agent v0.1.9 (plugin-local-ssh v0.2.0): no policy_id, no set-form
-	// violations.
+	// A plugin built on agent v0.1.9 (plugin-local-ssh v0.2.0): no set-form violations.
 	oldLib = "v0.1.9-0.20250708121809-c5059c3efac8"
 )
 
@@ -200,9 +199,6 @@ func TestShadow_PluginReceivesTheVendorPathInItsView(t *testing.T) {
 		if got[pkg].labels["_policy_path"] != shadowExtracted {
 			t.Fatalf("%s: _policy_path = %q", pkg, got[pkg].labels["_policy_path"])
 		}
-		if _, ok := got[pkg].labels["_policy_id"]; ok {
-			t.Fatalf("%s: no _policy_id expected with shadowing", pkg)
-		}
 	}
 	if got["compliance_framework.keys"].title != "Keys (tuned)" {
 		t.Fatalf("the override must be evaluated, got title %q", got["compliance_framework.keys"].title)
@@ -342,7 +338,7 @@ func TestShadow_AbsoluteExtendsIsNotShadowed(t *testing.T) {
 	for i, plugin := range []string{"other", "ssh"} {
 		if e := forked[i]; e.Severity != agentconfig.SeverityWarning || e.Bundle != "ssh" || e.Path != "" ||
 			!strings.Contains(e.Message, "plugin "+plugin+" receives bundle ssh") || !strings.Contains(e.Message, vendor+" is absolute") ||
-			!strings.Contains(e.Message, "(banner.rego)") || !strings.Contains(e.Message, "policy_id") {
+			!strings.Contains(e.Message, "(banner.rego)") {
 			t.Fatalf("warning %d = %+v", i, e)
 		}
 	}
@@ -358,15 +354,14 @@ func TestShadow_OldLibOverlay(t *testing.T) {
 	t.Run("object form applies", func(t *testing.T) {
 		h := shadowHarness(t, shadowConfig)
 		withPluginLib(h, oldLib)
-		h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"new.rego":"package compliance_framework.new\n\nimport rego.v1\n\npolicy_id := \"ssh/new\"\n\ntitle := \"New\"\n\nviolation[{\"id\": \"n\"}] if input.password\n"}}}}`)
+		h.remote.publish(1, `{"policy_bundles":{"ssh":{"modules":{"new.rego":"package compliance_framework.new\n\nimport rego.v1\n\ntitle := \"New\"\n\nviolation[{\"id\": \"n\"}] if input.password\n"}}}}`)
 		active := mustStartup(t, h.rc)
 		r := h.remote.lastReport(t)
 		if active.overlay == nil || r.Status != agentconfig.StatusApplied {
 			t.Fatalf("expected applied, got %s/%s %+v", r.Status, r.Reason, r.PolicyErrors)
 		}
-		ids := policyErrorsWithCode(r, agentconfig.PolicyCodePluginLibPolicyIDUnsupported)
-		if len(ids) != 1 || ids[0].Severity != agentconfig.SeverityWarning || ids[0].Path != "new.rego" {
-			t.Fatalf("an ignored policy_id is a warning, got %+v", r.PolicyErrors)
+		if set := policyErrorsWithCode(r, agentconfig.PolicyCodePluginLibViolationSetUnsupported); len(set) != 0 {
+			t.Fatalf("the object form works with every plugin, got %+v", set)
 		}
 	})
 	t.Run("set form is rejected", func(t *testing.T) {

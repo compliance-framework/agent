@@ -94,9 +94,8 @@ type Materialized struct {
 	// ExtendsIdentities those of the extends tree (R75).
 	Identities, ExtendsIdentities []ModuleIdentity
 	// SetViolations are the authored modules that define violation as a set, which plugins
-	// built on an agent library older than v0.7.1 cannot evaluate; PolicyIDRules are the
-	// authored modules that declare policy_id, which plugins built before R74 ignore (R76).
-	SetViolations, PolicyIDRules []Site
+	// built on an agent library older than v0.7.1 cannot evaluate (R76).
+	SetViolations []Site
 	// Shadowed is set when plugins receive the bundle at the extends source's own path
 	// (ExtendsDir), resolved to Dir inside each plugin's view (internal/policyview).
 	Shadowed bool
@@ -226,7 +225,7 @@ func Materialize(ctx context.Context, l Layout, name string, b *agentconfig.Poli
 		return nil, errs
 	}
 
-	m.SetViolations, m.PolicyIDRules = authoredSites(files, m.Authored)
+	m.SetViolations = setViolationSites(files, m.Authored)
 	m.Shadowed = opt.Shadow && m.Extends != nil && policyview.Shadowable(m.ExtendsDir) == nil
 
 	// 6. Write once.

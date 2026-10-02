@@ -14,15 +14,10 @@ import (
 // Plugin compatibility (R76, R88). A plugin evaluates policies with the policy-manager it
 // embeds, so what it can do with an inline bundle depends on the agent library it was built
 // with, which the agent reads from the plugin binary's build info. Path shadowing
-// (shadow.go) keeps vendor evidence streams with any library, so only two things depend on
-// it:
-//
-//   - a set-form violation (`violation contains ...`) crashes plugins older than
-//     pluginlib.MinViolationSet: an error when the overlay introduces it
-//     (plugin-lib-violation-set-unsupported);
-//   - a policy_id an authored module declares is ignored by plugins older than
-//     pluginlib.MinPolicyID, so the module's stream is path-based: a warning
-//     (plugin-lib-policy-id-unsupported).
+// (shadow.go) keeps vendor evidence streams with any library, so only one thing depends on
+// it: a set-form violation (`violation contains ...`) crashes plugins older than
+// pluginlib.MinViolationSet, an error when the overlay introduces it
+// (plugin-lib-violation-set-unsupported).
 //
 // Inline bundles from the config file only warn (R34), and so does a library whose version
 // is unknown (a local or replaced build, or no build info). The plugins report carries each
@@ -51,8 +46,8 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 			}
 		}
 		reports = append(reports, agentconfig.PluginReport{Name: name, Source: p.Source, LibVersion: version})
-		if ok, _ := pluginlib.AtLeast(version, pluginlib.MinPolicyID); ok {
-			continue // policy_id and set-form violations both work
+		if ok, _ := pluginlib.AtLeast(version, pluginlib.MinViolationSet); ok {
+			continue // set-form violations work
 		}
 
 		var bundles []*inlinepolicy.Materialized
@@ -77,7 +72,7 @@ func (rc *reconciler) pluginCompatibility(ctx context.Context, runtime *agentCon
 }
 
 // libProblems are the problems of one plugin whose library is older than
-// pluginlib.MinPolicyID or unknown. overlay is whether the overlay brought the plugin and
+// pluginlib.MinViolationSet or unknown. overlay is whether the overlay brought the plugin and
 // these bundles together; only then is a known incompatibility an error.
 func libProblems(plugin, version string, bundles []*inlinepolicy.Materialized, overlay bool) []agentconfig.PolicyError {
 	var out []agentconfig.PolicyError
@@ -85,37 +80,28 @@ func libProblems(plugin, version string, bundles []*inlinepolicy.Materialized, o
 	if lib == "" {
 		lib = "unknown"
 	}
-	idOK, known := pluginlib.AtLeast(version, pluginlib.MinPolicyID)
-	setOK, setKnown := pluginlib.AtLeast(version, pluginlib.MinViolationSet)
-	severity := func(known bool) string {
-		if known && overlay {
-			return agentconfig.SeverityError
-		}
-		return agentconfig.SeverityWarning
+	ok, known := pluginlib.AtLeast(version, pluginlib.MinViolationSet)
+	if ok {
+		return nil
+	}
+	severity := agentconfig.SeverityWarning
+	if known && overlay {
+		severity = agentconfig.SeverityError
 	}
 	unknownWhy := "is unknown (a local or replaced build, or no build info)"
 	if version != "" {
 		unknownWhy = fmt.Sprintf("%s has no release before it", version)
 	}
 	for _, m := range bundles {
-		if !setOK {
-			for _, s := range m.SetViolations {
-				msg := fmt.Sprintf("plugin %s (agent lib %s) cannot evaluate violation as a set (`violation contains ...` needs agent ≥ %s) and would crash; use `violation[{...}] if { … }`",
-					plugin, lib, pluginlib.MinViolationSet)
-				if !setKnown {
-					msg = fmt.Sprintf("plugin %s: its agent library version %s; plugins built on agent < %s crash on `violation contains ...`; use `violation[{...}] if { … }`",
-						plugin, unknownWhy, pluginlib.MinViolationSet)
-				}
-				out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: severity(setKnown),
-					Code: agentconfig.PolicyCodePluginLibViolationSetUnsupported, Message: msg})
+		for _, s := range m.SetViolations {
+			msg := fmt.Sprintf("plugin %s (agent lib %s) cannot evaluate violation as a set (`violation contains ...` needs agent ≥ %s) and would crash; use `violation[{...}] if { … }`",
+				plugin, lib, pluginlib.MinViolationSet)
+			if !known {
+				msg = fmt.Sprintf("plugin %s: its agent library version %s; plugins built on agent < %s crash on `violation contains ...`; use `violation[{...}] if { … }`",
+					plugin, unknownWhy, pluginlib.MinViolationSet)
 			}
-		}
-		if !idOK && known {
-			for _, s := range m.PolicyIDRules {
-				out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: agentconfig.SeverityWarning,
-					Code:    agentconfig.PolicyCodePluginLibPolicyIDUnsupported,
-					Message: fmt.Sprintf("plugin %s (agent lib %s) ignores policy_id; this module's evidence stream follows its path", plugin, lib)})
-			}
+			out = append(out, agentconfig.PolicyError{Bundle: m.Name, Path: s.Path, Row: s.Row, Col: s.Col, Severity: severity,
+				Code: agentconfig.PolicyCodePluginLibViolationSetUnsupported, Message: msg})
 		}
 	}
 	return out

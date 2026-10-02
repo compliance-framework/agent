@@ -26,14 +26,6 @@ const (
 	// set (`violation contains {...}`, agent#86). Older plugins expect an object
 	// (`violation[{...}] if { ... }`) and crash on a set.
 	MinViolationSet = "v0.7.1"
-	// MinPolicyID is the first agent library release whose policy-manager seeds evidence
-	// with an authored policy_id (R74): agent#95 ships in v0.9.0 (v0.8.0 and v0.8.1 were
-	// released without it). Older plugins ignore policy_id. The minimum is the final
-	// release, so v0.9.0 release candidates and pseudo-versions based on them are older
-	// (AtLeast). It also covers MinViolationSet.
-	//
-	// Update before tagging if agent#95 ships in a different release.
-	MinPolicyID = "v0.9.0"
 )
 
 // Version returns the version of AgentModule the plugin binary at path was built with, or ""
@@ -62,7 +54,7 @@ func Version(path string) (string, error) {
 // before it): then ok is false too. A pseudo-version counts as the tagged version it was
 // built after (v0.7.2-0.2026…-abc is v0.7.1 plus unreleased commits, which may not include
 // what min added). Versions compare as semver, so pre-releases of min are older than min
-// (v0.9.0-rc1 < v0.9.0): a release candidate cut before a feature landed does not have it.
+// (v0.7.1-rc1 < v0.7.1): a release candidate cut before a feature landed does not have it.
 func AtLeast(version, min string) (ok, known bool) {
 	base := version
 	if module.IsPseudoVersion(version) {

@@ -15,16 +15,14 @@ import (
 // its policy paths separately and records evidence for every policy module of each, so a
 // policy loaded twice is reported twice:
 //
-//   - duplicate-policy-id: two modules declare the same policy_id;
 //   - duplicate-policy-identity: two modules from different policy paths have the same
-//     evidence identity: the same seed (a policy_id that continues the stream of a module
-//     loaded too), or, without policy_id, the same package and bundle-relative file (an
+//     evidence identity: the same seed, or the same package and bundle-relative file (an
 //     inline bundle listed next to the source it extends);
 //   - duplicate-policy-package (R66): the same package from two policy paths otherwise.
 //
-// The first two are errors when the overlay introduces them (it gives the plugin one of the
-// policy entries involved, or changes one of the inline bundles involved) and warnings when
-// they come from the config file (R34). The last is always a warning. Plugins that use no inline bundle are not
+// The first is an error when the overlay introduces it (it gives the plugin one of the
+// policy entries involved, or changes one of the inline bundles involved) and a warning when
+// it comes from the config file (R34). The last is always a warning. Plugins that use no inline bundle are not
 // checked: their policy paths are the file's and the vendors' business.
 
 // policyOrigin tells overlay-introduced policy problems from file-origin ones (R34).
@@ -165,26 +163,14 @@ func identityProblems(pluginName string, modules []loadedModule, severity func(a
 	}
 	for j, b := range modules {
 		for _, a := range modules[:j] {
-			sameEntry := a.entry == b.entry
 			switch {
-			case a.id.PolicyID != "" && a.id.PolicyID == b.id.PolicyID:
-				// Within one source, two vendor modules are the vendor's business, and two
-				// authored ones are the API's contract check (CheckContract).
-				if sameEntry && a.authored == b.authored {
-					continue
-				}
-				if !sameEntry {
-					identityPackages[a.id.Package], identityPackages[b.id.Package] = true, true
-				}
-				report(a, b, severity(a, b), agentconfig.PolicyCodeDuplicatePolicyID,
-					fmt.Sprintf("policy_id %q is declared by both %s and %s, so their evidence shares one stream; give each policy its own policy_id", a.id.PolicyID, a.where(), b.where()))
-			case sameEntry:
+			case a.entry == b.entry:
 				continue
 			case a.id.Package == b.id.Package && sameSeed(a, b):
 				identityPackages[a.id.Package] = true
 				report(a, b, severity(a, b), agentconfig.PolicyCodeDuplicatePolicyIdentity,
 					fmt.Sprintf("%s and %s write to the same evidence stream (package %s), so each evidence is recorded twice; load only one of them: if one is an inline bundle that extends the other, replace the source with the bundle instead of listing both", a.where(), b.where(), a.id.Package))
-			case a.id.Package == b.id.Package && a.id.PolicyID == "" && b.id.PolicyID == "" && a.id.Path == b.id.Path:
+			case a.id.Package == b.id.Package && a.id.Path == b.id.Path:
 				identityPackages[a.id.Package] = true
 				report(a, b, severity(a, b), agentconfig.PolicyCodeDuplicatePolicyIdentity,
 					fmt.Sprintf("%s is loaded from both %s and %s (package %s), so the plugin records its evidence twice, in two streams; load only one of them: if one is an inline bundle that extends the other, replace the source with the bundle instead of listing both", a.id.Path, a.entry, b.entry, a.id.Package))

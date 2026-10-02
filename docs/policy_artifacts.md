@@ -36,15 +36,6 @@ serves the configuration report, which uploads the policy trees it names (see
 `configuration.md`, "Sources for the UI"); a tree uploaded there is not uploaded again for
 evidence, and both produce the same artifact digest.
 
-## Evidence identity
-
-`GenerateResults` seeds each evidence UUID with the policy's package, its file and the plugin's labels (including
-`_policy_path`, the path the agent passed the plugin). When the module declares `policy_id`, `policyeval.SeedPath`
-replaces the file and `_policy_path` seed values, so the stream follows the policy rather than where its bundle lives;
-the evidence keeps its real `_policy_path` label and gains a `_policy_id` label. Without a `policy_id` the seed is
-unchanged. See `configuration.md`, "Policy identity". Plugins get this by rebuilding on an agent library that
-includes it.
-
 ## Plugins
 
 Plugins need no code changes. A plugin gets this by moving to an agent version that

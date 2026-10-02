@@ -148,7 +148,7 @@ func (p *PolicyProcessor) GenerateResults(ctx context.Context, policyPath string
 
 		// Observation UUID should differ for each individual subject, but remain consistent when validating the same policy for the same subject.
 		// This acts as an identifier to show the history of an observation.
-		evidence, err := p.newEvidence(result, policyPath, activities)
+		evidence, err := p.newEvidence(result, activities)
 		if err != nil {
 			resultErr = errors.Join(resultErr, err)
 			continue
@@ -221,29 +221,16 @@ func validateNewEvidence(result Result) error {
 	return nil
 }
 
-// Evidence labels that name the policy an evidence came from.
-const (
-	labelPolicy     = "_policy"
-	labelPolicyPath = "_policy_path"
-	// labelPolicyID is the policy's policy_id, when it declares one (R74).
-	labelPolicyID = "_policy_id"
-)
-
-// newEvidence builds the evidence for one policy result. policyPath is the path the agent
-// passed the plugin for the result's bundle.
-//
-// The evidence UUID is seeded with the policy's package and file and the plugin's labels, so
-// the same policy and subject always produce the same UUID: that is the evidence stream.
-// When the policy declares a policy_id, policyeval.SeedPath replaces the file and, if the
-// plugin labels carry one, the _policy_path seed value, so the stream follows the policy
-// rather than where its bundle lives. Without a policy_id the seed is exactly what it has
-// always been, so existing streams keep their UUIDs.
-func (p *PolicyProcessor) newEvidence(result Result, policyPath string, activities []*proto.Activity) (*proto.Evidence, error) {
+func (p *PolicyProcessor) newEvidence(result Result, activities []*proto.Activity) (*proto.Evidence, error) {
 	if err := validateNewEvidence(result); err != nil {
 		return nil, err
 	}
 
-	evidenceUUID, err := sdk.SeededUUID(p.evidenceSeed(result, policyPath))
+	evidenceUUID, err := sdk.SeededUUID(MergeMaps(map[string]string{
+		"type":        "evidence",
+		"policy":      result.Policy.Package.PurePackage(),
+		"policy_file": result.Policy.File,
+	}, p.labels))
 	if err != nil {
 		return nil, err
 	}
@@ -252,20 +239,15 @@ func (p *PolicyProcessor) newEvidence(result Result, policyPath string, activiti
 	if result.Labels != nil {
 		resultLabels = *result.Labels
 	}
-	labels := MergeMaps(
-		map[string]string{
-			labelPolicy: result.Policy.Package.PurePackage(),
-		},
-		p.labels,
-		resultLabels,
-	)
-	if result.Policy.ID != "" {
-		// Set last: it records the identity the UUID was seeded with.
-		labels[labelPolicyID] = result.Policy.ID
-	}
 	evidence := proto.Evidence{
-		UUID:           evidenceUUID.String(),
-		Labels:         labels,
+		UUID: evidenceUUID.String(),
+		Labels: MergeMaps(
+			map[string]string{
+				"_policy": result.Policy.Package.PurePackage(),
+			},
+			p.labels,
+			resultLabels,
+		),
 		Start:          timestamppb.New(time.Now()),
 		End:            timestamppb.New(time.Now()),
 		Origins:        []*proto.Origin{{Actors: p.actors}},
@@ -276,25 +258,6 @@ func (p *PolicyProcessor) newEvidence(result Result, policyPath string, activiti
 		Status:         nil,
 	}
 	return &evidence, nil
-}
-
-// evidenceSeed returns the values an evidence UUID is seeded with (see newEvidence). Only
-// the seed changes for a policy_id: the evidence keeps the plugin's real _policy_path label.
-func (p *PolicyProcessor) evidenceSeed(result Result, policyPath string) map[string]string {
-	policyFile := result.Policy.File
-	labels := p.labels
-	if result.Policy.ID != "" {
-		seedFile, seedPolicyPath := policyeval.SeedPath(result.Policy.ID, result.Policy.File, policyPath)
-		policyFile = seedFile
-		if _, ok := p.labels[labelPolicyPath]; ok {
-			labels = MergeMaps(p.labels, map[string]string{labelPolicyPath: seedPolicyPath})
-		}
-	}
-	return MergeMaps(map[string]string{
-		"type":        "evidence",
-		"policy":      result.Policy.Package.PurePackage(),
-		"policy_file": policyFile,
-	}, labels)
 }
 
 func (pm *PolicyManager) GetRiskTemplates(ctx context.Context) (map[string][]*proto.RiskTemplate, error) {

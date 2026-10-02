@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/compliance-framework/agent/internal/inlinepolicy"
-	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/agent/internal/policyview"
 	"github.com/compliance-framework/api/pkg/agentconfig"
 )
@@ -215,8 +214,8 @@ func unshadowedWarnings(resolved agentconfig.Config, skip map[string]string, pla
 				listed = append(slices.Clip(listed[:10]), fmt.Sprintf("and %d more", len(forks)-10))
 			}
 			out = append(out, agentconfig.PolicyError{Bundle: name, Severity: agentconfig.SeverityWarning, Code: inlinepolicy.CodePolicyStreamForked,
-				Message: fmt.Sprintf("plugin %s receives bundle %s at %s, not at the path of %s (%s), so %d of its modules (%s) record their evidence in new streams instead of the vendor's; a module keeps its stream wherever it is loaded from with an authored policy_id (plugins built on agent ≥ %s)",
-					pluginName, name, m.Path, m.Extends.Source, why, len(forks), strings.Join(listed, ", "), pluginlib.MinPolicyID)})
+				Message: fmt.Sprintf("plugin %s receives bundle %s at %s, not at the path of %s (%s), so %d of its modules (%s) record their evidence in new streams instead of the vendor's",
+					pluginName, name, m.Path, m.Extends.Source, why, len(forks), strings.Join(listed, ", "))})
 		}
 	}
 	return out

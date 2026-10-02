@@ -73,20 +73,16 @@ vendor-only packages; conflicts that only show on `{}` and input-dependent title
 left out of the next attempt, so one broken package does not hide the others. A compile error in a vendor file whose
 package an authored module also defines carries an override hint (R65). The per-plugin results are de-duplicated before they are reported.
 
-### Evidence identity across a plugin's paths (R66, R74, R75)
+### Evidence identity across a plugin's paths (R66, R75)
 
-`policy-manager` seeds evidence UUIDs from the policy's package, file and plugin path, and, when the module declares
-one, from its `policy_id` through `policyeval.SeedPath` (the API's function, so the API, the agent and the UI agree).
-Without a `policy_id` the seed is byte for byte the old one: we never change the identity of an existing stream.
-The agent checks identity statically, with the same rule the API's contract check enforces (`policy_id :=
-"<literal>"`, once per package), over every module of every policy path of each plugin that uses an inline bundle:
-the same `policy_id` twice is `duplicate-policy-id`, and the same identity from two paths (equal seeds, or the same
-package and bundle-relative file without `policy_id`) is `duplicate-policy-identity`. Both are errors when the overlay
-introduces them (it gives the plugin a policy entry the file does not, or changes a bundle involved), warnings
-otherwise (R34), so an overlay never fails on the file's own duplicates; what is left of R66 (the same package
-with different identities) stays a warning. For an `extends` bundle, an override is compared with the vendor module it
-replaces by the seeds plugins would compute at the extends source's path: a changed `package` is
-`policy-package-changed`, a different `policy_id` `policy-stream-forked` (warnings).
+`policy-manager` seeds evidence UUIDs from the policy's package, file and plugin path; we never change that seed, so
+the identity of an existing stream never changes. The agent checks identity statically over every module of every
+policy path of each plugin that uses an inline bundle: the same identity from two paths (equal seeds, or the same
+package and bundle-relative file) is `duplicate-policy-identity`, an error when the overlay introduces it (it gives
+the plugin a policy entry the file does not, or changes a bundle involved) and a warning otherwise (R34), so an
+overlay never fails on the file's own duplicates; what is left of R66 (the same package with different identities)
+stays a warning. For an `extends` bundle, an override that changes the `package` of the vendor module it replaces is
+`policy-package-changed` (a warning).
 
 ### Path shadowing (R83, R88)
 
@@ -95,9 +91,8 @@ given to plugins at the source's own path, and the plugin runs with a per-plugin
 directory (`internal/policyview`), in which that path's parent links to the bundle's tree and everything else mirrors
 the agent's working directory. Evidence identity is then the vendor's by construction, for every plugin build. The
 agent resolves every relative policy path of such a plugin through its view (artifact uploads, source props). We
-rejected the alternative of appending a continuity `policy_id` to every module that continues a vendor file (R82): it
-only worked for plugins rebuilt on agent ≥ v0.9.0 and gave added modules two identities depending on the shadowing
-decision. Where a view cannot represent the paths (absolute `extends`, a plugin loading the source and the bundle
+rejected declaring the identity in the policy instead (an authored `policy_id` replacing the location in the seed):
+it only works for plugins rebuilt on a newer agent library, while shadowing works for every build. Where a view cannot represent the paths (absolute `extends`, a plugin loading the source and the bundle
 together, no symlinks) the bundle is given to plugins at its own `_inline` path and its modules start path-based
 streams; each plugin that uses it gets a `policy-stream-forked` warning with the reason.
 Risk: a plugin that relies on its working directory sees the view (mirrored, so reads and writes inside existing
@@ -116,10 +111,9 @@ the agent at startup. View GC removes whole views, plugin-owned entries included
 What a plugin can do with a policy depends on the `policy-manager` compiled into it, not on the running agent. The
 agent reads the `github.com/compliance-framework/agent` version from each plugin binary with
 `debug/buildinfo.ReadFile` (memoized by path, size and modification time) after prefetch and reports it
-(`lib-version`). Shadowing makes inline bundles work with every build, so there is no gate: an overlay-introduced
-set-form `violation contains` for a plugin older than v0.7.1 is rejected (that `policy-manager` panics on it), and
-an authored `policy_id` for a plugin older than `pluginlib.MinPolicyID` (v0.9.0 final; v0.8.0 and v0.8.1 were
-released without R74) is a warning. File bundles and unknown versions (a `replace` or devel build, which local
+(`lib-version`). Shadowing makes inline bundles work with every build, so there is no gate: only an
+overlay-introduced set-form `violation contains` for a plugin older than v0.7.1 is rejected (that `policy-manager`
+panics on it). File bundles and unknown versions (a `replace` or devel build, which local
 development relies on) only warn. Versions compare as semver and a pseudo-version counts as its base tag, so
 release candidates and untagged commits before the minimum are older.
 
