@@ -202,8 +202,12 @@ redaction and the configuration digest always use the unresolved placeholder, so
 (R24).
 
 Plugin values set through viper environment variables (`CCF_PLUGINS_<P>_CONFIG_<K>`, see the README) are masked as
-`••••` in every report, as are keys that look like secrets (`secret`, `token`, `password`, `key`, `credential`,
-`auth`) (R25).
+`••••` in every report and in the configuration digest (R25). The rest of the redaction is the API's
+`pkg/agentconfig` (`Redact`, `Digest`), which the agent uses as is and which is the source of truth. In short, it masks
+values under secret-like keys (for example `password`, `token`, `secret`, `api_key`, `dsn`, `auth`) and secret-looking
+values under any key (a password in a URL, a PEM private key, a `password=` assignment, known token formats). Literal
+text mixed with a `${env:NAME}` placeholder under a secret-like key is masked too; a value made only of placeholders is
+reported as written.
 
 ## Tolerated file problems
 
@@ -269,20 +273,12 @@ in order: the freshly fetched overlay, the cached applied overlay, the file alon
 A fetched overlay already rejected for the same file is skipped, and its rejection (with the unsafe changes) is reported
 again, so the instance still shows as rejected after a restart.
 
-### Sources for the UI (R62)
-
-Outside mode `off`, the configuration report inventories every policy source the instance's plugins load (each OCI or
-local source) as `policy-bundles[]`: the source, its tree digest and its files (path, SHA-256 and, for a Rego module,
-its package). The agent also uploads each tree as a policy bundle artifact and reports its `artifact-digest` next to the
-tree digest, so the UI can show the sources. These are the same artifacts evidence references for playback: one
-uploader serves both, and a tree is uploaded once. Uploads are best effort: a failure (an API without artifacts, a tree
-over the API's size limit, a timeout) leaves `artifact-digest` empty and never rejects or fails a revision. Note that
-artifacts are readable with `artifact:read`. When the report is too large, the file lists are dropped first, then the
-`base` document; the digests are kept.
+When a configuration report is too large for the API, the agent drops its `base` document and marks it truncated;
+the effective document and digest are kept.
 
 ### Plugin library versions (R76)
 
-The report also lists the instance's plugins as `plugins[]` (`name`, `source`, `lib-version`), where `lib-version` is
+The report lists the instance's plugins as `plugins[]` (`name`, `source`, `lib-version`), where `lib-version` is
 the version of this agent library the plugin binary was built with, read from its Go build info without starting it.
 It is empty when unknown (a `replace`d or `(devel)` build, or a binary without build info). It is diagnostic only:
 nothing is gated on it.

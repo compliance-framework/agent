@@ -68,16 +68,6 @@ reads the `github.com/compliance-framework/agent` version from each plugin binar
 (memoized by path, size and modification time) after prefetch and reports it (`plugins[].lib-version`) as diagnostics.
 Nothing is gated on it. A `replace` or devel build reports an empty version.
 
-### One channel for policy sources (R62)
-
-The UI needs to show the policy sources an instance loads, and the API never sees them. Rather than a second route, the
-agent reuses the evidence artifact store: one process-wide `runner.ArtifactUploader` is shared by the reconciler and
-every plugin's API helper, and one archiver (`internal/policytree`: `ReadTree` + `TarFiles`) serves both, so the
-configuration-time and evaluation-time uploads of a tree are the same bytes and the same artifact. At report time the
-reconciler uploads each reported tree once (memoized by tree digest per API) within the remote request timeout and
-fills `artifact-digest` on its `policy-bundles[]` entry; the field survives report truncation. Failures leave it empty
-and never reject or fail a revision.
-
 ### Plugin environment filter
 
 go-plugin hands the whole host environment to plugins. The agent now sets `SkipHostEnv` and passes the host
@@ -117,7 +107,8 @@ revision with `failed/env-missing`.
 ## Consequences
 
 - Reports never carry resolved secrets: base and effective are the unresolved forms, redacted with the same masked
-  pointers the effective digest uses (R24, R25, R55).
+  pointers the effective digest uses (R24, R25, R55). The redaction rules (secret-like keys and values) are the API's
+  `pkg/agentconfig`; the agent does not re-implement them.
 - The default state directory depends on the config path; containers must pin `CCF_STATE_DIR` (R52).
 - A new agent that does not understand a newer overlay key rejects the revision with `unknown-field`, visible in the UI.
 - Known limit: viper stops watching the config file after a `Remove` event (follow-up).

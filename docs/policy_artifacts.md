@@ -27,12 +27,8 @@ The API does all canonicalisation and hashing; see its `docs/artifacts.md`.
    digests, before the next message arrives. The raw data is never forwarded with the
    evidence, and the agent never holds the whole batch in memory.
 
-The agent only reads bundles at the policy paths it gave that plugin. Symlinks inside a
-bundle are skipped, as OPA skips them. The agent remembers what it has already uploaded to
-each API, so unchanged content is not uploaded again on later runs. The same process-wide uploader
-serves the configuration report, which uploads the policy trees it names (see
-`configuration.md`, "Sources for the UI"); a tree uploaded there is not uploaded again for
-evidence, and both produce the same artifact digest.
+The agent only reads bundles at the policy paths it gave that plugin. It remembers what it
+has already uploaded, so unchanged content is not uploaded again on later runs.
 
 ## Plugins
 
