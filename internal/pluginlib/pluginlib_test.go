@@ -9,34 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAtLeast(t *testing.T) {
-	cases := []struct {
-		version, min string
-		ok, known    bool
-	}{
-		{"v0.7.1", MinViolationSet, true, true},
-		{"v0.7.2", MinViolationSet, true, true},
-		{"v0.7.0", MinViolationSet, false, true},
-		{"v0.1.9", MinViolationSet, false, true},
-		{"v0.1.9-0.20250101000000-abcdefabcdef", MinViolationSet, false, true},     // after v0.1.8
-		{"v0.7.2-0.20260601000000-abcdefabcdef", MinViolationSet, true, true},      // after v0.7.1
-		{"v0.7.1-0.20260501000000-abcdefabcdef", MinViolationSet, false, true},     // after v0.7.0, before v0.7.1
-		{"v0.7.1-rc1", MinViolationSet, false, true},                               // semver: before v0.7.1
-		{"v0.7.1-rc1.0.20260501000000-abcdefabcdef", MinViolationSet, false, true}, // after v0.7.1-rc1
-		{"v0.10.0", MinViolationSet, true, true},
-		{"v1.0.0", MinViolationSet, true, true},
-		{"", MinViolationSet, false, false},
-		{"(devel)", MinViolationSet, false, false},
-		{"v0.0.0-20261001000000-abcdefabcdef", MinViolationSet, false, false}, // no tag before it
-		{"garbage", MinViolationSet, false, false},
-	}
-	for _, tc := range cases {
-		ok, known := AtLeast(tc.version, tc.min)
-		assert.Equal(t, tc.ok, ok, "%s >= %s", tc.version, tc.min)
-		assert.Equal(t, tc.known, known, "%s known", tc.version)
-	}
-}
-
 func TestVersion(t *testing.T) {
 	// The test binary is built from this module itself, so it does not depend on it.
 	self, err := os.Executable()

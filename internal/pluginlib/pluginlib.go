@@ -1,8 +1,8 @@
 // Package pluginlib reads which version of this module (the agent library) a plugin binary
-// was built with, and decides what the plugin supports (R76).
+// was built with (R76). The config report lists it per plugin as diagnostics.
 //
-// Plugins evaluate policies with the policy-manager they embed, so what a plugin can do with
-// a policy depends on the agent library it was compiled against, not on the running agent.
+// Plugins evaluate policies with the policy-manager they embed, so how a plugin evaluates a
+// policy depends on the agent library it was compiled against, not on the running agent.
 // The version comes from the binary's Go build info (debug/buildinfo), so the plugin is never
 // started to find out.
 package pluginlib
@@ -12,21 +12,10 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	"golang.org/x/mod/module"
-	"golang.org/x/mod/semver"
 )
 
 // AgentModule is the module path plugins import for runner and policy-manager.
 const AgentModule = "github.com/compliance-framework/agent"
-
-// Minimum agent library versions.
-const (
-	// MinViolationSet is the first agent library whose policy-manager accepts violation as a
-	// set (`violation contains {...}`, agent#86). Older plugins expect an object
-	// (`violation[{...}] if { ... }`) and crash on a set.
-	MinViolationSet = "v0.7.1"
-)
 
 // Version returns the version of AgentModule the plugin binary at path was built with, or ""
 // when it is unknown: the file has no Go build info, does not depend on AgentModule (a
@@ -47,26 +36,6 @@ func Version(path string) (string, error) {
 		return dep.Version, nil
 	}
 	return "", nil
-}
-
-// AtLeast reports whether version is min or later. known is false when version is not a
-// version that can be compared ("" for unknown, "(devel)", a pseudo-version with no tag
-// before it): then ok is false too. A pseudo-version counts as the tagged version it was
-// built after (v0.7.2-0.2026…-abc is v0.7.1 plus unreleased commits, which may not include
-// what min added). Versions compare as semver, so pre-releases of min are older than min
-// (v0.7.1-rc1 < v0.7.1): a release candidate cut before a feature landed does not have it.
-func AtLeast(version, min string) (ok, known bool) {
-	base := version
-	if module.IsPseudoVersion(version) {
-		var err error
-		if base, err = module.PseudoVersionBase(version); err != nil || base == "" {
-			return false, false
-		}
-	}
-	if !semver.IsValid(base) {
-		return false, false
-	}
-	return semver.Compare(base, min) >= 0, true
 }
 
 // Cache memoizes Version per binary. A binary is identified by its path, size and

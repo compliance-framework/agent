@@ -149,7 +149,6 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 		RemoteConfig:      &rcfg,
 		Plugins:           active.plugins,
 	}
-	report.PolicyErrors = append(report.PolicyErrors, active.policyWarnings...)
 	switch {
 	case !isApplyMode(rcfg.Mode):
 		report.Status = agentconfig.StatusNotApplicable
@@ -163,7 +162,6 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 		}
 		report.Error = &msg
 		report.Unsafe = outcome.Unsafe
-		report.PolicyErrors = append(append([]agentconfig.PolicyError(nil), outcome.PolicyErrors...), report.PolicyErrors...)
 	default:
 		report.Status = agentconfig.StatusApplied
 	}

@@ -46,10 +46,6 @@ var (
 	prepareNetworkTimeout = 5 * time.Minute
 )
 
-// maxRememberedPolicyErrors bounds the policy errors persisted with a rejection (the cache is
-// rewritten on every fetch); the report after a restart lists at most this many.
-const maxRememberedPolicyErrors = 100
-
 // candidate is a complete, validated configuration that is ready to run. The reconciler builds
 // it BEFORE cancelling the running configuration (prepare-then-cancel, R32). It is immutable
 // once built.
@@ -64,9 +60,8 @@ type candidate struct {
 	identity string
 	bundles  []agentconfig.PolicyBundleReport
 	// trees are the policy trees bundles describe, uploaded as artifacts for the report (R62).
-	trees          []artifactTree
-	warnings       []agentconfig.FieldError  // R34 file-origin warnings
-	policyWarnings []agentconfig.PolicyError // G3b severity=warning
+	trees    []artifactTree
+	warnings []agentconfig.FieldError // R34 file-origin warnings
 	// plugins are the runtime's plugins with their agent library versions (R76).
 	plugins []agentconfig.PluginReport
 }
@@ -83,11 +78,10 @@ func (c *candidate) appliedRevision() *int64 {
 // applyError is why a candidate could not be prepared. Status is agentconfig.StatusRejected
 // or agentconfig.StatusFailed and Reason is one of agentconfig.Reasons.
 type applyError struct {
-	Status       string
-	Reason       string
-	Err          error
-	Unsafe       []agentconfig.Change
-	PolicyErrors []agentconfig.PolicyError
+	Status string
+	Reason string
+	Err    error
+	Unsafe []agentconfig.Change
 	// runtime is the prepared runtime of a download-failed candidate: startup hands it to
 	// onStartupFailure so the startup-failure evidence describes it, as on main.
 	runtime *agentConfig
@@ -486,10 +480,9 @@ func (rc *reconciler) rememberedRejection(mode string) *applyError {
 	rev := f.Revision
 	rc.attempted = &rev
 	aerr := &applyError{
-		Status:       r.Status,
-		Reason:       r.Reason,
-		Unsafe:       slices.Clone(r.Unsafe),
-		PolicyErrors: slices.Clone(r.PolicyErrors),
+		Status: r.Status,
+		Reason: r.Reason,
+		Unsafe: slices.Clone(r.Unsafe),
 	}
 	if r.Error != "" {
 		aerr.Err = errors.New(r.Error)
@@ -518,7 +511,6 @@ func (rc *reconciler) recordFailure(target *agentstate.OverlayRecord, aerr *appl
 			Reason:          aerr.Reason,
 			Error:           msg,
 			Unsafe:          aerr.Unsafe,
-			PolicyErrors:    aerr.PolicyErrors[:min(len(aerr.PolicyErrors), maxRememberedPolicyErrors)],
 		}
 		rc.saveCache()
 		return

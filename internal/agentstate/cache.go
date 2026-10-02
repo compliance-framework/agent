@@ -53,10 +53,9 @@ type RejectedRecord struct {
 	Status          string `json:"status"`
 	Reason          string `json:"reason"`
 	Error           string `json:"error"`
-	// Unsafe and PolicyErrors complete the outcome re-reported after a restart. They are
-	// optional: caches written before they existed load (and checksum) unchanged.
-	Unsafe       []agentconfig.Change      `json:"unsafe,omitempty"`
-	PolicyErrors []agentconfig.PolicyError `json:"policy_errors,omitempty"`
+	// Unsafe completes the outcome re-reported after a restart. It is optional: caches
+	// written before it existed load (and checksum) unchanged.
+	Unsafe []agentconfig.Change `json:"unsafe,omitempty"`
 }
 
 // Cache is the persisted remote configuration state (0600, it may hold values an admin typed).
