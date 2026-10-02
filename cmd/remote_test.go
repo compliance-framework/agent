@@ -580,6 +580,7 @@ func TestApply_ClassifyGate(t *testing.T) {
 		{"R27 non-string config value", "apply_all", "", `{"plugins":{"ssh":{"config":{"port":2222}}}}`, "rejected", "invalid-type"},
 		{"R27 unknown field", "apply_all", "", `{"evidence_capture":{}}`, "rejected", "unknown-field"},
 		{"R28 mixed-case plugin name", "apply_all", "", `{"plugins":{"GitHub":{"source":"ghcr.io/trusted/gh:v1"}}}`, "rejected", "invalid-config"},
+		{"inline policy bundles are not supported", "apply_all", "", `{"policy_bundles":{"ssh":{"modules":{"a.rego":"package compliance_framework.a"}}}}`, "rejected", "unknown-field"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
