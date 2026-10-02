@@ -313,6 +313,47 @@ func TestModes_ReportAndOff(t *testing.T) {
 			t.Fatalf("report mode heartbeat must carry revision 0 and a digest: %+v", hb)
 		}
 	})
+	t.Run("credentials without a mode default to report", func(t *testing.T) {
+		// An agent that applied an overlay under an explicit apply mode...
+		h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+		h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+		if active := mustStartup(t, h.rc); active.overlay == nil {
+			t.Fatal("expected the overlay applied under apply_safe")
+		}
+		gets := h.remote.getCount()
+
+		// ...restarts with credentials and no mode, with and without a remote_config block.
+		noBlock := strings.Replace(remoteBaseConfig, "remote_config:\n  mode: %MODE%\n  trusted_sources: [\"ghcr.io/trusted/*\"]\n  overridable_config_flags: [%FLAGS%]\n", "", 1)
+		if strings.Contains(noBlock, "remote_config") {
+			t.Fatal("the fixture still has a remote_config block")
+		}
+		for _, tc := range []struct{ name, content string }{
+			{"no remote_config block", noBlock},
+			{"empty mode", remoteConfig("", "")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				if err := os.WriteFile(h.path, []byte(tc.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				h.rc = h.newReconciler()
+				active := mustStartup(t, h.rc)
+				h.poll(t)
+				if active.runtime.remote.Mode != agentconfig.ModeReport {
+					t.Fatalf("expected mode report, got %q", active.runtime.remote.Mode)
+				}
+				if active.overlay != nil {
+					t.Fatalf("report mode must not apply the cached overlay, got revision %d", active.overlay.Revision)
+				}
+				if h.remote.getCount() != gets {
+					t.Fatalf("report mode must never fetch, got %d new gets", h.remote.getCount()-gets)
+				}
+				r := h.remote.lastReport(t)
+				if r.Mode != agentconfig.ModeReport || r.Status != agentconfig.StatusNotApplicable || r.AppliedRevision != nil {
+					t.Fatalf("expected a not-applicable report in mode report, got %+v", r)
+				}
+			})
+		}
+	})
 	t.Run("off sends nothing", func(t *testing.T) {
 		h := newRemoteHarness(t, remoteConfig("off", ""))
 		active := mustStartup(t, h.rc)

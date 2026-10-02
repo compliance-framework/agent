@@ -97,8 +97,9 @@ Plugins never receive `CCF_API_AUTH_*` variables.
 
 ### Remote configuration and state
 
-With `api.auth` credentials the agent reports its configuration to the API and can apply a configuration overlay
-stored there (`remote_config`), including `${env:NAME}` placeholders in plugin config. Each instance keeps a stable ID and a cache in a state directory (`--state-dir` / `CCF_STATE_DIR`;
+With `api.auth` credentials the agent reports its configuration to the API. With `remote_config.mode` set to
+`apply_safe` or `apply_all` it also applies a configuration overlay stored there, including `${env:NAME}` placeholders
+in plugin config; the default mode, `report`, never fetches or applies one. Each instance keeps a stable ID and a cache in a state directory (`--state-dir` / `CCF_STATE_DIR`;
 `--instance-id` / `CCF_INSTANCE_ID`). See [configuration](./docs/configuration.md#remote-configuration) and
 [ADR 0003](./docs/adr/0003-remote-config-overlay.md).
 

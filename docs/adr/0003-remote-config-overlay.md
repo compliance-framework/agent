@@ -40,6 +40,12 @@ Startup tries the fetched overlay,
 then the cached applied overlay, then the file alone; only an unusable file exits (a download failure of the file
 alone still sends the startup-failure agent evidence first, as before).
 
+### Applying is opt-in
+
+With `api.auth` credentials and no `remote_config.mode`, the mode is `report` (R29, `agentconfig.RemoteConfig.Normalize`
+in the API): the agent reports its configuration but never fetches or applies an overlay. The host owner opts in to
+remote changes with `apply_safe` or `apply_all`. In `report` mode a cached applied overlay is not applied either.
+
 ### The agent is the Classify authority
 
 The API validates and previews, but the agent classifies every revision against its own base and its own

@@ -221,15 +221,15 @@ controls it. It is **set locally only** (file, host environment, CLI flags), nev
 
 ```yaml
 remote_config:
-  mode: apply_safe            # off | report | apply_safe | apply_all
+  mode: report                # off | report | apply_safe | apply_all
   poll_interval: 60s          # at least 15s
   trusted_sources: []         # glob list of plugin/policy sources an overlay may introduce
   overridable_config_flags: []  # glob list of plugins.*.config keys an overlay may change
   allow_local_sources: false
 ```
 
-Defaults (R29): `mode` is `apply_safe` when `api.auth` is set and `off` otherwise (no credentials always forces
-`off`); `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
+Defaults (R29): `mode` is `report` when `api.auth` is set and `off` otherwise (no credentials always forces
+`off`), so an agent applies an overlay only when `mode` is set to `apply_safe` or `apply_all`; `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
 `allow_local_sources` is `false`. `CCF_REMOTE_CONFIG_MODE` sets the mode even when the file has no
 `remote_config` block.
 
