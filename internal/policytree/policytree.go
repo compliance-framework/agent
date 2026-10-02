@@ -24,8 +24,8 @@ import (
 
 // ReadTree reads the regular files under dir, keyed by their slash-separated path relative
 // to dir. dir itself may be a symlink (for example /etc/ccf/policies -> a versioned
-// directory); symlinks inside the tree are skipped and
-// returned, as OPA's bundle loader skips them too. Other non-regular files are ignored.
+// directory); symlinks inside the tree are skipped and returned, as OPA's bundle loader
+// skips them too. Other non-regular files are ignored.
 func ReadTree(dir string) (files map[string][]byte, skipped []string, err error) {
 	files = map[string][]byte{}
 	root, err := filepath.EvalSymlinks(dir)

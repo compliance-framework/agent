@@ -41,8 +41,8 @@ var (
 	failedRetryMin = time.Minute
 	failedRetryMax = 10 * time.Minute
 	// prepareNetworkTimeout bounds each network step of prepare (plugin/policy prefetch, a
-	// report inventory), so a hung registry cannot stall the reconciler. A
-	// timeout is a failed/download-failed, which is retried with the failed backoff.
+	// report inventory), so a hung registry cannot stall the reconciler. A timeout is a
+	// failed/download-failed, which is retried with the failed backoff.
 	prepareNetworkTimeout = 5 * time.Minute
 )
 
