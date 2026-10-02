@@ -115,12 +115,10 @@ change here must keep working with them.
 - **The agent never computes artifact digests.** It passes each evaluation's policy
   directory, input and policy data through to the API, which canonicalises and hashes them.
 - **Evidence identity.** `policy-manager`'s `newEvidence` seed is every evidence stream's UUID, and plugins in the
-  field compute it. Never change it: path shadowing keeps vendor streams only because the seed is the path string.
-  The golden test in `policy-manager/evidence_seed_test.go` pins the UUIDs.
-- **Plugin library checks.** Inline policies work with every plugin build (path shadowing keeps vendor evidence
-  streams). Only one thing depends on the plugin's agent library (`internal/pluginlib`): an overlay-introduced
-  set-form `violation contains` is rejected below `MinViolationSet` (v0.7.1). Versions compare as semver, so
-  pre-releases of a minimum are older.
+  field compute it. Never change it. The golden test in `policy-manager/evidence_seed_test.go` pins the UUIDs.
+- **Plugin library version.** `internal/pluginlib` reads the agent library a plugin binary was built with from its
+  Go build info. The config report lists it per plugin (`plugins[].lib-version`) as diagnostics only; nothing is
+  gated on it.
 - **Storage failure doesn't drop evidence.** If artifact storage fails, the evidence is still
   sent, without digests.
 - **OCI policy bundles.** The agent evaluates the extracted `policies/` subdirectory, and that

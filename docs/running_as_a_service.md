@@ -100,8 +100,8 @@ EOF
 ```
 
 `WorkingDirectory` and `StateDirectory` give the agent a persistent place for its download caches and its
-per-instance state (`.compliance-framework/state/...`: the instance ID, the remote configuration cache and inline
-policy bundles). Without them the agent writes relative to `/`. The state directory must persist across restarts,
+per-instance state (`.compliance-framework/state/...`: the instance ID and the remote configuration cache). Without
+them the agent writes relative to `/`. The state directory must persist across restarts,
 otherwise every restart registers a new instance. See
 [State directory and instance ID](configuration.md#state-directory-and-instance-id).
 

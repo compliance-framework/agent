@@ -27,11 +27,9 @@ The API does all canonicalisation and hashing; see its `docs/artifacts.md`.
    digests, before the next message arrives. The raw data is never forwarded with the
    evidence, and the agent never holds the whole batch in memory.
 
-The agent only reads bundles at the policy paths it gave that plugin, resolved when the
-run starts (an inline bundle's stable path is a symlink the agent may point elsewhere
-later), so the bundle artifact is the tree the run evaluated. Symlinks inside a bundle are
-skipped, as OPA skips them. The agent remembers what it has already uploaded to each API,
-so unchanged content is not uploaded again on later runs. The same process-wide uploader
+The agent only reads bundles at the policy paths it gave that plugin. Symlinks inside a
+bundle are skipped, as OPA skips them. The agent remembers what it has already uploaded to
+each API, so unchanged content is not uploaded again on later runs. The same process-wide uploader
 serves the configuration report, which uploads the policy trees it names (see
 `configuration.md`, "Sources for the UI"); a tree uploaded there is not uploaded again for
 evidence, and both produce the same artifact digest.
@@ -80,8 +78,8 @@ Every evidence the agent sends also records where its plugin and policy bundle c
 | --- | --- |
 | `_plugin_source` | The plugin's configured `source`: an OCI reference such as `ghcr.io/compliance-framework/plugin-apt-versions:v0.4.0`, or a local path |
 | `_plugin_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it; for a local plugin binary, its SHA-256 |
-| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, so the bundle is known). For an inline bundle, its entry `inline:<name>` |
-| `_policy_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it. For an inline bundle, the artifact digest of the bundle the evaluation stored, or the bundle's tree digest (`tree:sha256:…`, as in the configuration report) when it could not be stored. Not set for a local directory; `_policy_bundle_digest` covers its content |
+| `_policy_source` | The configured source of the policy bundle the evaluation used (only when the evidence carries a `PolicyEvaluation`, or, from plugins built on an older agent library, a `_policy_path` label naming one of the plugin's policy paths, so the bundle is known) |
+| `_policy_digest` | For an OCI source, the registry digest the reference resolved to when the agent downloaded it. Not set for a local directory; `_policy_bundle_digest` covers its content |
 
 With `_plugin_source` and `_plugin_digest`, the image is pinned (`ref@digest`) even if the tag
 later moves.
@@ -92,12 +90,8 @@ before digests were recorded have no such record: their evidence carries the sou
 digest until they are downloaded again (a new version, a cleared cache, or a fresh agent
 volume).
 
-The agent looks the policy source up by the exact path it gave the plugin, which is the
-path the plugin reports the evaluation under. For an inline bundle that is the path plugins
-receive for it: the extends source's path when the bundle is shadowed (resolved through the
-plugin's view), else the bundle's stable path (`.compliance-framework/policies/_inline/<name>/policies`),
-so its evidence carries these props across revisions. A bundle an inline bundle `extends` is not on the evidence; the
-configuration report names it (`policy-bundles[].extends`).
+The agent looks the policy source up by the path it gave the plugin, which is the path the
+plugin reports the evaluation under.
 
 The agent owns these props: any a plugin sets itself are replaced. They are recorded whether
 or not the evaluation's artifacts could be stored.

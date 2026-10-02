@@ -178,7 +178,7 @@ must already be strings: a remote `port: 2222` (a number) is rejected with `inva
 
 Viper lowercases keys and splits them on dots. Plugin names and config keys in the file are therefore lowercase and
 cannot contain dots; a remote overlay that uses `GitHub` addresses a different plugin than the file's `github`. Plugin
-and policy bundle names must match `^[a-z0-9][a-z0-9_-]{0,62}$` (R28).
+names an overlay introduces must match `^[a-z0-9][a-z0-9_-]{0,62}$` (R28).
 
 ## `${env:NAME}` placeholders
 
@@ -214,162 +214,6 @@ warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and abo
 invalid value in the file (for example a missing `api.url`) still fails startup, and on a live reload the agent keeps
 running its last good configuration. Values set by a remote overlay are always validated strictly.
 
-## Policy bundles
-
-`policy_bundles` define policy paths inline, in the file or in a remote overlay. A plugin uses a bundle by listing
-`inline:<name>` in its `policies`:
-
-```yaml
-plugins:
-  ssh:
-    source: ghcr.io/compliance-framework/plugin-local-ssh:v1
-    policies:
-      - inline:ssh-hardening
-    policy_data:
-      max_auth_tries: 3
-
-policy_bundles:
-  ssh-hardening:
-    extends: ghcr.io/compliance-framework/plugin-local-ssh-policies:v1   # optional: OCI tag or local path
-    delete:
-      - legacy_ciphers.rego                                              # remove a vendor module (needs extends)
-    modules:                                                              # add or override modules
-      max_auth_tries.rego: |
-        package compliance_framework.max_auth_tries
-
-        import rego.v1
-
-        title := "SSH allows at most data.max_auth_tries authentication attempts"
-
-        violation contains {"id": "too-many", "remarks": "too many"} if input.max_auth_tries > data.max_auth_tries
-    data:                                                                 # merge-patched into data.json
-      allowed_ciphers: ["aes256-gcm@openssh.com"]
-```
-
-- **Order (R17).** The `extends` tree is copied, then `delete` removes vendor files, then `modules` add or override
-  files, then `data` is merged (RFC 7396) onto the root `data.json` (a root `data.yaml` is converted) and written as
-  `data.json`.
-- **Paths (R18)** are relative to the policy root the plugin receives, e.g. `max_auth_tries.rego`, not
-  `policies/max_auth_tries.rego`. `..`, absolute paths and empty segments are rejected. Symlinks inside a local
-  `extends` tree are skipped.
-- **Data files (R18).** OPA only loads `data.json`, `data.yaml` and `data.yml`. Any other `.json`/`.yaml`/`.yml`
-  module is an error (a warning when it comes from the vendor tree). Setting both `data` and a root `data.json`
-  module is an error.
-- **Remote overlays.** An overlay `modules."<path>": null` removes the effective module: an inherited vendor module shows
-  through again, and a module only the file defined is dropped. Omitting the key keeps the file's value.
-- **One compile unit per policy path (R21).** Plugins load each policy path as a separate bundle, so a bundle cannot
-  import packages from another policy path; cross-bundle imports are unsupported. Put shared helpers in the bundle (or
-  its `extends` tree).
-- **Checks.** Before a bundle is used the agent compiles it exactly as the plugin will, rejects any use of
-  `http.send`, `net.lookup_ip_addr` or `opa.runtime` reachable from the bundle's own rules (including through vendor
-  helpers and `with ... as http.send`), and runs its Rego tests with the plugin's `policy_data`. A failing test that the
-  bundle authored rejects the configuration; a failing vendor test is only a warning. Tests never run when a forbidden
-  builtin is reachable, and they run sandboxed: a test that calls one of those builtins fails instead of executing it.
-- **Policy contract (R63).** A `compliance_framework.*` package must produce what the agent needs to record evidence:
-  a string `title`, `violation` as a set of objects with string `id`/`title`/`description`/`remarks`, `labels` as a
-  map of strings, and valid `risk_templates`. The API checks the authored modules statically when an overlay is saved.
-  The agent, which sees the whole tree, also checks the vendor packages statically and then dry-runs every package
-  on an empty input (`{}` plus the plugin's `policy_data`), sandboxed, through the same calls a plugin makes. A
-  problem in a package that has an authored non-test module (including an override) is an **error**; in a package
-  only the vendor defines (an authored test alone does not count) it is a **warning**, as is an evaluation conflict that only shows on `{}` or a `title` that depends on
-  the input. So an override that leaves a package without a `title` is rejected: that package would record no
-  evidence.
-- **Vendor tests that no longer compile (R65)** reject the revision: plugins compile `_test.rego` files too, so such a
-  bundle would produce no evidence at all. When the failing file is a vendor file in a package an authored module
-  also defines, the error carries a hint: keep the rule the override removed, or add the test to `delete`.
-- **Duplicate evidence (R66, R75).** A plugin evaluates each of its policy paths separately, so a policy it loads
-  twice is recorded twice. Across all of a plugin's policy paths the agent reports:
-  - `duplicate-policy-identity`: two paths load the same evidence identity, the same package and bundle-relative
-    file (typically a source listed next to an inline bundle that `extends` it);
-  - `duplicate-policy-package` (warning): the same package from two paths otherwise.
-
-  The first is an **error** when the overlay introduces it (it gives the plugin one of the policy entries involved,
-  or changes one of the bundles involved) and a warning when it comes from the file (R34), even under an overlay that
-  changes something else. Replace the source with the inline bundle
-  instead of listing both.
-- **Path shadowing (R83): inline bundles keep the vendor's evidence streams.** Plugins seed evidence UUIDs from the
-  policy path *string* they receive, so a plugin that keeps receiving the vendor's path keeps the vendor's streams,
-  whatever agent library it was built with. When a bundle `extends` a source whose plugin path is relative and ends
-  in `policies/` (every OCI source, e.g.
-  `.compliance-framework/policies/compliance-framework/plugin-local-ssh-policies/v0.2.0/policies`), plugins receive the
-  bundle **at that exact path**, and each plugin that uses such a bundle runs in its own **view**,
-  `<state>/views/<plugin>/<hash>/`, as its working directory (the plugin binary is started by absolute path). In
-  the view, the path's parent is a symlink to the bundle's content-addressed directory (whose `policies/` is real:
-  OPA loads nothing from a symlinked root), and every other entry of the agent's working directory is mirrored as a
-  symlink, so every other relative path resolves as it does for the agent. Inherited modules, and overrides that
-  keep the vendor module's `package`, continue the vendor streams through the path alone; new modules start their
-  own path-based streams, deleted ones stop. `_policy_source` says `inline:<bundle>` (also for plugins that send no
-  policy evaluations, from their `_policy_path` label) and evaluation-time artifacts are read through the view, i.e.
-  from the bundle's tree. Views are content-addressed (a new revision is a new view, nothing is swapped under a
-  running plugin) and garbage-collected with the inline trees.
-- **Bundles that are not shadowed (R88)** are given to plugins at their own path under `_inline` (below), so their
-  modules start path-based streams. That happens when the `extends` path is absolute (or not a `policies/` tree),
-  when a plugin using the bundle also loads the source itself (reported as `duplicate-policy-identity` as before) or
-  another bundle extending the same source, when another relative policy path of the plugin cannot be represented in
-  a view (e.g. a single-component path such as `policies`), or without symlinks or a writable state directory. Each
-  plugin that uses such a bundle gets a `policy-stream-forked` warning for the bundle that gives the reason and lists
-  the modules that would have kept the vendor's streams at the source's path.
-- **Overrides and evidence streams (R75).** An override keeps the evidence stream of the vendor module it replaces
-  unless it changes the module's `package`, which is a `policy-package-changed` warning.
-- **Plugin views (rule 1).** A plugin running in a view sees its working directory as the view: files it creates
-  there (rather than through a mirrored directory) stay in the view and are removed with it.
-  **Plugin contract:** plugins must not rely on creating new files or directories relative to their working
-  directory; use absolute paths or `os.TempDir()`. Such entries are the plugin's: if the agent's working directory
-  later gets an entry with the same name, the plugin keeps its own (and does not see the agent's); the agent logs one
-  warning per view and name, and never fails the plugin's run or the configuration's activation over it. The one
-  exception is the shadowed path's link itself (the parent of the vendor path), which is the agent's: a real entry
-  there means the plugin replaced the link, so **that plugin's runs fail** with an error naming it, until the entry
-  is removed (deleting the view directory rebuilds it). Activation only logs it, so the configuration and the other
-  plugins keep running, and a restart does not fail on it either. The agent never removes the entry.
-- **Local `extends`** may be a symlinked directory (it is resolved before reading); an `extends` tree without any
-  `.rego` file fails with `download-failed`.
-- **Where bundles live (R67).** Inline bundles are never downloaded. Each revision of a bundle is a write-once
-  directory under the state directory named by its tree digest, `<state>/inline/<bundle>/<digest>/policies/`. A
-  bundle that is not shadowed always reaches plugins at the same relative path,
-  `.compliance-framework/policies/_inline/<bundle>/policies` (relative to the agent's working directory, like an OCI
-  source's path; the leading `_` keeps it apart from the OCI cache, whose repository paths start with `[a-z0-9]`):
-  `.compliance-framework/policies/_inline/<bundle>` is a symlink the agent swaps atomically to the running revision's
-  directory, between two configuration runs (never while a plugin of the previous configuration runs). Evidence UUIDs
-  are seeded with the policy file path, so an unchanged module keeps its evidence identity across edits of the
-  bundle, and does not depend on the state directory. Two agents that share a working directory and use the same
-  bundle name would swap the same link: run one agent per working directory. On a file system without symlinks
-  (Windows without the privilege), plugins receive the digest directory itself and evidence identity changes with
-  each revision. Directories no running, pending or fallback configuration uses are garbage-collected, never the one
-  the link points to.
-- **Sources for the UI (R62).** Outside mode `off`, the agent uploads every policy tree it reports (each inline
-  bundle, the tree it extends, and each OCI or local source a plugin uses) as a policy bundle artifact, and reports
-  its `artifact-digest` next to the tree digest, so the UI can show and pre-fill vendor sources. These are the same
-  artifacts evidence references for playback: one uploader serves both, and a tree is uploaded once. Uploads are
-  best effort: a failure (an API without artifacts, a tree over the API's size limit, a timeout) leaves
-  `artifact-digest` empty and never rejects or fails a revision. Note that artifacts are readable with
-  `artifact:read`.
-
-### Evidence streams
-
-Plugins seed each evidence UUID with the policy's package, its file (the plugin path joined with the module's path in
-the bundle) and their labels, including `_policy_path` (the plugin path). So moving a policy (a new OCI tag, a renamed
-bundle, a bundle that is not shadowed) starts a new evidence stream; a shadowed bundle keeps the vendor's.
-
-| Change | Evidence stream |
-|---|---|
-| override a policy in a shadowed bundle, keeping its `package` | the same stream |
-| `delete` the policy | the stream stops receiving evidence |
-| revert the override | the same stream |
-| a new policy | a new stream |
-| change the overridden module's `package` | a new stream (`policy-package-changed`) |
-
-### Plugin compatibility (R76, R88)
-
-The agent reads each plugin's agent library version from the binary's Go build info, without starting it, and
-reports it as `plugins[]` (`name`, `source`, `lib-version`). Inline bundles work with every plugin build; one
-construct depends on the library:
-
-- **Set-form violations** (`violation contains {...}`) crash plugins built on agent < v0.7.1, which expect
-  `violation[{...}] if { ... }`: an overlay-introduced authored module that uses them for such a plugin is rejected
-  with `plugin-lib-violation-set-unsupported`, with that fix. The running configuration keeps running.
-- **Unknown versions and file-defined bundles only warn** (R34): a `replace`d or `(devel)` build, a pseudo-version
-  with no tag before it, or a binary without build info.
-
 ## Remote configuration
 
 An agent with `api.auth` credentials can pick up a configuration overlay stored in the API. The `remote_config` block
@@ -381,13 +225,12 @@ remote_config:
   poll_interval: 60s          # at least 15s
   trusted_sources: []         # glob list of plugin/policy sources an overlay may introduce
   overridable_config_flags: []  # glob list of plugins.*.config keys an overlay may change
-  allow_inline_policies: true
   allow_local_sources: false
 ```
 
 Defaults (R29): `mode` is `apply_safe` when `api.auth` is set and `off` otherwise (no credentials always forces
-`off`); `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty; `allow_inline_policies`
-is `true`; `allow_local_sources` is `false`. `CCF_REMOTE_CONFIG_MODE` sets the mode even when the file has no
+`off`); `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
+`allow_local_sources` is `false`. `CCF_REMOTE_CONFIG_MODE` sets the mode even when the file has no
 `remote_config` block.
 
 | Mode | Behaviour |
@@ -404,34 +247,51 @@ A change is classified as follows (the agent is the authority; the API preview u
 | `api`, `daemon` or `remote_config` in the overlay | **forbidden** (the whole revision is rejected in every mode) |
 | `verbosity`, `agent_evidence.*` | safe |
 | a plugin's `schedule`, `labels`, `policy_behavior`, `protocol_version`, `enabled`, `policy_data` | safe |
-| removing a plugin, a policy entry or a bundle | safe |
-| a plugin source or policy entry already used by the file (or by a bundle's `extends`) | safe |
+| removing a plugin or a policy entry | safe |
+| a plugin source or policy entry already used by the file | safe |
 | a new source matching `trusted_sources` | safe |
 | a new OCI source not in `trusted_sources` | unsafe |
 | a new local path | forbidden, unless `apply_all` with `allow_local_sources: true` (then unsafe) |
-| an inline bundle change or `inline:` policy entry | safe while `allow_inline_policies` is true, else unsafe |
 | a `plugins.<p>.config.<k>` change matching `overridable_config_flags` (`key`, `plugin:key` or `*`) | safe |
 | any other plugin config change | unsafe |
 | a new `${env:NAME}` reference | unsafe (`CCF_API_AUTH_*`: forbidden) |
 
 A rejected or failed revision never interrupts the running configuration: the agent prepares the whole new
-configuration (validation, downloads, policy checks) first and swaps only when it is ready. Every outcome is reported
-to the API with a reason (`unsafe-changes`, `forbidden-changes`, `invalid-config`, `invalid-type`, `unknown-field`,
-`policy-errors`, `env-missing`, `download-failed`, `cache-corrupt`, `internal`). When a new configuration is applied,
+configuration (validation, downloads) first and swaps only when it is ready. Every outcome is reported to the API with
+a reason (`unsafe-changes`, `forbidden-changes`, `invalid-config`, `invalid-type`, `unknown-field`, `env-missing`,
+`download-failed`, `cache-corrupt`, `internal`). When a new configuration is applied,
 in-flight plugin runs get up to 5 minutes to finish (R33). Evidence produced under an overlay carries the prop
 `agent-config-revision` (namespace `https://compliance-framework.github.io/ns`).
 
 The agent caches the last fetched and applied overlay in `<state>/remote-config.json` (mode 0600, bound to `api.url`
 and `api.auth.client_id`), so it keeps running the last good overlay when the API is unreachable. At startup it tries,
 in order: the freshly fetched overlay, the cached applied overlay, the file alone. Only an unusable file stops the agent.
-A fetched overlay already rejected for the same file is skipped, and its rejection (with the unsafe changes and policy
-errors) is reported again, so the instance still shows as rejected after a restart.
+A fetched overlay already rejected for the same file is skipped, and its rejection (with the unsafe changes) is reported
+again, so the instance still shows as rejected after a restart.
+
+### Sources for the UI (R62)
+
+Outside mode `off`, the configuration report inventories every policy source the instance's plugins load (each OCI or
+local source) as `policy-bundles[]`: the source, its tree digest and its files (path, SHA-256 and, for a Rego module,
+its package). The agent also uploads each tree as a policy bundle artifact and reports its `artifact-digest` next to the
+tree digest, so the UI can show the sources. These are the same artifacts evidence references for playback: one
+uploader serves both, and a tree is uploaded once. Uploads are best effort: a failure (an API without artifacts, a tree
+over the API's size limit, a timeout) leaves `artifact-digest` empty and never rejects or fails a revision. Note that
+artifacts are readable with `artifact:read`. When the report is too large, the file lists are dropped first, then the
+`base` document; the digests are kept.
+
+### Plugin library versions (R76)
+
+The report also lists the instance's plugins as `plugins[]` (`name`, `source`, `lib-version`), where `lib-version` is
+the version of this agent library the plugin binary was built with, read from its Go build info without starting it.
+It is empty when unknown (a `replace`d or `(devel)` build, or a binary without build info). It is diagnostic only:
+nothing is gated on it.
 
 ## State directory and instance ID
 
 Each agent instance keeps state in `.compliance-framework/state/<key>/`, relative to the working directory, where
-`<key>` is derived from the absolute path of the config file (R31): the instance ID (`instance-id`), the remote
-configuration cache and materialized inline bundles. The OCI download caches in `.compliance-framework/plugins` and
+`<key>` is derived from the absolute path of the config file (R31): the instance ID (`instance-id`) and the remote
+configuration cache. The OCI download caches in `.compliance-framework/plugins` and
 `.compliance-framework/policies` are shared.
 
 | Setting | Flag | Environment |
