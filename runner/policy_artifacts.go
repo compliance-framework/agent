@@ -89,7 +89,7 @@ func (u *artifactUploader) storeEvaluation(ctx context.Context, evaluation *prot
 		return nil, errors.New("the evaluation has no input data")
 	}
 
-	bundle, err := tarDirectory(policyPath)
+	bundle, err := packageBundle(policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("package policy bundle: %w", err)
 	}
@@ -168,6 +168,20 @@ func retryable(ctx context.Context, err error) bool {
 		return statusErr.StatusCode >= 500 || statusErr.StatusCode == http.StatusTooManyRequests
 	}
 	return true
+}
+
+// packageBundle returns the policy bundle at policyPath for upload. A bundle archive, such as
+// opa build's bundle.tar.gz used as a local policy, is sent as-is, since the API accepts a tar
+// or gzipped tar; a directory, such as an extracted OCI policy, is archived.
+func packageBundle(policyPath string) ([]byte, error) {
+	info, err := os.Stat(policyPath)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode().IsRegular() {
+		return os.ReadFile(policyPath)
+	}
+	return tarDirectory(policyPath)
 }
 
 // tarDirectory archives the regular files under dir. The API canonicalises the archive,

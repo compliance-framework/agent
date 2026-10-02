@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -87,6 +89,25 @@ func writeBundle(t *testing.T, name string) string {
 	return dir
 }
 
+// writeBundleArchive writes a policy bundle as a gzipped tar, with the leading slashes opa
+// build gives its entries.
+func writeBundleArchive(t *testing.T, name string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	module := []byte("package compliance_framework." + name + "\n\ntitle := \"" + name + "\"\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "/policies/" + name + ".rego", Mode: 0o600, Size: int64(len(module))}))
+	_, err := tw.Write(module)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	require.NoError(t, zw.Close())
+
+	archive := filepath.Join(t.TempDir(), "bundle.tar.gz")
+	require.NoError(t, os.WriteFile(archive, buf.Bytes(), 0o644))
+	return archive
+}
+
 func evidenceFor(title string, evaluation *proto.PolicyEvaluation) *proto.Evidence {
 	return &proto.Evidence{UUID: "11111111-1111-1111-1111-111111111111", Title: title, PolicyEvaluation: evaluation}
 }
@@ -131,6 +152,25 @@ func TestCreateEvidenceUploadsOncePerEvaluation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, api.uploads, 3)
+}
+
+func TestCreateEvidenceUploadsABundleArchiveAsIs(t *testing.T) {
+	archive := writeBundleArchive(t, "a")
+	api := &fakeAPI{}
+	helper := newTestHelper(t, api, archive)
+
+	err := helper.CreateEvidence(context.Background(), []*proto.Evidence{
+		evidenceFor("one", &proto.PolicyEvaluation{PolicyPath: archive, Input: []byte(`{}`)}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, api.evidence, 1)
+	refs, ok := api.evidence[0]["policy-artifacts"].(map[string]any)
+	require.True(t, ok, "evidence must carry policy-artifacts: %v", api.evidence[0])
+	content, err := os.ReadFile(archive)
+	require.NoError(t, err)
+	sum := sha256.Sum256(content)
+	assert.Equal(t, "sha256:"+hex.EncodeToString(sum[:]), refs["bundle-digest"], "the archive must be uploaded unchanged, not wrapped in another tar")
 }
 
 func TestCreateEvidenceWithoutEvaluationIsUnchanged(t *testing.T) {
