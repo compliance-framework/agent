@@ -199,3 +199,5 @@ Because the default key depends on the config file's path, **moving or renaming 
 instance** (R52). The agent logs the state directory, where it came from and the instance ID at startup. Containers and
 Helm deployments should pin `CCF_STATE_DIR` to a mounted volume; ephemeral one-shot runs (CI, Kubernetes jobs) can
 set `CCF_INSTANCE_ID` so repeated runs report as one instance.
+
+Plugins receive the agent's environment except `CCF_API_AUTH_*` (R26).
