@@ -158,3 +158,28 @@ The `log_level` is one of the following, defaulting to `0` if not specified:
 - 0: Shows all ERROR, WARN and INFO
 - 1: Shows all of 0 plus DEBUG logs
 - 2: Shows all of 1 plus TRACE logs
+
+## Plugin `enabled`
+
+```yaml
+plugins:
+  <plugin_identifier>:
+    enabled: false   # default true
+```
+
+A disabled plugin gets no schedule, no download and no run state, but it stays in the configuration the agent reports.
+
+## Typing of plugin values
+
+Values in the config file keep viper's weak typing exactly as before: `collect_ip_allow_list: false` reaches the plugin
+as `"0"`, `account_id: 123456789012` as `"123456789012"`, and `port: 22` as `"22"`.
+
+Viper lowercases keys and splits them on dots. Plugin names and config keys in the file are therefore lowercase and
+cannot contain dots.
+
+## Tolerated file problems
+
+A plugin `schedule` in the file that does not parse does not stop the agent: that plugin is skipped, the others run,
+and the problem is logged as a warning (R34). A few other file values that always loaded are also only
+warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
+`plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup.

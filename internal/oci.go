@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/gooci/pkg/oci"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -18,10 +19,11 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
+// IsOCI reports whether source parses as an OCI tag with strict validation, which is what our
+// downloader supports. It delegates to the shared agentconfig rule so the agent and the API
+// classify sources identically (R3).
 func IsOCI(source string) bool {
-	// Check whether this can be parsed as an OCI tag, which is what our downloader supports.
-	_, err := name.NewTag(source, name.StrictValidation)
-	return err == nil
+	return agentconfig.IsOCISource(source)
 }
 
 func GetAnnotations(ctx context.Context, source string, option ...remote.Option) (map[string]string, error) {
