@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,7 +33,9 @@ import (
 
 	"github.com/compliance-framework/agent/internal"
 	"github.com/compliance-framework/agent/internal/agentstate"
+	"github.com/compliance-framework/agent/internal/pluginlib"
 	"github.com/compliance-framework/agent/runner"
+	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/compliance-framework/api/sdk"
 	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
@@ -81,13 +84,48 @@ type agentEvidenceConfig struct {
 }
 
 // agentConfig is the RUNTIME form of the configuration, built from the declared form
-// (agentconfig.Config) by toRuntime.
+// (agentconfig.Config) by toRuntime. It is immutable once handed to AgentRunner.UpdateConfig,
+// except for the protocol resolution AgentRunner.Run performs on its own copy and the sync
+// metadata, which the reconciler may update atomically when a new revision leaves the
+// effective configuration unchanged.
 type agentConfig struct {
 	Daemon        bool                    `mapstructure:"daemon"`
 	Verbosity     int32                   `mapstructure:"verbosity"`
 	ApiConfig     *apiConfig              `mapstructure:"api"`
 	Plugins       map[string]*agentPlugin `mapstructure:"plugins"`
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
+
+	// sync is what the heartbeat reports about the applied remote configuration (R11, R45).
+	// Read it with syncInfo; nil means the zero syncMeta.
+	sync *atomic.Pointer[syncMeta]
+	// remote is the normalized remote_config block.
+	remote agentconfig.RemoteConfig
+}
+
+// syncMeta describes the applied remote configuration.
+type syncMeta struct {
+	AppliedRevision int64  // 0 when running the file only
+	Digest          string // agentconfig.Digest of the effective declared config
+	Mode            string // remote_config.mode
+}
+
+// syncInfo returns the sync metadata (safe for concurrent use with setSync).
+func (ac *agentConfig) syncInfo() syncMeta {
+	if ac == nil || ac.sync == nil {
+		return syncMeta{}
+	}
+	if p := ac.sync.Load(); p != nil {
+		return *p
+	}
+	return syncMeta{}
+}
+
+// setSync stores the sync metadata. The first call must happen before the config is shared.
+func (ac *agentConfig) setSync(m syncMeta) {
+	if ac.sync == nil {
+		ac.sync = &atomic.Pointer[syncMeta]{}
+	}
+	ac.sync.Store(&m)
 }
 
 // logVerbosity maps our verbosity "increase" onto hclog's levels: our 0/1/2 = Info/Debug/Trace,
@@ -318,6 +356,15 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 
 	ar := NewAgentRunner(WithInstanceID(id))
 	rc := newReconciler(cmd, configPath, store, ar, logger)
+	rc.instanceID = id
+	pluginLibs := &pluginlib.Cache{}
+	rc.pluginLib = func(ctx context.Context, source string) (string, error) {
+		binary, err := ar.downloadPlugin(ctx, source, logger)
+		if err != nil {
+			return "", err
+		}
+		return pluginLibs.Version(binary)
+	}
 	rc.onStartupFailure = ar.ReportStartupFailure
 
 	active, err := rc.startup(context.Background())
@@ -1579,16 +1626,26 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	)
 	heartbeatCtx, cancel := context.WithTimeout(ctx, time.Second*30)
 	defer cancel()
-	err := client.Heartbeat.Create(heartbeatCtx, sdktypes.Heartbeat{
-		UUID:      staticAgentUUID,
-		CreatedAt: time.Now().UTC(),
-	})
+	err := client.Heartbeat.Create(heartbeatCtx, buildHeartbeat(config, staticAgentUUID, time.Now().UTC()))
 	if err != nil {
 		logger.Error("Error sending heartbeat via SDK", "error", err, "uuid", staticAgentUUID.String())
 		return err
 	}
 	logger.Info("Successfully sent heartbeat to server", "uuid", staticAgentUUID.String())
 	return nil
+}
+
+// buildHeartbeat builds the heartbeat body. When remote configuration is not off it carries
+// the applied revision (0 when running the file only, never null) and the effective digest,
+// which lets the API create the instance row (R11, R45).
+func buildHeartbeat(config *agentConfig, id uuid.UUID, now time.Time) sdktypes.Heartbeat {
+	hb := sdktypes.Heartbeat{UUID: id, CreatedAt: now}
+	if meta := config.syncInfo(); meta.Mode != "" && meta.Mode != agentconfig.ModeOff {
+		rev := meta.AppliedRevision
+		hb.ConfigRevision = &rev
+		hb.ConfigDigest = meta.Digest
+	}
+	return hb
 }
 
 type agentEvidenceCreateRequest struct {

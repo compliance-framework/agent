@@ -7,7 +7,12 @@ import (
 	"os"
 )
 
+// version is set by goreleaser's default ldflags (-X main.version=...).
+var version = "dev"
+
 func main() {
+	cmd.SetAgentVersion(version)
+
 	var rootCmd = &cobra.Command{
 		Use:   "cf",
 		Short: "cf manages policies for the compliance framework",

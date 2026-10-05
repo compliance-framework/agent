@@ -24,12 +24,24 @@ import (
 type baseSnapshot struct {
 	declared agentconfig.Config // file ⊕ CLI flags ⊕ bound env
 	raw      []byte             // exact bytes read (one read per load)
+	// envSourced are the JSON pointers of plugin leaves whose value came from a CCF_* env
+	// variable (R25). They are masked in reports and in the digest.
+	envSourced []string
 	// warnings are tolerated file-origin problems (R34): reported, never fatal.
 	warnings []agentconfig.FieldError
 	// skip holds the plugins dropped from the runtime because of a tolerated problem.
 	skip map[string]string
 	// fingerprint identifies the base for the failed backoff.
 	fingerprint string
+}
+
+// redactOpts is the single source of the masking options used for the reported base and
+// effective documents AND for the effective digest (R55).
+func (b *baseSnapshot) redactOpts() []agentconfig.RedactOption {
+	if b == nil || len(b.envSourced) == 0 {
+		return nil
+	}
+	return []agentconfig.RedactOption{agentconfig.WithMaskedPointers(b.envSourced...)}
 }
 
 // toleratedFileRules are the validation rules whose failure is non-fatal when the value comes
@@ -83,6 +95,9 @@ func bindAgentEnv(config *viper.Viper) error {
 	for key, envVar := range map[string]string{
 		"api.auth.client_id":     "CCF_API_AUTH_CLIENT_ID",
 		"api.auth.client_secret": "CCF_API_AUTH_CLIENT_SECRET",
+		// remote_config is set locally only (file, host env, CLI) (R30). Binding the mode lets
+		// Helm set it even when the file omits the block (G2.1).
+		"remote_config.mode": "CCF_REMOTE_CONFIG_MODE",
 	} {
 		if err := config.BindEnv(key, envVar); err != nil {
 			return err
@@ -177,6 +192,24 @@ func checkExplicitZeroProtocol(v *viper.Viper, declared agentconfig.Config) erro
 	return fmt.Errorf("plugin %s has unsupported protocol_version=0; supported values are %d and %d", names[0], DefaultProtocolVersion, RunnerV2ProtocolVersion)
 }
 
+// envSourcedPointers returns the JSON pointers of plugin leaves whose value viper took from a
+// CCF_* environment variable (R25). AutomaticEnv only overrides keys viper already knows (the
+// file's keys), so checking the file's keys is exhaustive.
+func envSourcedPointers(v *viper.Viper) []string {
+	var out []string
+	for _, key := range v.AllKeys() {
+		if !strings.HasPrefix(key, "plugins.") {
+			continue
+		}
+		envName := "CCF_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+		if _, ok := os.LookupEnv(envName); ok {
+			out = append(out, agentconfig.Pointer(strings.Split(key, ".")...))
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // loadBase reads and validates the local configuration. It builds a fresh viper per call
 // (R32). A returned error means the file is unusable (fatal at startup; keep last-known-good
 // on reload). Tolerated file problems (R34) are returned as warnings and skipped plugins.
@@ -203,8 +236,9 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapsho
 	}
 
 	base := &baseSnapshot{
-		declared: declared,
-		raw:      raw,
+		declared:   declared,
+		raw:        raw,
+		envSourced: envSourcedPointers(v),
 	}
 	part := partitionByOrigin(declared.Validate())
 	if len(part.fatal) > 0 {
@@ -212,7 +246,7 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapsho
 	}
 	base.warnings = part.warnings
 	base.skip = part.skip
-	base.fingerprint = agentconfig.Digest(declared)
+	base.fingerprint = agentconfig.Digest(declared, base.redactOpts()...)
 	return base, nil
 }
 
@@ -263,6 +297,7 @@ func toRuntime(c agentconfig.Config, skip map[string]string) (*agentConfig, erro
 		Daemon:    c.Daemon,
 		Verbosity: c.Verbosity,
 		Plugins:   map[string]*agentPlugin{},
+		remote:    c.EffectiveRemoteConfig(),
 	}
 	if c.API != nil {
 		out.ApiConfig = &apiConfig{Url: c.API.URL}
