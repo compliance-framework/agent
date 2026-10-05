@@ -17,6 +17,8 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 	artifacts   *artifactUploader
+	// evidenceProps are appended to every evidence the plugin creates.
+	evidenceProps []types.Property
 
 	// pluginSource and policySources are where the plugin and its policy bundles came from,
 	// recorded on evidence as _plugin_source / _plugin_digest and _policy_source /
@@ -42,6 +44,10 @@ const (
 	PropPolicySource = "_policy_source"
 	PropPolicyDigest = "_policy_digest"
 )
+
+// LabelPolicyPath is the evidence label in which plugins record the policy path they were
+// given (policy-manager's _policy_path).
+const LabelPolicyPath = "_policy_path"
 
 func isSourceProp(name string) bool {
 	switch name {
@@ -71,6 +77,15 @@ func WithPolicyPaths(paths []string) ApiHelperOption {
 		for _, path := range paths {
 			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
 		}
+	}
+}
+
+// WithEvidenceProps appends props to every evidence the plugin sends, unless the evidence
+// already carries a prop with the same (ns, name). The agent uses it to stamp the applied
+// remote configuration revision (R38).
+func WithEvidenceProps(props ...types.Property) ApiHelperOption {
+	return func(h *apiHelper) {
+		h.evidenceProps = append(h.evidenceProps, props...)
 	}
 }
 
@@ -129,16 +144,14 @@ type apiEvidenceSender struct {
 }
 
 func (s *apiEvidenceSender) Send(e *proto.Evidence) {
-	var refs *types.PolicyArtifacts
-	policyPath := ""
+	var outcome evaluationOutcome
 	if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
-		outcome := s.outcome(evaluation)
-		refs, policyPath = outcome.refs, outcome.policyPath
-		if refs == nil {
+		outcome = s.outcome(evaluation)
+		if outcome.refs == nil {
 			s.notReplayable++
 		}
 	}
-	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs, policyPath)); err != nil {
+	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, outcome)); err != nil {
 		s.sendErr = errors.Join(s.sendErr, err)
 	}
 }
@@ -181,10 +194,11 @@ func (s *apiEvidenceSender) Close() error {
 }
 
 // toSdk converts evidence for the API, merging agent, config and finding labels, and
-// referring to its stored artifacts. The evaluation's raw data is not included.
-func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policyPath string) types.Evidence {
+// referring to its evaluation's stored artifacts (outcome is the zero value for evidence
+// without an evaluation). The evaluation's raw data is not included.
+func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Evidence {
 	evid := EvidenceProtoToSdk(e)
-	evid.PolicyArtifacts = refs
+	evid.PolicyArtifacts = outcome.refs
 	// The agent owns the source props; any a plugin set are replaced.
 	props := evid.Props[:0]
 	for _, prop := range evid.Props {
@@ -193,8 +207,17 @@ func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policy
 		}
 	}
 	evid.Props = appendSource(props, h.pluginSource, PropPluginSource, PropPluginDigest)
-	if policyPath != "" {
-		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(policyPath)], PropPolicySource, PropPolicyDigest)
+	if outcome.policyPath == "" {
+		// Plugins built on an agent library without policy evaluations still label their
+		// evidence with the policy path they were given.
+		if p := evid.Labels[LabelPolicyPath]; p != "" {
+			if _, known := h.policySources[filepath.Clean(p)]; known {
+				outcome.policyPath = p
+			}
+		}
+	}
+	if outcome.policyPath != "" {
+		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(outcome.policyPath)], PropPolicySource, PropPolicyDigest)
 	}
 	labels := make(map[string]string)
 	for k, v := range h.agentLabels {
@@ -204,7 +227,25 @@ func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policy
 		labels[k] = v
 	}
 	evid.Labels = labels
+	evid.Props = mergeProps(evid.Props, h.evidenceProps)
 	return *evid
+}
+
+// mergeProps appends each extra prop unless one with the same (ns, name) already exists.
+func mergeProps(props []types.Property, extra []types.Property) []types.Property {
+	for _, p := range extra {
+		exists := false
+		for _, q := range props {
+			if q.Ns == p.Ns && q.Name == p.Name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			props = append(props, p)
+		}
+	}
+	return props
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
