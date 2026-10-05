@@ -114,6 +114,8 @@ change here must keep working with them.
   and `_policy_data_digest`.
 - **The agent never computes artifact digests.** It passes each evaluation's policy
   directory, input and policy data through to the API, which canonicalises and hashes them.
+- **Evidence identity.** `policy-manager`'s `newEvidence` seed is every evidence stream's UUID, and plugins in the
+  field compute it. Never change it. The golden test in `policy-manager/evidence_seed_test.go` pins the UUIDs.
 - **Storage failure doesn't drop evidence.** If artifact storage fails, the evidence is still
   sent, without digests.
 - **OCI policy bundles.** The agent evaluates the extracted `policies/` subdirectory, and that
