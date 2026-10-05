@@ -28,6 +28,8 @@ type baseSnapshot struct {
 	warnings []agentconfig.FieldError
 	// skip holds the plugins dropped from the runtime because of a tolerated problem.
 	skip map[string]string
+	// fingerprint identifies the base for the failed backoff.
+	fingerprint string
 }
 
 // toleratedFileRules are the validation rules whose failure is non-fatal when the value comes
@@ -210,6 +212,7 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapsho
 	}
 	base.warnings = part.warnings
 	base.skip = part.skip
+	base.fingerprint = agentconfig.Digest(declared)
 	return base, nil
 }
 
