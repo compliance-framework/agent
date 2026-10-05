@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -181,6 +182,8 @@ type reconciler struct {
 
 	// newRemote builds the remote client from a base (a test seam).
 	newRemote func(agentconfig.Config) remoteAPI
+	// lookupEnv resolves ${env:NAME} placeholders (a test seam).
+	lookupEnv func(string) (string, bool)
 	// pluginLib reads the agent library version of a prefetched plugin source (R76);
 	// nil leaves the plugins report empty.
 	pluginLib pluginLibFunc
@@ -225,6 +228,7 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		fileEvents: make(chan struct{}, 1),
 		runFailed:  make(chan *candidate, 1),
 		debounce:   500 * time.Millisecond,
+		lookupEnv:  os.LookupEnv,
 		now:        time.Now,
 		loggedOnce: map[string]bool{},
 		newRemote:  newSDKRemote,
@@ -560,7 +564,22 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		return nil, rejected(agentconfig.ReasonInvalidConfig, errs)
 	}
 
-	runtime, err := toRuntime(declared, part.skip)
+	resolved, envWarnings, err := resolveEnv(declared, base.declared, rc.lookupEnv)
+	switch {
+	case errors.Is(err, agentconfig.ErrEnvForbidden):
+		return nil, rejected(agentconfig.ReasonForbiddenChanges, err)
+	case errors.Is(err, agentconfig.ErrEnvMissing):
+		return nil, failed(agentconfig.ReasonEnvMissing, err)
+	case err != nil:
+		return nil, failed(agentconfig.ReasonInternal, err)
+	}
+	for _, w := range envWarnings {
+		if rc.logOnce("env-missing\x00" + w.Path + "\x00" + w.Message) {
+			rc.logWarnings([]agentconfig.FieldError{w})
+		}
+	}
+
+	runtime, err := toRuntime(resolved, part.skip)
 	if err != nil {
 		return nil, failed(agentconfig.ReasonInvalidConfig, err)
 	}
@@ -592,7 +611,7 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot, ov *agent
 		runtime:  runtime,
 		digest:   digest,
 		identity: candidateIdentity(declared),
-		warnings: append([]agentconfig.FieldError{}, part.warnings...),
+		warnings: append(append([]agentconfig.FieldError{}, part.warnings...), envWarnings...),
 		plugins:  plugins,
 	}, nil
 }

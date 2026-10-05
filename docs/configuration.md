@@ -180,14 +180,43 @@ Viper lowercases keys and splits them on dots. Plugin names and config keys in t
 cannot contain dots; a remote overlay that uses `GitHub` addresses a different plugin than the file's `github`. Plugin
 names an overlay introduces must match `^[a-z0-9][a-z0-9_-]{0,62}$` (R28).
 
+## `${env:NAME}` placeholders
+
+A `plugins.<p>.config` value may reference environment variables, whole or embedded:
+
+```yaml
+plugins:
+  postgres:
+    config:
+      password: "${env:PG_PASSWORD}"
+      dsn: "postgres://app:${env:PG_PASSWORD}@db:5432/app"
+```
+
+Placeholders are resolved **only** in `plugins.*.config`, in the file and in a remote overlay. Anywhere else (for
+example `policy_data` or `labels`) a placeholder is not resolved: in the file it is passed through as a literal string,
+as it always was, and reported as a warning; a remote overlay that puts one there is rejected. `CCF_API_AUTH_*` may
+never be referenced. An unset variable that the **file** references is a warning, and the value reaches the plugin
+unchanged (the literal `${env:NAME}`), exactly as before placeholders were resolved (R60). An unset variable that a
+remote overlay introduces fails the revision with `env-missing`; the error names the variable, never a value. Reports,
+redaction and the configuration digest always use the unresolved placeholder, so rotating a secret never changes them
+(R24).
+
+Plugin values set through viper environment variables (`CCF_PLUGINS_<P>_CONFIG_<K>`, see the README) are masked as
+`••••` in every report and in the configuration digest (R25). The rest of the redaction is the API's
+`pkg/agentconfig` (`Redact`, `Digest`), which the agent uses as is and which is the source of truth. In short, it masks
+values under secret-like keys (for example `password`, `token`, `secret`, `api_key`, `dsn`, `auth`) and secret-looking
+values under any key (a password in a URL, a PEM private key, a `password=` assignment, known token formats). Literal
+text mixed with a `${env:NAME}` placeholder under a secret-like key is masked too; a value made only of placeholders is
+reported as written.
+
 ## Tolerated file problems
 
 A plugin `schedule` in the file that does not parse does not stop the agent: that plugin is skipped, the others run,
 and the problem is logged and reported as a warning (R34). A few other file values that always loaded are also only
-warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
-`plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup, and on
-a live reload the agent keeps running its last good configuration. Values set by a remote overlay are always validated
-strictly.
+warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above), a literal `${env:...}` outside
+`plugins.*.config`, and an unset variable referenced from the file's `plugins.*.config` (see above). Every other
+invalid value in the file (for example a missing `api.url`) still fails startup, and on a live reload the agent keeps
+running its last good configuration. Values set by a remote overlay are always validated strictly.
 
 ## Remote configuration
 
@@ -235,7 +264,7 @@ A change is classified as follows (the agent is the authority; the API preview u
 
 A rejected or failed revision never interrupts the running configuration: the agent prepares the whole new
 configuration (validation, downloads) first and swaps only when it is ready. Every outcome is reported to the API with
-a reason (`unsafe-changes`, `forbidden-changes`, `invalid-config`, `invalid-type`, `unknown-field`,
+a reason (`unsafe-changes`, `forbidden-changes`, `invalid-config`, `invalid-type`, `unknown-field`, `env-missing`,
 `download-failed`, `cache-corrupt`, `internal`). When a new configuration is applied,
 in-flight plugin runs get up to 5 minutes to finish (R33). Evidence produced under an overlay carries the prop
 `agent-config-revision` (namespace `https://compliance-framework.github.io/ns`).
