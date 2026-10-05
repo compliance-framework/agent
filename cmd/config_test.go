@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/compliance-framework/api/pkg/agentconfig"
 	"github.com/hashicorp/go-hclog"
+	"google.golang.org/protobuf/proto"
 )
 
 // writeConfigFile writes content to a temp file with the given extension and returns its path.
@@ -62,6 +64,41 @@ func TestLoadBase_WeakDecodingUnchanged(t *testing.T) {
 	want := agentPluginConfig{"collect_ip_allow_list": "0", "account_id": "123456789012", "port": "22"}
 	if got := rt.Plugins["aws"].Config; !reflect.DeepEqual(got, want) {
 		t.Fatalf("plugin config changed: got %#v want %#v", got, want)
+	}
+}
+
+// TestWeakDecoding_SurvivesUnrelatedOverlay checks that an overlay touching only the schedule
+// leaves the plugin's config and policy_data unchanged on the wire (R51).
+func TestWeakDecoding_SurvivesUnrelatedOverlay(t *testing.T) {
+	base := mustLoadBase(t, "yaml", weakTypedConfig)
+	fileOnly, err := toRuntime(base.declared, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := agentconfig.Merge(base.declared, json.RawMessage(`{"plugins":{"aws":{"schedule":"*/5 * * * *"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withOverlay, err := toRuntime(merged, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fileOnly.Plugins["aws"].Config, withOverlay.Plugins["aws"].Config) {
+		t.Fatalf("config changed by an unrelated overlay: %#v vs %#v", fileOnly.Plugins["aws"].Config, withOverlay.Plugins["aws"].Config)
+	}
+	a, err := mapToStruct(fileOnly.Plugins["aws"].PolicyData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := mapToStruct(withOverlay.Plugins["aws"].PolicyData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(a, b) {
+		t.Fatalf("policy_data structpb differs: %v vs %v", a, b)
+	}
+	if got := *withOverlay.Plugins["aws"].Schedule; got != "*/5 * * * *" {
+		t.Fatalf("overlay schedule not applied: %q", got)
 	}
 }
 
@@ -174,6 +211,16 @@ func TestLoadBase_FileOriginWarnOnly(t *testing.T) {
 		})
 	}
 
+	t.Run("overlay-origin stays strict", func(t *testing.T) {
+		errs := agentconfig.ValidationErrors{
+			{Path: "/verbosity", Code: agentconfig.FieldCodeInvalidValue, Message: "must not be negative"},
+			{Path: "/plugins/ssh/labels/team", Code: agentconfig.FieldCodeEnvLocation, Message: "env"},
+		}
+		p := partitionByOrigin(errs, []string{"/verbosity", "/plugins/ssh/labels/team"})
+		if len(p.overlay) != 2 || len(p.warnings) != 0 {
+			t.Fatalf("overlay-introduced values must be strict, got %#v", p)
+		}
+	})
 }
 
 // TestLoadBase_LoadsAsOnMain: YAML that JSON cannot represent loads, and a key the agent does
@@ -207,6 +254,40 @@ plugins:
 	if len(verrs) != 1 || verrs[0].Path != "/api/url" {
 		t.Fatalf("expected only the api.url error to be fatal, got %v", verrs)
 	}
+}
+
+func TestPartitionByOrigin(t *testing.T) {
+	errs := agentconfig.ValidationErrors{
+		{Path: "/plugins/ssh/schedule", Code: agentconfig.FieldCodeCron, Message: "bad cron"},
+		{Path: "/plugins/github/source", Code: agentconfig.FieldCodeRequired, Message: "source required"},
+	}
+	t.Run("overlay touches another field of the same plugin", func(t *testing.T) {
+		p := partitionByOrigin(errs, []string{"/plugins/ssh/labels/team"})
+		if len(p.overlay) != 0 || len(p.warnings) != 1 || len(p.fatal) != 1 {
+			t.Fatalf("unexpected partition %#v", p)
+		}
+		if _, ok := p.skip["ssh"]; !ok {
+			t.Fatalf("expected ssh skipped, got %v", p.skip)
+		}
+	})
+	t.Run("overlay sets the schedule", func(t *testing.T) {
+		p := partitionByOrigin(errs, []string{"/plugins/ssh/schedule"})
+		if len(p.overlay) != 1 || p.overlay[0].Path != "/plugins/ssh/schedule" || len(p.warnings) != 0 {
+			t.Fatalf("unexpected partition %#v", p)
+		}
+	})
+	t.Run("overlay adds the plugin", func(t *testing.T) {
+		p := partitionByOrigin(errs, []string{"/plugins/ssh"})
+		if len(p.overlay) != 1 {
+			t.Fatalf("a prefix pointer must make the error overlay-origin, got %#v", p)
+		}
+	})
+	t.Run("segment-wise, not string-wise", func(t *testing.T) {
+		p := partitionByOrigin(errs, []string{"/plugins/ss"})
+		if len(p.overlay) != 0 {
+			t.Fatalf("/plugins/ss must not match /plugins/ssh, got %#v", p)
+		}
+	})
 }
 
 func TestToRuntime_DisabledPluginDropped(t *testing.T) {

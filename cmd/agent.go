@@ -191,6 +191,12 @@ const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 
+// CCFPropNamespace is the OSCAL prop namespace of CCF props.
+const CCFPropNamespace = "https://compliance-framework.github.io/ns"
+
+// configRevisionPropName stamps evidence with the applied remote configuration revision (R38).
+const configRevisionPropName = "agent-config-revision"
+
 // daemonCronStopTimeout bounds the cron stop on SIGINT/SIGTERM before plugins are killed,
 // also when the signal arrives during a reload drain (R33).
 var daemonCronStopTimeout = 30 * time.Second
@@ -239,7 +245,7 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringP("config", "c", "", "Location of config file")
 	agentCmd.MarkFlagRequired("config")
 
-	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
+	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID, remote config cache); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
 	agentCmd.Flags().String("instance-id", "", "Pin this instance's UUID (not persisted); overrides CCF_INSTANCE_ID")
 
 	return agentCmd
@@ -1450,6 +1456,7 @@ func (ar *AgentRunner) runAllPlugins(ctx context.Context) error {
 			resultsHelper := runner.NewApiHelper(logger, client, labels, pluginName,
 				runner.WithPolicyPaths(policyPaths),
 				runner.WithSources(sourceOf(pluginConfig.Source, source), policySources),
+				runner.WithEvidenceProps(configRevisionProps(config)...),
 			)
 
 			policyBehaviorProto := policyBehaviorToProto(pluginConfig.PolicyBehavior)
@@ -1594,6 +1601,7 @@ func (ar *AgentRunner) runPluginWith(ctx context.Context, snap runSnapshot, name
 	resultsHelper := runner.NewApiHelper(pluginLogger, client, labels, name,
 		runner.WithPolicyPaths(policyPaths),
 		runner.WithSources(sourceOf(plugin.Source, pluginExecutable), policySources),
+		runner.WithEvidenceProps(configRevisionProps(config)...),
 	)
 
 	policyBehaviorProto := policyBehaviorToProto(plugin.PolicyBehavior)
@@ -1633,6 +1641,20 @@ func (ar *AgentRunner) SendHeartbeat(ctx context.Context, staticAgentUUID uuid.U
 	}
 	logger.Info("Successfully sent heartbeat to server", "uuid", staticAgentUUID.String())
 	return nil
+}
+
+// configRevisionProps returns the evidence prop naming the applied overlay revision, or nil
+// when the agent runs the file only (R38).
+func configRevisionProps(config *agentConfig) []sdktypes.Property {
+	meta := config.syncInfo()
+	if meta.AppliedRevision <= 0 {
+		return nil
+	}
+	return []sdktypes.Property{{
+		Ns:    CCFPropNamespace,
+		Name:  configRevisionPropName,
+		Value: strconv.FormatInt(meta.AppliedRevision, 10),
+	}}
 }
 
 // buildHeartbeat builds the heartbeat body. When remote configuration is not off it carries
@@ -1756,6 +1778,7 @@ func (ar *AgentRunner) buildAgentRunEvidence(now time.Time) (*agentEvidenceCreat
 			End:         now,
 			Expires:     expires,
 			Links:       links,
+			Props:       configRevisionProps(config),
 			Status: sdktypes.ObjectiveStatus{
 				Reason:  reason,
 				Remarks: remarks,

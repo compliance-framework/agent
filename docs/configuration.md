@@ -154,7 +154,8 @@ periodic agent evidence while keeping `emit_on_run_completion` behavior enabled.
 no expiry. Set `agent_evidence.emit_on_run_completion` to `false` to disable immediate agent evidence on run completion
 and startup failures while leaving periodic daemon evidence controlled by `interval`.
 
-The `log_level` is one of the following, defaulting to `0` if not specified:
+The `log_level` is one of the following, defaulting to `0` if not specified (a remote overlay's `verbosity` wins over
+the `-v` flag):
 - 0: Shows all ERROR, WARN and INFO
 - 1: Shows all of 0 plus DEBUG logs
 - 2: Shows all of 1 plus TRACE logs
@@ -172,10 +173,12 @@ A disabled plugin gets no schedule, no download and no run state, but it stays i
 ## Typing of plugin values
 
 Values in the config file keep viper's weak typing exactly as before: `collect_ip_allow_list: false` reaches the plugin
-as `"0"`, `account_id: 123456789012` as `"123456789012"`, and `port: 22` as `"22"`.
+as `"0"`, `account_id: 123456789012` as `"123456789012"`, and `port: 22` as `"22"`. Values set by a remote overlay
+must already be strings: a remote `port: 2222` (a number) is rejected with `invalid-type` (R27, R51).
 
 Viper lowercases keys and splits them on dots. Plugin names and config keys in the file are therefore lowercase and
-cannot contain dots.
+cannot contain dots; a remote overlay that uses `GitHub` addresses a different plugin than the file's `github`. Plugin
+names an overlay introduces must match `^[a-z0-9][a-z0-9_-]{0,62}$` (R28).
 
 ## Tolerated file problems
 
@@ -183,11 +186,12 @@ A plugin `schedule` in the file that does not parse does not stop the agent: tha
 and the problem is logged and reported as a warning (R34). A few other file values that always loaded are also only
 warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
 `plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup, and on
-a live reload the agent keeps running its last good configuration.
+a live reload the agent keeps running its last good configuration. Values set by a remote overlay are always validated
+strictly.
 
 ## Remote configuration
 
-An agent with `api.auth` credentials reports the configuration it runs to the API. The `remote_config` block
+An agent with `api.auth` credentials can pick up a configuration overlay stored in the API. The `remote_config` block
 controls it. It is **set locally only** (file, host environment, CLI flags), never remotely (R30):
 
 ```yaml
@@ -200,7 +204,7 @@ remote_config:
 ```
 
 Defaults (R29): `mode` is `report` when `api.auth` is set and `off` otherwise (no credentials always forces
-`off`); `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
+`off`), so an agent applies an overlay only when `mode` is set to `apply_safe` or `apply_all`; `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
 `allow_local_sources` is `false`. `CCF_REMOTE_CONFIG_MODE` sets the mode even when the file has no
 `remote_config` block.
 
@@ -208,6 +212,37 @@ Defaults (R29): `mode` is `report` when `api.auth` is set and `off` otherwise (n
 |---|---|
 | `off` | No report, no fetch. The heartbeat carries no configuration fields. |
 | `report` | The agent reports its configuration (status `not-applicable`) but never fetches an overlay. |
+| `apply_safe` | The agent fetches the overlay and applies it only when every change is safe (table below). |
+| `apply_all` | The agent applies safe and unsafe changes. Forbidden changes are still rejected. |
+
+A change is classified as follows (the agent is the authority; the API preview uses the same rules):
+
+| Change | Class |
+|---|---|
+| `api`, `daemon` or `remote_config` in the overlay | **forbidden** (the whole revision is rejected in every mode) |
+| `verbosity`, `agent_evidence.*` | safe |
+| a plugin's `schedule`, `labels`, `policy_behavior`, `protocol_version`, `enabled`, `policy_data` | safe |
+| removing a plugin or a policy entry | safe |
+| a plugin source or policy entry already used by the file | safe |
+| a new source matching `trusted_sources` | safe |
+| a new OCI source not in `trusted_sources` | unsafe |
+| a new local path | forbidden, unless `apply_all` with `allow_local_sources: true` (then unsafe) |
+| a `plugins.<p>.config.<k>` change matching `overridable_config_flags` (`key`, `plugin:key` or `*`) | safe |
+| any other plugin config change | unsafe |
+| a new `${env:NAME}` reference | unsafe (`CCF_API_AUTH_*`: forbidden) |
+
+A rejected or failed revision never interrupts the running configuration: the agent prepares the whole new
+configuration (validation, downloads) first and swaps only when it is ready. Every outcome is reported to the API with
+a reason (`unsafe-changes`, `forbidden-changes`, `invalid-config`, `invalid-type`, `unknown-field`,
+`download-failed`, `cache-corrupt`, `internal`). When a new configuration is applied,
+in-flight plugin runs get up to 5 minutes to finish (R33). Evidence produced under an overlay carries the prop
+`agent-config-revision` (namespace `https://compliance-framework.github.io/ns`).
+
+The agent caches the last fetched and applied overlay in `<state>/remote-config.json` (mode 0600, bound to `api.url`
+and `api.auth.client_id`), so it keeps running the last good overlay when the API is unreachable. At startup it tries,
+in order: the freshly fetched overlay, the cached applied overlay, the file alone. Only an unusable file stops the agent.
+A fetched overlay already rejected for the same file is skipped, and its rejection (with the unsafe changes) is reported
+again, so the instance still shows as rejected after a restart.
 
 When a configuration report is too large for the API, the agent drops its `base` document and marks it truncated;
 the effective document and digest are kept.
@@ -222,8 +257,9 @@ nothing is gated on it.
 ## State directory and instance ID
 
 Each agent instance keeps state in `.compliance-framework/state/<key>/`, relative to the working directory, where
-`<key>` is derived from the absolute path of the config file (R31): the instance ID (`instance-id`). The OCI download
-caches in `.compliance-framework/plugins` and `.compliance-framework/policies` are shared.
+`<key>` is derived from the absolute path of the config file (R31): the instance ID (`instance-id`) and the remote
+configuration cache. The OCI download caches in `.compliance-framework/plugins` and
+`.compliance-framework/policies` are shared.
 
 | Setting | Flag | Environment |
 |---|---|---|

@@ -108,6 +108,9 @@ func (rc *reconciler) maybeReport(ctx context.Context, active *candidate, outcom
 	switch {
 	case err == nil:
 		rc.report = reportState{fingerprint: fingerprint, sentAt: rc.now()}
+		if outcome != nil && outcome.Reason == agentconfig.ReasonCacheCorrupt && rc.lastOutcome == outcome {
+			rc.lastOutcome = nil // reported once
+		}
 	case errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict:
 		rc.report.sendFailed = true
 		rc.reportBackoffUntil = rc.now().Add(reportConflictBackoff)
@@ -131,20 +134,23 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 	hostname, _ := os.Hostname()
 	opts := active.base.redactOpts()
 	report := agentconfig.Report{
-		Hostname:        truncateString(hostname, 255),
-		AgentVersion:    truncateString(agentVersion, 64),
-		Mode:            rcfg.Mode,
-		Daemon:          active.runtime.Daemon,
-		Base:            marshalRaw(agentconfig.Redact(active.base.declared, opts...)),
-		Effective:       marshalRaw(agentconfig.Redact(active.declared, opts...)),
-		EffectiveDigest: active.digest,
-		Warnings:        active.warnings,
-		RemoteConfig:    &rcfg,
-		Plugins:         active.plugins,
+		Hostname:          truncateString(hostname, 255),
+		AgentVersion:      truncateString(agentVersion, 64),
+		Mode:              rcfg.Mode,
+		Daemon:            active.runtime.Daemon,
+		AppliedRevision:   active.appliedRevision(),
+		AttemptedRevision: rc.attempted,
+		Base:              marshalRaw(agentconfig.Redact(active.base.declared, opts...)),
+		Effective:         marshalRaw(agentconfig.Redact(active.declared, opts...)),
+		EffectiveDigest:   active.digest,
+		Warnings:          active.warnings,
+		RemoteConfig:      &rcfg,
+		Plugins:           active.plugins,
 	}
 	switch {
 	case !isApplyMode(rcfg.Mode):
 		report.Status = agentconfig.StatusNotApplicable
+		report.AttemptedRevision = nil
 	case outcome != nil:
 		report.Status = outcome.Status
 		report.Reason = outcome.Reason
@@ -153,6 +159,7 @@ func (rc *reconciler) buildReport(active *candidate, outcome *applyError, rcfg a
 			msg = outcome.Err.Error()
 		}
 		report.Error = &msg
+		report.Unsafe = outcome.Unsafe
 	default:
 		report.Status = agentconfig.StatusApplied
 	}
