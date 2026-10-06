@@ -67,9 +67,17 @@ agent_evidence:
   enabled: true
   emit_on_run_completion: true
   interval: 1h
+
+remote_config:  # Optional: set locally only; see docs/configuration.md#remote-configuration
+  mode: report  # off | report | apply_safe | apply_all; defaults to report with api.auth, off without
+  poll_interval: 60s
+  trusted_sources: []
+  overridable_config_flags: []
+  allow_local_sources: false
 ```
 
-See [configuration](./docs/configuration.md) for more information.
+See [configuration](./docs/configuration.md) for more information, and
+[remote configuration](./docs/configuration.md#remote-configuration) for the `remote_config` block.
 
 The agent sets the `_agent` label using the following fallback chain: `api.auth.client_id` when available, then
 `KUBERNETES_POD_NAME` or `KUBERNETES_POD`, and finally a deterministic SHA-256 hash of the runtime plugin and agent

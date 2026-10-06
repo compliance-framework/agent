@@ -81,6 +81,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           push: true
       - name: Build and push (custodian)
         uses: docker/build-push-action@v5
@@ -90,6 +92,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.custodian-meta.outputs.tags }}
           labels: ${{ steps.custodian-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           push: true
       - name: Build and push (ci)
         uses: docker/build-push-action@v5
@@ -99,4 +103,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.ci-meta.outputs.tags }}
           labels: ${{ steps.ci-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           push: true

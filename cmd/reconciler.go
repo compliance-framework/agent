@@ -5,21 +5,35 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/api/pkg/agentconfig"
+	"github.com/compliance-framework/api/sdk"
 	"github.com/fsnotify/fsnotify"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
+	// remoteRequestTimeout bounds one config report.
+	remoteRequestTimeout = 30 * time.Second
+	// remoteAuthBackoff is the retry delay after a 404 (API without the feature) or a 401/403
+	// on a config route (R8, R36).
+	remoteAuthBackoff = 10 * time.Minute
+	// reportConflictBackoff is the report pause after a 409 (per-agent instance cap, R36).
+	reportConflictBackoff = time.Hour
+	// reportResendInterval resends an unchanged report in case the API pruned or lost it.
+	reportResendInterval = 24 * time.Hour
 	// failedRetryMin / failedRetryMax bound the retry of a failed/* revision.
 	failedRetryMin = time.Minute
 	failedRetryMax = 10 * time.Minute
@@ -34,11 +48,15 @@ var (
 // once built.
 type candidate struct {
 	base     *baseSnapshot
-	declared agentconfig.Config // the declared config the runtime was built from
+	declared agentconfig.Config // reported and digested
 	runtime  *agentConfig       // resolved, enabled-only, skipped plugins removed
+	digest   string             // agentconfig.Digest(declared, base.redactOpts()...) (R55)
 	// identity changes whenever anything that affects the runtime changes, including the
 	// values the digest masks or omits (api block, secrets). It never leaves the process.
 	identity string
+	warnings []agentconfig.FieldError // R34 file-origin warnings
+	// plugins are the runtime's plugins with their agent library versions (R76).
+	plugins []agentconfig.PluginReport
 }
 
 // applyError is why a candidate could not be prepared. Status is agentconfig.StatusRejected
@@ -73,6 +91,40 @@ type prefetcher interface {
 	Prefetch(ctx context.Context, cfg *agentConfig) error
 }
 
+// configReporter is the test seam over sdk.Client.AgentConfig.Report.
+type configReporter interface {
+	Report(ctx context.Context, instanceID uuid.UUID, r agentconfig.Report) error
+}
+
+// remoteAPI bundles the remote configuration calls.
+type remoteAPI interface {
+	configReporter
+}
+
+// sdkRemote adapts the SDK client to remoteAPI.
+type sdkRemote struct {
+	client *sdk.Client
+}
+
+func (s sdkRemote) Report(ctx context.Context, instanceID uuid.UUID, r agentconfig.Report) error {
+	return s.client.AgentConfig.Report(ctx, instanceID, r)
+}
+
+// newSDKRemote builds the remote configuration client from the (locked, file-only) api block.
+func newSDKRemote(c agentconfig.Config) remoteAPI {
+	if c.API == nil {
+		return nil
+	}
+	cfg := &sdk.Config{BaseURL: strings.TrimSpace(c.API.URL)}
+	if c.API.HasAuth() {
+		cfg.AgentAuth = &sdk.AgentAuthConfig{
+			ClientID:     strings.TrimSpace(c.API.Auth.ClientID),
+			ClientSecret: strings.TrimSpace(c.API.Auth.ClientSecret),
+		}
+	}
+	return sdkRemote{client: sdk.NewClient(nil, cfg)}
+}
+
 // runFunc runs one configuration until it is cancelled (daemon) or completes (one-shot).
 type runFunc func(ctx context.Context, cfg *agentConfig) error
 
@@ -92,6 +144,7 @@ type reconciler struct {
 	store      *agentstate.Store
 	runner     prefetcher
 	logger     hclog.Logger
+	instanceID uuid.UUID
 	fileEvents chan struct{}
 	runFailed  chan *candidate
 	// onStartupFailure records a startup download failure of the file-only configuration
@@ -100,7 +153,12 @@ type reconciler struct {
 	// debounce coalesces bursts of config file events (editors write in several steps).
 	debounce time.Duration
 
-	now func() time.Time
+	// newRemote builds the remote client from a base (a test seam).
+	newRemote func(agentconfig.Config) remoteAPI
+	// pluginLib reads the agent library version of a prefetched plugin source (R76);
+	// nil leaves the plugins report empty.
+	pluginLib pluginLibFunc
+	now       func() time.Time
 
 	mu        sync.Mutex // guards active, pending, cancelRun
 	active    *candidate
@@ -108,11 +166,20 @@ type reconciler struct {
 	cancelRun context.CancelFunc
 
 	// Everything below is owned by the reconciler goroutine (startup runs before loop).
-	base *baseSnapshot
+	base        *baseSnapshot
+	remote      remoteAPI
+	remoteKey   string
+	lastOutcome *applyError
+	warnedMode  bool
+
+	reportBackoffUntil time.Time
+	loggedOnce         map[string]bool
 
 	failedBase     string
 	failedRetryAt  time.Time
 	failedInterval time.Duration
+
+	report reportState
 }
 
 func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Store, runner prefetcher, logger hclog.Logger) *reconciler {
@@ -129,6 +196,8 @@ func newReconciler(cmd *cobra.Command, configPath string, store *agentstate.Stor
 		runFailed:  make(chan *candidate, 1),
 		debounce:   500 * time.Millisecond,
 		now:        time.Now,
+		loggedOnce: map[string]bool{},
+		newRemote:  newSDKRemote,
 	}
 	return rc
 }
@@ -137,14 +206,53 @@ func (rc *reconciler) rcfg() agentconfig.RemoteConfig {
 	return rc.base.declared.EffectiveRemoteConfig()
 }
 
-// setBase installs a new base and logs its warnings.
+func isApplyMode(mode string) bool {
+	return mode == agentconfig.ModeApplySafe || mode == agentconfig.ModeApplyAll
+}
+
+// setBase installs a new base: warnings are logged and the remote client is rebuilt when the
+// api block changed.
 func (rc *reconciler) setBase(base *baseSnapshot) {
 	rc.base = base
 	rc.logWarnings(base.warnings)
+	if !rc.warnedMode && base.declared.RemoteConfig != nil {
+		mode := base.declared.RemoteConfig.Mode
+		if mode != "" && mode != agentconfig.ModeOff && !base.declared.API.HasAuth() {
+			rc.warnedMode = true
+			rc.logger.Warn("remote_config.mode needs api.auth credentials; remote configuration is off", "mode", mode)
+		}
+	}
+
+	key := remoteKey(base.declared)
+	if rc.remote == nil || key != rc.remoteKey {
+		rc.remote = nil
+		if base.declared.API.HasAuth() {
+			rc.remote = rc.newRemote(base.declared)
+		}
+		rc.remoteKey = key
+		rc.reportBackoffUntil = time.Time{}
+	}
 }
 
-// startup loads the file and prepares it (R32). Only an unusable local configuration is an
-// error (exit 1, as before).
+func remoteKey(c agentconfig.Config) string {
+	if c.API == nil {
+		return ""
+	}
+	raw, _ := json.Marshal(c.API)
+	return string(raw)
+}
+
+// logOnce reports whether key has not been logged yet, and marks it.
+func (rc *reconciler) logOnce(key string) bool {
+	if rc.loggedOnce[key] {
+		return false
+	}
+	rc.loggedOnce[key] = true
+	return true
+}
+
+// startup loads the file, prepares it (R32) and reports it. Only an unusable local
+// configuration is an error (exit 1, as before).
 func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 	base, err := loadBase(rc.cmd, rc.configPath)
 	if err != nil {
@@ -159,6 +267,7 @@ func (rc *reconciler) startup(ctx context.Context) (*candidate, error) {
 		}
 		return nil, aerr
 	}
+	rc.maybeReport(ctx, active, rc.lastOutcome)
 	return active, nil
 }
 
@@ -190,6 +299,7 @@ func (rc *reconciler) clearFailedBackoff() {
 
 // prepare builds a candidate from a base. It never touches the running configuration.
 func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot) (*candidate, *applyError) {
+	rcfg := base.declared.EffectiveRemoteConfig()
 	declared := base.declared
 	runtime, err := toRuntime(declared, base.skip)
 	if err != nil {
@@ -203,11 +313,23 @@ func (rc *reconciler) prepare(ctx context.Context, base *baseSnapshot) (*candida
 		aerr.runtime = runtime
 		return nil, aerr
 	}
+	var plugins []agentconfig.PluginReport
+	if rcfg.Mode != agentconfig.ModeOff {
+		plugins = rc.pluginReports(ctx, runtime)
+	}
+
+	// The digest is over the UNRESOLVED form with the same masking as the reported effective
+	// config (R55): it never changes when a secret rotates.
+	digest := agentconfig.Digest(declared, base.redactOpts()...)
+	runtime.setSync(syncMeta{Digest: digest, Mode: rcfg.Mode})
 	return &candidate{
 		base:     base,
 		declared: declared,
 		runtime:  runtime,
+		digest:   digest,
 		identity: candidateIdentity(declared),
+		warnings: append([]agentconfig.FieldError{}, base.warnings...),
+		plugins:  plugins,
 	}, nil
 }
 
@@ -237,12 +359,14 @@ func (rc *reconciler) bind(active *candidate, cancel context.CancelFunc) {
 }
 
 // adopt records cand, whose identity equals old's, as the running (or pending) configuration
-// WITHOUT a restart: the runtime old runs is kept, and sameAsActive holds for cand's base on
-// the next trigger (no re-prepare every poll).
+// WITHOUT a restart: the runtime old runs is kept and only its sync metadata changes, so the
+// heartbeat and report show cand's, and sameAsActive holds for cand's base on the next trigger
+// (no re-prepare every poll).
 func (rc *reconciler) adopt(old, cand *candidate) *candidate {
 	adopted := *cand
 	if old.runtime != nil {
 		adopted.runtime = old.runtime
+		old.runtime.setSync(cand.runtime.syncInfo())
 	}
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
@@ -351,7 +475,8 @@ func (rc *reconciler) pollDelay() time.Duration {
 }
 
 // loop is the daemon's reconcile goroutine: config file events (debounced) and the poll
-// ticker, which retries a candidate whose failed backoff expired. It returns when ctx is done.
+// ticker, which retries a candidate whose failed backoff expired and resends the report when
+// due. It returns when ctx is done.
 func (rc *reconciler) loop(ctx context.Context) {
 	var debounce <-chan time.Time
 	poll := time.NewTimer(rc.pollDelay())
@@ -377,17 +502,19 @@ func (rc *reconciler) loop(ctx context.Context) {
 }
 
 // onRunFailed records that a prepared candidate failed to run (the run loop already fell back).
-func (rc *reconciler) onRunFailed(_ context.Context, c *candidate) {
-	if c == nil {
-		return
+func (rc *reconciler) onRunFailed(ctx context.Context, c *candidate) {
+	aerr := failed(agentconfig.ReasonInternal, errors.New("the configuration failed to start; running the previous configuration"))
+	if c != nil {
+		// Back the candidate off: otherwise every poll re-prepares the new base, cancels the
+		// healthy configuration, fails and falls back again.
+		baseFingerprint := rc.base.fingerprint
+		if c.base != nil {
+			baseFingerprint = c.base.fingerprint
+		}
+		rc.startFailedBackoff(baseFingerprint)
 	}
-	// Back the candidate off: otherwise every poll re-prepares the new base, cancels the
-	// healthy configuration, fails and falls back again.
-	baseFingerprint := rc.base.fingerprint
-	if c.base != nil {
-		baseFingerprint = c.base.fingerprint
-	}
-	rc.startFailedBackoff(baseFingerprint)
+	rc.lastOutcome = aerr
+	rc.maybeReport(ctx, rc.current(), aerr)
 }
 
 // reconcile handles one trigger (G3.4). All work runs in the reconciler goroutine, so two
@@ -397,6 +524,9 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 		base, err := loadBase(rc.cmd, rc.configPath)
 		if err != nil {
 			rc.logger.Error("Config file is invalid; keeping the running configuration", "error", err)
+			aerr := failed(agentconfig.ReasonInvalidConfig, fmt.Errorf("config file: %w", err))
+			rc.lastOutcome = aerr
+			rc.maybeReport(ctx, rc.current(), aerr)
 			return
 		}
 		rc.setBase(base)
@@ -404,6 +534,7 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 
 	active := rc.current()
 	if rc.sameAsActive(active) || rc.inFailedBackoff() {
+		rc.maybeReport(ctx, active, rc.lastOutcome)
 		return
 	}
 
@@ -411,22 +542,52 @@ func (rc *reconciler) reconcile(ctx context.Context, t trigger) {
 	if aerr != nil {
 		rc.logger.Warn("Could not apply the configuration; keeping the running configuration", "status", aerr.Status, "reason", aerr.Reason, "error", aerr.Err)
 		rc.startFailedBackoff(rc.base.fingerprint)
+		rc.lastOutcome = aerr
+		rc.maybeReport(ctx, active, aerr)
 		return
 	}
 	rc.clearFailedBackoff()
+	rc.lastOutcome = nil
 	if active != nil && active.identity == cand.identity {
 		rc.logger.Debug("Trigger did not change the effective configuration; recording it without a restart")
-		rc.adopt(active, cand)
+		rc.maybeReport(ctx, rc.adopt(active, cand), rc.lastOutcome)
 		return
 	}
 	rc.logger.Info("Applying the new configuration")
 	rc.swap(cand)
+	rc.maybeReport(ctx, cand, rc.lastOutcome)
 }
 
 // sameAsActive reports whether the active candidate already runs this base.
 func (rc *reconciler) sameAsActive(active *candidate) bool {
 	return active != nil && active.base != nil &&
 		bytes.Equal(active.base.raw, rc.base.raw) && active.base.fingerprint == rc.base.fingerprint
+}
+
+// handleRemoteError applies the R8/R36 error table to a config route error.
+func (rc *reconciler) handleRemoteError(op string, err error, backoff *time.Time) {
+	var statusErr *sdk.APIStatusError
+	switch {
+	case errors.Is(err, sdk.ErrRemoteConfigUnsupported):
+		if rc.logOnce(op + ":unsupported") {
+			rc.logger.Info("The API does not support remote agent configuration; running on the cached overlay or the file", "op", op, "retry_in", remoteAuthBackoff)
+		}
+		*backoff = rc.now().Add(remoteAuthBackoff)
+	case errors.Is(err, sdk.ErrAgentAuthRequired):
+		rc.logger.Error("Remote configuration requires api.auth credentials", "op", op)
+		*backoff = rc.now().Add(remoteAuthBackoff)
+	case errors.As(err, &statusErr) && (statusErr.StatusCode == 401 || statusErr.StatusCode == 403):
+		if rc.logOnce(fmt.Sprintf("%s:%d", op, statusErr.StatusCode)) {
+			msg := "The API rejected the agent's credentials for remote configuration"
+			if statusErr.StatusCode == 403 {
+				msg = "The agent's service account lacks the agent:sync permission for remote configuration"
+			}
+			rc.logger.Error(msg, "op", op, "status", statusErr.StatusCode, "retry_in", remoteAuthBackoff)
+		}
+		*backoff = rc.now().Add(remoteAuthBackoff)
+	default:
+		rc.logger.Warn("Remote configuration request failed; retrying on the next poll", "op", op, "error", err)
+	}
 }
 
 func (rc *reconciler) logWarnings(warnings []agentconfig.FieldError) {

@@ -65,6 +65,26 @@ func TestLoadBase_WeakDecodingUnchanged(t *testing.T) {
 	}
 }
 
+func TestEnvSourcedPointers(t *testing.T) {
+	t.Setenv("CCF_PLUGINS_GITHUB_CONFIG_TOKEN", "from-env")
+	base := mustLoadBase(t, "yaml", `
+api:
+  url: http://localhost:8080
+plugins:
+  github:
+    source: ./plugin-github
+    config:
+      token: from-file
+      org: acme
+`)
+	if want := []string{"/plugins/github/config/token"}; !reflect.DeepEqual(base.envSourced, want) {
+		t.Fatalf("envSourced = %v, want %v", base.envSourced, want)
+	}
+	if got := base.declared.Plugins["github"].Config["token"]; got != "from-env" {
+		t.Fatalf("expected env value to win, got %q", got)
+	}
+}
+
 func TestLoadBase_BadFileScheduleIsTolerated(t *testing.T) {
 	base := mustLoadBase(t, "yaml", `
 api:

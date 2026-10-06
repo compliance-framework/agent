@@ -180,10 +180,44 @@ cannot contain dots.
 ## Tolerated file problems
 
 A plugin `schedule` in the file that does not parse does not stop the agent: that plugin is skipped, the others run,
-and the problem is logged as a warning (R34). A few other file values that always loaded are also only
+and the problem is logged and reported as a warning (R34). A few other file values that always loaded are also only
 warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
 `plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup, and on
 a live reload the agent keeps running its last good configuration.
+
+## Remote configuration
+
+An agent with `api.auth` credentials reports the configuration it runs to the API. The `remote_config` block
+controls it. It is **set locally only** (file, host environment, CLI flags), never remotely (R30):
+
+```yaml
+remote_config:
+  mode: report                # off | report | apply_safe | apply_all
+  poll_interval: 60s          # at least 15s
+  trusted_sources: []         # glob list of plugin/policy sources an overlay may introduce
+  overridable_config_flags: []  # glob list of plugins.*.config keys an overlay may change
+  allow_local_sources: false
+```
+
+Defaults (R29): `mode` is `report` when `api.auth` is set and `off` otherwise (no credentials always forces
+`off`); `poll_interval` is `60s`; `trusted_sources` and `overridable_config_flags` are empty;
+`allow_local_sources` is `false`. `CCF_REMOTE_CONFIG_MODE` sets the mode even when the file has no
+`remote_config` block.
+
+| Mode | Behaviour |
+|---|---|
+| `off` | No report, no fetch. The heartbeat carries no configuration fields. |
+| `report` | The agent reports its configuration (status `not-applicable`) but never fetches an overlay. |
+
+When a configuration report is too large for the API, the agent drops its `base` document and marks it truncated;
+the effective document and digest are kept.
+
+### Plugin library versions (R76)
+
+The report lists the instance's plugins as `plugins[]` (`name`, `source`, `lib-version`), where `lib-version` is
+the version of this agent library the plugin binary was built with, read from its Go build info without starting it.
+It is empty when unknown (a `replace`d or `(devel)` build, or a binary without build info). It is diagnostic only:
+nothing is gated on it.
 
 ## State directory and instance ID
 
