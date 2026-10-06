@@ -402,6 +402,8 @@ func sameOverlay(a, b *agentstate.OverlayRecord) bool {
 // overlayKey identifies an overlay for the rejected memory and the failed backoff: the raw
 // ETag, or revision + sha256(overlay) when a response carried no ETag (a stripping proxy), so
 // one rejection never blocks every later revision. nil (the file only) has its own key.
+// Overlay bytes are in agentstate.CanonicalOverlay form (fetch and the cache both ensure it),
+// so the key is the same for a fresh body and its cached copy.
 func overlayKey(rec *agentstate.OverlayRecord) string {
 	switch {
 	case rec == nil:
@@ -952,10 +954,17 @@ func (rc *reconciler) fetch(ctx context.Context) {
 	switch {
 	case res.NotModified:
 	case res.Document != nil:
+		// The canonical bytes are the ones a cached copy has after a restart, so the no-ETag
+		// keys (overlayKey, sameOverlay, the rejected memory) match across one.
+		overlay, err := agentstate.CanonicalOverlay(res.Document.Overlay)
+		if err != nil {
+			// Not JSON: kept as received; ValidateOverlay rejects it.
+			overlay = append(json.RawMessage(nil), res.Document.Overlay...)
+		}
 		rc.cache.Fetched = &agentstate.OverlayRecord{
 			Revision:  res.Document.Revision,
 			ETag:      res.ETag,
-			Overlay:   append(json.RawMessage(nil), res.Document.Overlay...),
+			Overlay:   overlay,
 			FetchedAt: rc.now().UTC(),
 		}
 		rc.saveCache()

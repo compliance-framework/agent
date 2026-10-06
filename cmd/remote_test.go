@@ -1005,6 +1005,52 @@ func TestApply_EmptyETagDoesNotBlockLaterRevisions(t *testing.T) {
 	}
 }
 
+// TestApply_EmptyETagRejectionSurvivesRestart: without an ETag a rejection is keyed by revision
+// + sha256(overlay). The cache re-indents the overlay it writes, so the key must hash canonical
+// bytes for the rejection to be remembered after a restart, whether the restart runs on the
+// cached copy (the API is down) or on a fresh 200 body.
+func TestApply_EmptyETagRejectionSurvivesRestart(t *testing.T) {
+	h := newRemoteHarness(t, remoteConfig("apply_safe", ""))
+	h.remote.publish(1, `{"plugins":{"ssh":{"schedule":"*/5 * * * *"}}}`)
+	h.remote.etag = ""
+	mustStartup(t, h.rc)
+	// Whitespace and <, & that the cache would rewrite.
+	h.remote.publish(2, "{\n  \"plugins\": {\n    \"ssh\": {\"source\": \"ghcr.io/other/plugin:v1\", \"config\": {\"q\": \"a<b&c\"}}\n  }\n}")
+	h.remote.etag = ""
+	h.poll(t)
+	before := h.remote.lastReport(t)
+	if before.Status != agentconfig.StatusRejected || before.AttemptedRevision == nil || *before.AttemptedRevision != 2 {
+		t.Fatalf("expected revision 2 to be rejected, got %+v", before)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		getErr error
+	}{
+		{"cached copy", errors.New("connection refused")},
+		{"fresh body", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h.remote.mu.Lock()
+			h.remote.getErr = tc.getErr
+			h.remote.mu.Unlock()
+			h.rc = h.newReconciler()
+			var logs bytes.Buffer
+			h.rc.logger = hclog.New(&hclog.LoggerOptions{Output: &logs, Level: hclog.Warn})
+			if a := mustStartup(t, h.rc); a.overlay == nil || a.overlay.Revision != 1 {
+				t.Fatalf("expected the applied revision 1, got %+v", a.overlay)
+			}
+			if strings.Contains(logs.String(), "Could not apply the remote configuration at startup") {
+				t.Fatalf("the remembered rejection of revision 2 must not be re-prepared:\n%s", logs.String())
+			}
+			r := h.remote.lastReport(t)
+			if r.Status != agentconfig.StatusRejected || r.Reason != before.Reason || r.AttemptedRevision == nil || *r.AttemptedRevision != 2 {
+				t.Fatalf("expected the remembered rejection of revision 2, got %s/%s attempted %v", r.Status, r.Reason, r.AttemptedRevision)
+			}
+		})
+	}
+}
+
 // TestApply_RunFailureNotifiesAfterFallbackIsBound: onRunFailed sees the fallback as current,
 // so the applied overlay reverts to it and the report describes it.
 func TestApply_RunFailureNotifiesAfterFallbackIsBound(t *testing.T) {
