@@ -2165,3 +2165,27 @@ func jsonResponse(statusCode int, body string) *http.Response {
 		Header:     make(http.Header),
 	}
 }
+
+// TestPluginCommandStripsAPICredentials: plugins get the host environment without the agent's
+// API credentials (R26).
+func TestPluginCommandStripsAPICredentials(t *testing.T) {
+	t.Setenv("CCF_API_AUTH_CLIENT_SECRET", "s3cret")
+	t.Setenv("ccf_api_auth_client_id", "id")
+	t.Setenv("CCF_PLUGIN_SETTING", "kept")
+
+	cmd := pluginCommand("/bin/plugin")
+	if cmd.Path != "/bin/plugin" || cmd.Dir != "" {
+		t.Fatalf("path = %q, dir = %q", cmd.Path, cmd.Dir)
+	}
+	var kept bool
+	for _, kv := range cmd.Env {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "CCF_API_AUTH_") {
+			t.Fatalf("the plugin must not see %s", name)
+		}
+		kept = kept || kv == "CCF_PLUGIN_SETTING=kept"
+	}
+	if !kept {
+		t.Fatal("other variables must be passed through")
+	}
+}
