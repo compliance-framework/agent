@@ -83,6 +83,34 @@ func (c *Cache) IfNoneMatch() string {
 	return ""
 }
 
+// CanonicalOverlay returns raw in the form a save/load round trip of the cache yields: compact,
+// with <, > and & escaped as encoding/json escapes them. SaveCache re-indents the overlay and
+// LoadCache would otherwise return those re-indented bytes, so anything that hashes or compares
+// overlay bytes (the no-ETag rejection key) must use this form, for a fresh 200 body as well
+// as a cached one. An empty overlay is returned unchanged.
+func CanonicalOverlay(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return raw, nil
+	}
+	return json.Marshal(raw)
+}
+
+// canonicalize rewrites the overlays of c to their CanonicalOverlay form. It does not change
+// the checksum, which is computed over the same compact form.
+func (c *Cache) canonicalize() error {
+	for _, rec := range []*OverlayRecord{c.Applied, c.Fetched} {
+		if rec == nil {
+			continue
+		}
+		canon, err := CanonicalOverlay(rec.Overlay)
+		if err != nil {
+			return err
+		}
+		rec.Overlay = canon
+	}
+	return nil
+}
+
 func (c Cache) checksum() (string, error) {
 	c.Checksum = ""
 	raw, err := json.Marshal(c)
@@ -98,7 +126,7 @@ func (s *Store) CachePath() string { return filepath.Join(s.dir, cacheFile) }
 
 // LoadCache reads the cache for identity id. A missing file yields an empty cache. A corrupt
 // file yields an empty cache and ErrCacheCorrupt. A cache bound to another identity is
-// discarded (empty cache, nil error, one INFO).
+// discarded (empty cache, nil error, one INFO). Overlays are returned in CanonicalOverlay form.
 func (s *Store) LoadCache(id Identity) (*Cache, error) {
 	empty := &Cache{Version: cacheVersion, Identity: id}
 	raw, err := os.ReadFile(s.CachePath())
@@ -120,16 +148,23 @@ func (s *Store) LoadCache(id Identity) (*Cache, error) {
 		s.logger.Info("Discarding the remote config cache: it belongs to another API URL or client ID")
 		return empty, nil
 	}
+	if err := c.canonicalize(); err != nil {
+		return empty, fmt.Errorf("%w: %v", ErrCacheCorrupt, err)
+	}
 	return &c, nil
 }
 
 // SaveCache writes the cache atomically (temp file, fsync, rename) with mode 0600. It is a
-// no-op error when the store is not writable.
+// no-op error when the store is not writable. It rewrites c's overlays to their
+// CanonicalOverlay form, so c holds the same bytes a later LoadCache returns.
 func (s *Store) SaveCache(c *Cache) error {
 	if !s.writable {
 		return errors.New("state directory is not writable")
 	}
 	c.Version = cacheVersion
+	if err := c.canonicalize(); err != nil {
+		return err
+	}
 	sum, err := c.checksum()
 	if err != nil {
 		return err
