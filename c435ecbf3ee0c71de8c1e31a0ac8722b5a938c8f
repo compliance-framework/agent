@@ -1,0 +1,2 @@
+lisa-addressed:
+Local review (not posted) fix 5 (part): agentstate.CanonicalOverlay (json.Marshal of the RawMessage: compact + HTML-escaped); SaveCache/LoadCache canonicalize Applied/Fetched overlays; tests for a byte-stable round trip and a legacy indented cache.
