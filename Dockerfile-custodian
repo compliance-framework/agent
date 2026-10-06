@@ -8,7 +8,8 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o concom main.go
+ARG VERSION=dev
+RUN go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 
 # 0.9.49.0

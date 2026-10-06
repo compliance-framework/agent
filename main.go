@@ -7,7 +7,8 @@ import (
 	"os"
 )
 
-// version is set by goreleaser's default ldflags (-X main.version=...).
+// version is set with -X main.version=...: by goreleaser's default ldflags and
+// by the Dockerfiles' VERSION build arg.
 var version = "dev"
 
 func main() {
