@@ -99,3 +99,26 @@ func TestWithPluginSelectorLabelAppendsWhenMissing(t *testing.T) {
 		t.Fatalf("expected plugin selector label to be appended, got %#v", got[1])
 	}
 }
+
+func TestMergePropsReplacesSameNsAndName(t *testing.T) {
+	existing := []types.Property{
+		{Ns: PropNamespace, Name: PropConfigRevision, Value: "plugin-set"},
+		{Name: "other", Value: "x"},
+	}
+	extra := []types.Property{
+		{Ns: PropNamespace, Name: PropConfigRevision, Value: "7"},
+		{Ns: "https://example.test/ns", Name: PropConfigRevision, Value: "7"},
+	}
+	got := mergeProps(existing, extra)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 props, got %#v", got)
+	}
+	for _, p := range got {
+		if p.Value == "plugin-set" {
+			t.Fatalf("the agent's prop must replace an existing (ns, name), got %#v", got)
+		}
+	}
+	if got[2].Ns != "https://example.test/ns" {
+		t.Fatalf("a different namespace must be appended, got %#v", got[2])
+	}
+}

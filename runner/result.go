@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -17,6 +18,8 @@ type apiHelper struct {
 	agentLabels map[string]string
 	pluginName  string
 	artifacts   *artifactUploader
+	// evidenceProps are appended to every evidence the plugin creates.
+	evidenceProps []types.Property
 
 	// pluginSource and policySources are where the plugin and its policy bundles came from,
 	// recorded on evidence as _plugin_source / _plugin_digest and _policy_source /
@@ -42,6 +45,24 @@ const (
 	PropPolicySource = "_policy_source"
 	PropPolicyDigest = "_policy_digest"
 )
+
+// PropNamespace is the OSCAL namespace of the props the agent adds through
+// WithEvidenceProps.
+const PropNamespace = "https://compliance-framework.github.io/ns"
+
+// PropConfigRevision is the evidence prop naming the applied remote configuration revision
+// (namespace PropNamespace). The agent owns it: any a plugin sets is dropped, whether or not
+// the agent sets one.
+const PropConfigRevision = "agent-config-revision"
+
+// LabelPolicyPath is the evidence label in which plugins record the policy path they were
+// given (policy-manager's _policy_path).
+const LabelPolicyPath = "_policy_path"
+
+// isAgentProp reports whether the agent owns a prop, so a plugin's value for it is dropped.
+func isAgentProp(prop types.Property) bool {
+	return isSourceProp(prop.Name) || (prop.Ns == PropNamespace && prop.Name == PropConfigRevision)
+}
 
 func isSourceProp(name string) bool {
 	switch name {
@@ -71,6 +92,15 @@ func WithPolicyPaths(paths []string) ApiHelperOption {
 		for _, path := range paths {
 			h.artifacts.policyPaths[filepath.Clean(path)] = struct{}{}
 		}
+	}
+}
+
+// WithEvidenceProps adds props to every evidence the plugin sends. They are agent-owned: they
+// replace any prop the evidence carries with the same (ns, name). The agent uses it to stamp
+// the applied remote configuration revision (R38).
+func WithEvidenceProps(props ...types.Property) ApiHelperOption {
+	return func(h *apiHelper) {
+		h.evidenceProps = append(h.evidenceProps, props...)
 	}
 }
 
@@ -129,16 +159,14 @@ type apiEvidenceSender struct {
 }
 
 func (s *apiEvidenceSender) Send(e *proto.Evidence) {
-	var refs *types.PolicyArtifacts
-	policyPath := ""
+	var outcome evaluationOutcome
 	if evaluation := e.GetPolicyEvaluation(); evaluation != nil {
-		outcome := s.outcome(evaluation)
-		refs, policyPath = outcome.refs, outcome.policyPath
-		if refs == nil {
+		outcome = s.outcome(evaluation)
+		if outcome.refs == nil {
 			s.notReplayable++
 		}
 	}
-	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, refs, policyPath)); err != nil {
+	if err := s.h.client.Evidence.Create(s.ctx, s.h.toSdk(e, outcome)); err != nil {
 		s.sendErr = errors.Join(s.sendErr, err)
 	}
 }
@@ -181,20 +209,30 @@ func (s *apiEvidenceSender) Close() error {
 }
 
 // toSdk converts evidence for the API, merging agent, config and finding labels, and
-// referring to its stored artifacts. The evaluation's raw data is not included.
-func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policyPath string) types.Evidence {
+// referring to its evaluation's stored artifacts (outcome is the zero value for evidence
+// without an evaluation). The evaluation's raw data is not included.
+func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Evidence {
 	evid := EvidenceProtoToSdk(e)
-	evid.PolicyArtifacts = refs
-	// The agent owns the source props; any a plugin set are replaced.
+	evid.PolicyArtifacts = outcome.refs
+	// The agent owns the source and revision props; any a plugin set are replaced.
 	props := evid.Props[:0]
 	for _, prop := range evid.Props {
-		if !isSourceProp(prop.Name) {
+		if !isAgentProp(prop) {
 			props = append(props, prop)
 		}
 	}
 	evid.Props = appendSource(props, h.pluginSource, PropPluginSource, PropPluginDigest)
-	if policyPath != "" {
-		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(policyPath)], PropPolicySource, PropPolicyDigest)
+	if outcome.policyPath == "" {
+		// Plugins built on an agent library without policy evaluations still label their
+		// evidence with the policy path they were given.
+		if p := evid.Labels[LabelPolicyPath]; p != "" {
+			if _, known := h.policySources[filepath.Clean(p)]; known {
+				outcome.policyPath = p
+			}
+		}
+	}
+	if outcome.policyPath != "" {
+		evid.Props = appendSource(evid.Props, h.policySources[filepath.Clean(outcome.policyPath)], PropPolicySource, PropPolicyDigest)
 	}
 	labels := make(map[string]string)
 	for k, v := range h.agentLabels {
@@ -204,7 +242,20 @@ func (h *apiHelper) toSdk(e *proto.Evidence, refs *types.PolicyArtifacts, policy
 		labels[k] = v
 	}
 	evid.Labels = labels
+	evid.Props = mergeProps(evid.Props, h.evidenceProps)
 	return *evid
+}
+
+// mergeProps adds each extra prop, replacing any existing one with the same (ns, name): the
+// extra props are the agent's and win over the plugin's.
+func mergeProps(props []types.Property, extra []types.Property) []types.Property {
+	for _, p := range extra {
+		props = slices.DeleteFunc(props, func(q types.Property) bool {
+			return q.Ns == p.Ns && q.Name == p.Name
+		})
+		props = append(props, p)
+	}
+	return props
 }
 
 func (h *apiHelper) UpsertRiskTemplates(ctx context.Context, packageName string, riskTemplates []*proto.RiskTemplate) error {
