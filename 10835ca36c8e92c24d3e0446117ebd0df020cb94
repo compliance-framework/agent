@@ -1,0 +1,2 @@
+lisa-addressed:
+- PR #110 (companion to #102 thread): configRevisionProps uses runner.PropNamespace/PropConfigRevision; cmd's CCFPropNamespace/configRevisionPropName removed.
