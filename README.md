@@ -101,6 +101,18 @@ The API auth settings follow the same rule, so `api.auth.client_id` and `api.aut
 `CCF_API_AUTH_CLIENT_ID` and `CCF_API_AUTH_CLIENT_SECRET`. These values must be configured together; setting only one
 will fail agent startup validation. The `client_id` value must be a valid UUID.
 
+Values that come from `CCF_PLUGINS_*` variables are masked in the configuration reports the agent sends to the API,
+as are secret-like keys and values (see [configuration](./docs/configuration.md#envname-placeholders)).
+Plugins never receive `CCF_API_AUTH_*` variables.
+
+### Remote configuration and state
+
+With `api.auth` credentials the agent reports its configuration to the API. With `remote_config.mode` set to
+`apply_safe` or `apply_all` it also applies a configuration overlay stored there, including `${env:NAME}` placeholders
+in plugin config; the default mode, `report`, never fetches or applies one. Each instance keeps a stable ID and a cache in a state directory (`--state-dir` / `CCF_STATE_DIR`;
+`--instance-id` / `CCF_INSTANCE_ID`). See [configuration](./docs/configuration.md#remote-configuration) and
+[ADR 0003](./docs/adr/0003-remote-config-overlay.md).
+
 ## Usage
 
 To run the agent, you must first build the agent, and then run it with the `agent` command. It is recommended,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -305,6 +306,80 @@ func touchedByOverlay(ptr string, touched []string) bool {
 		}
 	}
 	return false
+}
+
+// resolveEnv resolves ${env:NAME} placeholders in plugins.*.config values (R24) with the R60
+// file-origin leniency: when every unset variable of a value is already referenced by the
+// base's (file) value at the same pointer, the value is passed to the plugin unchanged, as on
+// main, and a warning is returned. An unset variable the overlay introduced still fails with
+// agentconfig.ErrEnvMissing; forbidden names always fail with agentconfig.ErrEnvForbidden.
+func resolveEnv(declared, base agentconfig.Config, lookup func(string) (string, bool)) (agentconfig.Config, []agentconfig.FieldError, error) {
+	type literal struct{ plugin, key, value string }
+	var keep []literal
+	var warnings []agentconfig.FieldError
+	work := declared
+	copied := map[string]bool{} // plugins whose Config was copied into work
+	for _, name := range slices.Sorted(maps.Keys(declared.Plugins)) {
+		p := declared.Plugins[name]
+		if p == nil {
+			continue
+		}
+		for _, key := range slices.Sorted(maps.Keys(p.Config)) {
+			value := p.Config[key]
+			names := agentconfig.EnvRefs(value)
+			if len(names) == 0 || slices.ContainsFunc(names, agentconfig.IsForbiddenEnvName) {
+				continue
+			}
+			var missing []string
+			for _, n := range names {
+				if _, ok := lookup(n); !ok {
+					missing = append(missing, n)
+				}
+			}
+			if len(missing) == 0 {
+				continue
+			}
+			fileRefs := agentconfig.EnvRefs(basePluginConfigValue(base, name, key))
+			if slices.ContainsFunc(missing, func(n string) bool { return !slices.Contains(fileRefs, n) }) {
+				continue // overlay-introduced: ResolveEnv reports env-missing
+			}
+			if !copied[name] {
+				if len(copied) == 0 {
+					work.Plugins = maps.Clone(declared.Plugins)
+				}
+				cp := *p
+				cp.Config = maps.Clone(p.Config)
+				work.Plugins[name] = &cp
+				copied[name] = true
+			}
+			delete(work.Plugins[name].Config, key)
+			keep = append(keep, literal{name, key, value})
+			warnings = append(warnings, agentconfig.FieldError{
+				Path:    agentconfig.Pointer("plugins", name, "config", key),
+				Code:    agentconfig.FieldCodeEnvMissing,
+				Message: fmt.Sprintf("environment variable %s is not set; the value is passed to the plugin unchanged", strings.Join(missing, ", ")),
+			})
+		}
+	}
+	resolved, err := agentconfig.ResolveEnv(work, lookup)
+	if err != nil {
+		return agentconfig.Config{}, nil, err
+	}
+	for _, l := range keep {
+		p := resolved.Plugins[l.plugin]
+		if p.Config == nil {
+			p.Config = map[string]string{}
+		}
+		p.Config[l.key] = l.value
+	}
+	return resolved, warnings, nil
+}
+
+func basePluginConfigValue(base agentconfig.Config, plugin, key string) string {
+	if p := base.Plugins[plugin]; p != nil {
+		return p.Config[key]
+	}
+	return ""
 }
 
 // toRuntime converts a merged, env-resolved declared config into the runtime structs.
