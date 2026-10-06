@@ -221,9 +221,11 @@ A change is classified as follows (the agent is the authority; the API preview u
 |---|---|
 | `api`, `daemon` or `remote_config` in the overlay | **forbidden** (the whole revision is rejected in every mode) |
 | `verbosity`, `agent_evidence.*` | safe |
-| a plugin's `schedule`, `labels`, `policy_behavior`, `protocol_version`, `enabled`, `policy_data` | safe |
+| a plugin's `schedule`, `labels`, `policy_behavior`, `protocol_version`, `policy_data` | safe |
+| disabling a plugin (`enabled: false`) | safe |
+| re-enabling a plugin the file disables | unsafe, unless its source matches `trusted_sources` (then safe); its kept policies, local source and `${env:}` references are classified as if new (so a local one is forbidden unless `apply_all` with `allow_local_sources: true`) |
 | removing a plugin or a policy entry | safe |
-| a plugin source or policy entry already used by the file | safe |
+| a plugin source or policy entry already used by an **enabled** plugin in the file (a disabled plugin's sources do not count) | safe |
 | a new source matching `trusted_sources` | safe |
 | a new OCI source not in `trusted_sources` | unsafe |
 | a new local path | forbidden, unless `apply_all` with `allow_local_sources: true` (then unsafe) |
