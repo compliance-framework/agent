@@ -44,6 +44,7 @@ api:
 
 plugins:
   <plugin_identifier>:  # Can have as many of these as you like
+    enabled: true  # Optional: default true; a disabled plugin is not scheduled or downloaded
     protocol_version: 2 # Optional: Defaults to 1 for backwards compatibility
     source: <plugin_source>
     labels:

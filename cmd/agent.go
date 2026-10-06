@@ -13,7 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -78,6 +78,8 @@ type agentEvidenceConfig struct {
 	Interval            string `mapstructure:"interval,omitempty"`
 }
 
+// agentConfig is the RUNTIME form of the configuration, built from the declared form
+// (agentconfig.Config) by toRuntime.
 type agentConfig struct {
 	Daemon        bool                    `mapstructure:"daemon"`
 	Verbosity     int32                   `mapstructure:"verbosity"`
@@ -86,42 +88,11 @@ type agentConfig struct {
 	AgentEvidence *agentEvidenceConfig    `mapstructure:"agent_evidence"`
 }
 
-// logVerbosity reverses our verbosity "increase" to hclog's reversed "decrease."
-// 1 for us means INFO. 1 for hclog means trace.
-// 3 for us means TRACE. 3 for hclog means INFO.
-// You can see hclog's verbosity here: https://github.com/hashicorp/go-hclog/blob/cb8687c9c619227eac510d0a76d23997fb6667d3/logger.go#L25
+// logVerbosity maps our verbosity "increase" onto hclog's levels: our 0/1/2 = Info/Debug/Trace,
+// i.e. hclog.Level(Info - v). See hclog's levels here:
+// https://github.com/hashicorp/go-hclog/blob/cb8687c9c619227eac510d0a76d23997fb6667d3/logger.go#L25
 func (ac *agentConfig) logVerbosity() int32 {
 	return int32(hclog.Info) - ac.Verbosity
-}
-
-func (ac *agentConfig) validate() error {
-	if err := ac.ApiConfig.validate(); err != nil {
-		return err
-	}
-
-	if _, err := ac.agentEvidenceInterval(); err != nil {
-		return err
-	}
-
-	for name, pluginConfig := range ac.Plugins {
-		if pluginConfig == nil {
-			return fmt.Errorf("plugin %s has null configuration", name)
-		}
-
-		if pluginConfig.ProtocolVersion == 0 {
-			if pluginConfig.protocolSet {
-				return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
-			}
-
-			continue
-		}
-
-		if !isSupportedProtocolVersion(pluginConfig.ProtocolVersion) {
-			return fmt.Errorf("plugin %s has unsupported protocol_version=%d; supported values are %d and %d", name, pluginConfig.ProtocolVersion, DefaultProtocolVersion, RunnerV2ProtocolVersion)
-		}
-	}
-
-	return nil
 }
 
 func (ac *agentConfig) agentEvidenceEnabled() bool {
@@ -155,28 +126,6 @@ func (ac *agentConfig) agentEvidenceInterval() (time.Duration, error) {
 	}
 
 	return interval, nil
-}
-
-func (ac *apiConfig) validate() error {
-	if ac == nil {
-		return fmt.Errorf("no api config specified in config")
-	}
-
-	if strings.TrimSpace(ac.Url) == "" {
-		return fmt.Errorf("api url must be configured")
-	}
-
-	if ac.hasPartialAuth() {
-		return fmt.Errorf("api auth requires both client_id and client_secret when configured")
-	}
-
-	if ac.hasAuth() {
-		if _, err := uuid.Parse(strings.TrimSpace(ac.Auth.ClientID)); err != nil {
-			return fmt.Errorf("api auth client_id must be a valid UUID")
-		}
-	}
-
-	return nil
 }
 
 func (ac *apiConfig) hasAuth() bool {
@@ -237,100 +186,12 @@ with plugins to ensure continuous compliance.`,
 	}
 
 	agentCmd.Flags().CountP("verbose", "v", "Enable verbose output")
-	viper.BindPFlag("verbose", agentCmd.Flags().Lookup("verbose"))
-
 	agentCmd.Flags().BoolP("daemon", "d", false, "Specify to run as a long running daemon")
-	viper.BindPFlag("daemon", agentCmd.Flags().Lookup("daemon"))
 
 	agentCmd.Flags().StringP("config", "c", "", "Location of config file")
 	agentCmd.MarkFlagRequired("config")
 
 	return agentCmd
-}
-
-func mergeConfig(cmd *cobra.Command, fileConfig *viper.Viper) (*agentConfig, error) {
-	// For now, we are reading from a file. This will probably be updated to a remote source soon.
-
-	// Daemon has a default false value, which will override all values passed through Viper.
-	// We need to check whether it was actually passed `Changed()`, and then merge its value into our config.
-	if cmd.Flags().Changed("daemon") {
-		isDaemon, err := cmd.Flags().GetBool("daemon")
-		if err != nil {
-			return nil, err
-		}
-
-		err = fileConfig.MergeConfigMap(map[string]interface{}{
-			"daemon": isDaemon,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if cmd.Flags().Changed("verbose") {
-		verbosity, err := cmd.Flags().GetCount("verbose")
-		if err != nil {
-			return nil, err
-		}
-		err = fileConfig.MergeConfigMap(map[string]interface{}{
-			"verbosity": verbosity,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	config := &agentConfig{}
-	err := fileConfig.Unmarshal(config)
-
-	if err != nil {
-		return nil, err
-	}
-
-	markExplicitPluginProtocols(fileConfig, config)
-	updateAllPluginProtocols(config)
-
-	return config, nil
-}
-
-func bindAgentEnv(config *viper.Viper) error {
-	for key, envVar := range map[string]string{
-		"api.auth.client_id":     "CCF_API_AUTH_CLIENT_ID",
-		"api.auth.client_secret": "CCF_API_AUTH_CLIENT_SECRET",
-	} {
-		if err := config.BindEnv(key, envVar); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func markExplicitPluginProtocols(fileConfig *viper.Viper, config *agentConfig) {
-	rawPlugins := fileConfig.GetStringMap("plugins")
-	for name, rawPlugin := range rawPlugins {
-		pluginConfig, ok := config.Plugins[name]
-		if rawPlugin == nil {
-			if config.Plugins == nil {
-				config.Plugins = map[string]*agentPlugin{}
-			}
-			if !ok {
-				config.Plugins[name] = nil
-			}
-			continue
-		}
-
-		if !ok || pluginConfig == nil {
-			continue
-		}
-
-		pluginMap, ok := rawPlugin.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		_, pluginConfig.protocolSet = pluginMap["protocol_version"]
-	}
 }
 
 func updateAllPluginProtocols(agentConfig *agentConfig) {
@@ -412,22 +273,21 @@ func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPl
 	return err
 }
 
-func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
-	err := v.ReadInConfig()
+// loadConfig reads and validates the config file and builds its runtime form. Tolerated file
+// problems (R34) are logged; the plugins they affect are skipped.
+func loadConfig(cmd *cobra.Command, configPath string, logger hclog.Logger) (*agentConfig, error) {
+	base, err := loadBase(cmd, configPath)
 	if err != nil {
 		return nil, err
 	}
-
-	config, err := mergeConfig(cmd, v)
-	if err != nil {
-		return nil, err
+	for _, w := range base.warnings {
+		if isToleratedFileRule(w) {
+			logger.Warn("Ignoring a problem in the config file; the plugin is skipped", "path", w.Path, "error", w.Message)
+			continue
+		}
+		logger.Warn("Ignoring a problem in the config file; the value is kept unchanged", "path", w.Path, "error", w.Message)
 	}
-
-	err = config.validate()
-	if err != nil {
-		return nil, err
-	}
-	return config, nil
+	return toRuntime(base.declared, base.skip)
 }
 
 // Main the entrypoint for the `agent` command
@@ -435,22 +295,8 @@ func loadConfig(cmd *cobra.Command, v *viper.Viper) (*agentConfig, error) {
 // It will read the configuration file, and then run the agent. Various command line flags can
 // be used to override the config file.
 func agentRunner(cmd *cobra.Command, args []string) error {
-	configPath := cmd.Flag("config").Value.String()
-
-	if !path.IsAbs(configPath) {
-		workDir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		configPath = path.Join(workDir, configPath)
-	}
-
-	v := viper.New()
-	v.SetConfigFile(configPath)
-	v.SetEnvPrefix("CCF")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-	if err := bindAgentEnv(v); err != nil {
+	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
+	if err != nil {
 		return err
 	}
 
@@ -465,18 +311,21 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	ctx, configCancel := context.WithCancel(context.Background())
 	defer configCancel()
 
-	v.OnConfigChange(func(in fsnotify.Event) {
+	// The watcher only signals; every load builds a fresh viper (loadBase).
+	w := viper.New()
+	w.SetConfigFile(configPath)
+	w.OnConfigChange(func(in fsnotify.Event) {
 		// We want to wait for any running agent processes to finish first.
 		logger.Debug("config file changed", "path", in.Name)
 		configCancel()
 	})
-	v.WatchConfig()
+	w.WatchConfig()
 
 	// For the daemon, we run the agent continuously.
 	// It will exit as soon as the config changes, and then start again with new configs set.
 	for {
 		ctx, configCancel = context.WithCancel(context.Background())
-		config, err := loadConfig(cmd, v)
+		config, err := loadConfig(cmd, configPath, logger)
 		if err != nil {
 			logger.Error("Error loading new config", "error", err)
 			panic(err)

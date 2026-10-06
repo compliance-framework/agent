@@ -3,10 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 // goldenHashFixtures are config files whose agentConfigurationHash was recorded BEFORE the
@@ -121,10 +118,13 @@ func loadGoldenFixture(t *testing.T, yaml string) *agentConfig {
 	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	v := newGoldenViper(t, path)
-	config, err := loadConfig(AgentCmd(), v)
+	base, err := loadBase(AgentCmd(), path)
 	if err != nil {
 		t.Fatalf("load fixture: %v", err)
+	}
+	config, err := toRuntime(base.declared, base.skip)
+	if err != nil {
+		t.Fatalf("runtime fixture: %v", err)
 	}
 	return config
 }
@@ -141,17 +141,4 @@ func TestAgentConfigurationHashGolden(t *testing.T) {
 			}
 		})
 	}
-}
-
-func newGoldenViper(t *testing.T, path string) *viper.Viper {
-	t.Helper()
-	v := viper.New()
-	v.SetConfigFile(path)
-	v.SetEnvPrefix("CCF")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-	if err := bindAgentEnv(v); err != nil {
-		t.Fatalf("bind env: %v", err)
-	}
-	return v
 }
