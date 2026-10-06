@@ -183,3 +183,19 @@ A plugin `schedule` in the file that does not parse does not stop the agent: tha
 and the problem is logged as a warning (R34). A few other file values that always loaded are also only
 warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
 `plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup.
+
+## State directory and instance ID
+
+Each agent instance keeps state in `.compliance-framework/state/<key>/`, relative to the working directory, where
+`<key>` is derived from the absolute path of the config file (R31): the instance ID (`instance-id`). The OCI download
+caches in `.compliance-framework/plugins` and `.compliance-framework/policies` are shared.
+
+| Setting | Flag | Environment |
+|---|---|---|
+| State directory | `--state-dir` | `CCF_STATE_DIR` |
+| Instance ID (a UUID; not persisted) | `--instance-id` | `CCF_INSTANCE_ID` |
+
+Because the default key depends on the config file's path, **moving or renaming the config file creates a new
+instance** (R52). The agent logs the state directory, where it came from and the instance ID at startup. Containers and
+Helm deployments should pin `CCF_STATE_DIR` to a mounted volume; ephemeral one-shot runs (CI, Kubernetes jobs) can
+set `CCF_INSTANCE_ID` so repeated runs report as one instance.

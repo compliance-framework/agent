@@ -27,6 +27,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/compliance-framework/agent/internal"
+	"github.com/compliance-framework/agent/internal/agentstate"
 	"github.com/compliance-framework/agent/runner"
 	"github.com/compliance-framework/api/sdk"
 	sdktypes "github.com/compliance-framework/api/sdk/types"
@@ -191,6 +192,9 @@ with plugins to ensure continuous compliance.`,
 	agentCmd.Flags().StringP("config", "c", "", "Location of config file")
 	agentCmd.MarkFlagRequired("config")
 
+	agentCmd.Flags().String("state-dir", "", "Directory for this instance's state (instance ID); overrides CCF_STATE_DIR. Default: .compliance-framework/state/<hash of the config path>")
+	agentCmd.Flags().String("instance-id", "", "Pin this instance's UUID (not persisted); overrides CCF_INSTANCE_ID")
+
 	return agentCmd
 }
 
@@ -306,7 +310,21 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 		Level:  hclog.Debug,
 	})
 
-	agentRun := NewAgentRunner()
+	stateDir, stateDirSource, err := stateDirFrom(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	idOverride, err := instanceIDOverride(cmd)
+	if err != nil {
+		return err
+	}
+	store := agentstate.Open(stateDir, logger)
+	id, persisted := store.InstanceID(idOverride)
+	// R52: the default state dir depends on the absolute config path, so moving the config
+	// file silently creates a new instance. Say where state lives.
+	logger.Info("Agent state", "state_dir", stateDir, "state_dir_source", stateDirSource, "instance_id", id.String(), "instance_id_persisted", persisted)
+
+	agentRun := NewAgentRunner(WithInstanceID(id))
 
 	ctx, configCancel := context.WithCancel(context.Background())
 	defer configCancel()
@@ -348,6 +366,39 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// stateDirFrom resolves the state directory: --state-dir, then CCF_STATE_DIR, then the
+// default derived from the absolute config path (R31). It also returns where it came from.
+func stateDirFrom(cmd *cobra.Command, configPath string) (dir string, source string, err error) {
+	if flag := cmd.Flags().Lookup("state-dir"); flag != nil && strings.TrimSpace(flag.Value.String()) != "" {
+		dir, err = filepath.Abs(strings.TrimSpace(flag.Value.String()))
+		return dir, "flag", err
+	}
+	if env := strings.TrimSpace(os.Getenv("CCF_STATE_DIR")); env != "" {
+		dir, err = filepath.Abs(env)
+		return dir, "env", err
+	}
+	dir, err = agentstate.DefaultDir(configPath)
+	return dir, "default(config-path)", err
+}
+
+// instanceIDOverride returns --instance-id or CCF_INSTANCE_ID. An override that is not a
+// UUID is an error: silently ignoring it would register a different instance.
+func instanceIDOverride(cmd *cobra.Command) (string, error) {
+	value, source := "", ""
+	if flag := cmd.Flags().Lookup("instance-id"); flag != nil && strings.TrimSpace(flag.Value.String()) != "" {
+		value, source = strings.TrimSpace(flag.Value.String()), "--instance-id"
+	} else if env := strings.TrimSpace(os.Getenv("CCF_INSTANCE_ID")); env != "" {
+		value, source = env, "CCF_INSTANCE_ID"
+	}
+	if value == "" {
+		return "", nil
+	}
+	if _, err := uuid.Parse(value); err != nil {
+		return "", fmt.Errorf("%s must be a UUID: %w", source, err)
+	}
+	return value, nil
+}
+
 type AgentRunner struct {
 	logger     hclog.Logger
 	stateMu    sync.RWMutex
@@ -363,24 +414,44 @@ type AgentRunner struct {
 	downloadGroup        singleflight.Group
 	fetchAnnotations     func(ctx context.Context, source string, option ...remote.Option) (map[string]string, error)
 	runPluginFunc        func(ctx context.Context, name string, pluginConfig *agentPlugin) error
+	sendHeartbeatFunc    func(ctx context.Context, instanceID uuid.UUID) error
 
 	pluginRunMu                   sync.RWMutex
 	pluginRuns                    map[string]pluginRunRecord
 	firstAgentEvidenceSendStarted bool
 
 	queryBundles []*rego.Rego
+
+	// instanceID is this agent instance's stable ID (R31); set once at construction.
+	instanceID uuid.UUID
 }
 
-func NewAgentRunner() *AgentRunner {
-	return &AgentRunner{
+// AgentRunnerOption configures an AgentRunner.
+type AgentRunnerOption func(*AgentRunner)
+
+// WithInstanceID sets the instance ID the heartbeat and config reports use.
+func WithInstanceID(id uuid.UUID) AgentRunnerOption {
+	return func(ar *AgentRunner) { ar.instanceID = id }
+}
+
+func NewAgentRunner(opts ...AgentRunnerOption) *AgentRunner {
+	ar := &AgentRunner{
 		pluginLocations:     map[string]string{},
 		policyLocations:     map[string]string{},
 		activePluginClients: map[*plugin.Client]struct{}{},
 		pluginRuns:          map[string]pluginRunRecord{},
 		fetchAnnotations:    internal.GetAnnotations,
 		httpClient:          http.DefaultClient,
+		instanceID:          uuid.New(),
 	}
+	for _, opt := range opts {
+		opt(ar)
+	}
+	return ar
 }
+
+// InstanceID returns the instance ID.
+func (ar *AgentRunner) InstanceID() uuid.UUID { return ar.instanceID }
 
 func (ar *AgentRunner) UpdateConfig(config *agentConfig) {
 	logger := hclog.New(&hclog.LoggerOptions{
@@ -1089,9 +1160,13 @@ func (ar *AgentRunner) setupHeartbeatCron(ctx context.Context) (*cron.Cron, erro
 	c := cron.New(cron.WithParser(cron.NewParser(
 		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)))
-	staticAgentUUID := uuid.New()
+	staticAgentUUID := ar.instanceID
+	sendHeartbeat := ar.SendHeartbeat
+	if ar.sendHeartbeatFunc != nil {
+		sendHeartbeat = ar.sendHeartbeatFunc
+	}
 	_, err := c.AddFunc(fmt.Sprintf("%d * * * * *", staggeredSeconds), func() {
-		err := ar.SendHeartbeat(ctx, staticAgentUUID)
+		err := sendHeartbeat(ctx, staticAgentUUID)
 		if err != nil {
 			logger.Error("Failed to send heartbeat", "error", err, "uuid", staticAgentUUID.String())
 		}
