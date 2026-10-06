@@ -1,0 +1,2 @@
+lisa-addressed:
+- PR #102 thread PRRT_kwDONKnom86pZew3: agent-config-revision is agent-owned; mergeProps lets the agent's props win; toSdk drops a plugin's revision prop always (runner.PropNamespace/PropConfigRevision); documented in AGENTS.md and docs/policy_artifacts.md.
