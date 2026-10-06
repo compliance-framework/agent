@@ -1,0 +1,2 @@
+lisa-addressed:
+Local review (not posted) fix 5 (part): fetch stores the overlay in agentstate.CanonicalOverlay form; TestApply_EmptyETagRejectionSurvivesRestart covers a no-ETag rejection after a restart (cached copy and fresh body). Fix 4: docs/configuration.md classification table follows api v0.21.0 (disable safe, re-enable unsafe unless trusted, kept parts classified as new, only enabled plugins' sources count as used).
