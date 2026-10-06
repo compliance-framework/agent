@@ -10,6 +10,7 @@ package pluginlib
 import (
 	"debug/buildinfo"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -26,16 +27,22 @@ func Version(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return versionFromInfo(info), nil
+}
+
+// versionFromInfo returns the version of AgentModule a binary with this build info depends
+// on, or "" when it does not, or replaces it.
+func versionFromInfo(info *debug.BuildInfo) string {
 	for _, dep := range info.Deps {
 		if dep.Path != AgentModule {
 			continue
 		}
 		if dep.Replace != nil || dep.Version == "(devel)" {
-			return "", nil
+			return ""
 		}
-		return dep.Version, nil
+		return dep.Version
 	}
-	return "", nil
+	return ""
 }
 
 // Cache memoizes Version per binary. A binary is identified by its path, size and
@@ -44,6 +51,8 @@ func Version(path string) (string, error) {
 type Cache struct {
 	mu      sync.Mutex
 	entries map[string]cacheEntry
+	// read is Version; tests replace it to count reads.
+	read func(path string) (string, error)
 }
 
 type cacheEntry struct {
@@ -69,7 +78,11 @@ func (c *Cache) Version(path string) (string, error) {
 	}
 	c.mu.Unlock()
 
-	version, err := Version(path)
+	read := c.read
+	if read == nil {
+		read = Version
+	}
+	version, err := read(path)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
