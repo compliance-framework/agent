@@ -1,0 +1,2 @@
+lisa-addressed:
+- PR #107 thread PRRT_kwDONKnom86pZfdd: versionFromInfo split out and table-tested; Cache.read hook lets TestCacheRereadsAChangedBinary count re-reads on size/mtime change.
