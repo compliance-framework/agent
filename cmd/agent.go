@@ -191,12 +191,6 @@ const DefaultProtocolVersion int32 = 1
 const RunnerV2ProtocolVersion int32 = 2
 const AnnotationProtocolVersionKey = "org.ccf.plugin.protocol.version"
 
-// CCFPropNamespace is the OSCAL prop namespace of CCF props.
-const CCFPropNamespace = "https://compliance-framework.github.io/ns"
-
-// configRevisionPropName stamps evidence with the applied remote configuration revision (R38).
-const configRevisionPropName = "agent-config-revision"
-
 // daemonCronStopTimeout bounds the cron stop on SIGINT/SIGTERM before plugins are killed,
 // also when the signal arrives during a reload drain (R33).
 var daemonCronStopTimeout = 30 * time.Second
@@ -1651,8 +1645,8 @@ func configRevisionProps(config *agentConfig) []sdktypes.Property {
 		return nil
 	}
 	return []sdktypes.Property{{
-		Ns:    CCFPropNamespace,
-		Name:  configRevisionPropName,
+		Ns:    runner.PropNamespace,
+		Name:  runner.PropConfigRevision,
 		Value: strconv.FormatInt(meta.AppliedRevision, 10),
 	}}
 }
