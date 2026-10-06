@@ -31,7 +31,7 @@ type baseSnapshot struct {
 	warnings []agentconfig.FieldError
 	// skip holds the plugins dropped from the runtime because of a tolerated problem.
 	skip map[string]string
-	// fingerprint identifies the base for the failed backoff.
+	// fingerprint identifies the base for the rejected-revision memory.
 	fingerprint string
 }
 
@@ -240,7 +240,7 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapsho
 		raw:        raw,
 		envSourced: envSourcedPointers(v),
 	}
-	part := partitionByOrigin(declared.Validate())
+	part := partitionByOrigin(declared.Validate(), nil)
 	if len(part.fatal) > 0 {
 		return nil, agentconfig.ValidationErrors(part.fatal)
 	}
@@ -252,15 +252,18 @@ func baseFromViper(cmd *cobra.Command, v *viper.Viper, raw []byte) (*baseSnapsho
 
 // validationPartition is the R34 split of a config's validation errors.
 type validationPartition struct {
+	overlay  []agentconfig.FieldError // touched by the overlay: strict
 	fatal    []agentconfig.FieldError // file-origin, not tolerated: fatal
 	warnings []agentconfig.FieldError // file-origin, tolerated or warn-only: reported
 	skip     map[string]string        // plugin name -> reason, for tolerated (skip) errors
 }
 
-// partitionByOrigin splits the validation errors of the file (R34): tolerated rules become
-// warnings (and the plugin is skipped), warn-only rules become warnings (nothing is skipped or
+// partitionByOrigin splits validation errors by origin (R34). An error at pointer P is
+// overlay-origin when some overlay-touched pointer o equals P, is a prefix of P, or has P as a
+// prefix (segment-wise). Everything else is file-origin: tolerated rules become warnings
+// (and the plugin is skipped), warn-only rules become warnings (nothing is skipped or
 // changed), the rest is fatal.
-func partitionByOrigin(err error) validationPartition {
+func partitionByOrigin(err error, overlayTouched []string) validationPartition {
 	var out validationPartition
 	if err == nil {
 		return out
@@ -272,6 +275,8 @@ func partitionByOrigin(err error) validationPartition {
 	}
 	for _, e := range errs {
 		switch {
+		case touchedByOverlay(e.Path, overlayTouched):
+			out.overlay = append(out.overlay, e)
 		case isToleratedFileRule(e):
 			out.warnings = append(out.warnings, e)
 			if segs := agentconfig.SplitPointer(e.Path); len(segs) >= 2 && segs[0] == "plugins" {
@@ -287,6 +292,19 @@ func partitionByOrigin(err error) validationPartition {
 		}
 	}
 	return out
+}
+
+// touchedByOverlay compares pointers segment-wise in both directions.
+func touchedByOverlay(ptr string, touched []string) bool {
+	p := agentconfig.SplitPointer(ptr)
+	for _, o := range touched {
+		t := agentconfig.SplitPointer(o)
+		n := min(len(p), len(t))
+		if slices.Equal(p[:n], t[:n]) {
+			return true
+		}
+	}
+	return false
 }
 
 // toRuntime converts a merged, env-resolved declared config into the runtime structs.
