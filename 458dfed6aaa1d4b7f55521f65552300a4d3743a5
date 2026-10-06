@@ -1,0 +1,2 @@
+lisa-addressed:
+Local review (not posted) fix 1: pinned compliance-framework/api v0.21.0 instead of the b53be8f pseudo-version. Fix 3 (part): README Basic example shows plugins.<p>.enabled.
