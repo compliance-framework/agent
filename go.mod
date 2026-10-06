@@ -3,7 +3,7 @@ module github.com/compliance-framework/agent
 go 1.26.1
 
 require (
-	github.com/compliance-framework/api v0.20.1-0.20261002142938-b53be8f0c388
+	github.com/compliance-framework/api v0.21.0
 	github.com/compliance-framework/gooci v0.0.6
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/defenseunicorns/go-oscal v0.7.0
