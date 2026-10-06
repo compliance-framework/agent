@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/compliance-framework/agent/runner/proto"
+	"github.com/compliance-framework/api/sdk/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,4 +171,39 @@ func TestPolicyPathLabelRecordsThePolicySource(t *testing.T) {
 	assert.Equal(t, testPolicySource, props["labelled"][PropPolicySource])
 	assert.Equal(t, testPolicyDigest, props["labelled"][PropPolicyDigest])
 	assert.NotContains(t, props["unknown path"], PropPolicySource, "a path the plugin was not given records nothing")
+}
+
+// TestPluginCannotSetTheConfigRevision: the agent's revision prop replaces a plugin's, and a
+// plugin's is dropped when the agent sets none (it runs the file only).
+func TestPluginCannotSetTheConfigRevision(t *testing.T) {
+	spoofed := func() *proto.Evidence {
+		e := evidenceFor("spoofed", nil)
+		e.Props = []*proto.Property{
+			{Ns: new(PropNamespace), Name: PropConfigRevision, Value: "99"},
+			{Ns: new("https://example.test/ns"), Name: PropConfigRevision, Value: "kept"},
+		}
+		return e
+	}
+	revisions := func(api *fakeAPI) []string {
+		var out []string
+		for _, p := range api.evidence[0]["props"].([]any) {
+			prop := p.(map[string]any)
+			if prop["name"] == PropConfigRevision {
+				out = append(out, prop["ns"].(string)+"="+prop["value"].(string))
+			}
+		}
+		return out
+	}
+
+	bundle := writeBundle(t, "a")
+	api := &fakeAPI{}
+	helper := newTestHelper(t, api, bundle)
+	WithEvidenceProps(types.Property{Ns: PropNamespace, Name: PropConfigRevision, Value: "7"})(helper)
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{spoofed()}))
+	assert.ElementsMatch(t, []string{"https://example.test/ns=kept", PropNamespace + "=7"}, revisions(api), "the agent's revision wins")
+
+	api = &fakeAPI{}
+	helper = newTestHelper(t, api, bundle)
+	require.NoError(t, helper.CreateEvidence(context.Background(), []*proto.Evidence{spoofed()}))
+	assert.Equal(t, []string{"https://example.test/ns=kept"}, revisions(api), "without an applied revision a plugin's is dropped")
 }

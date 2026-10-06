@@ -109,7 +109,8 @@ change here must keep working with them.
 ## Domain rules that are easy to break
 
 - **Agent-owned props.** The agent sets `_agent`, `_plugin_source`, `_plugin_digest`,
-  `_policy_source` and `_policy_digest`, and replaces any value a plugin sends for them.
+  `_policy_source`, `_policy_digest` and `agent-config-revision` (namespace
+  `https://compliance-framework.github.io/ns`), and replaces any value a plugin sends for them.
 - **API-owned props.** The API alone writes `_policy_bundle_digest`, `_policy_input_digest`
   and `_policy_data_digest`.
 - **The agent never computes artifact digests.** It passes each evaluation's policy

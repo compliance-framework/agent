@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 
 	"github.com/compliance-framework/agent/runner/proto"
 	"github.com/compliance-framework/api/sdk"
@@ -45,9 +46,23 @@ const (
 	PropPolicyDigest = "_policy_digest"
 )
 
+// PropNamespace is the OSCAL namespace of the props the agent adds through
+// WithEvidenceProps.
+const PropNamespace = "https://compliance-framework.github.io/ns"
+
+// PropConfigRevision is the evidence prop naming the applied remote configuration revision
+// (namespace PropNamespace). The agent owns it: any a plugin sets is dropped, whether or not
+// the agent sets one.
+const PropConfigRevision = "agent-config-revision"
+
 // LabelPolicyPath is the evidence label in which plugins record the policy path they were
 // given (policy-manager's _policy_path).
 const LabelPolicyPath = "_policy_path"
+
+// isAgentProp reports whether the agent owns a prop, so a plugin's value for it is dropped.
+func isAgentProp(prop types.Property) bool {
+	return isSourceProp(prop.Name) || (prop.Ns == PropNamespace && prop.Name == PropConfigRevision)
+}
 
 func isSourceProp(name string) bool {
 	switch name {
@@ -80,9 +95,9 @@ func WithPolicyPaths(paths []string) ApiHelperOption {
 	}
 }
 
-// WithEvidenceProps appends props to every evidence the plugin sends, unless the evidence
-// already carries a prop with the same (ns, name). The agent uses it to stamp the applied
-// remote configuration revision (R38).
+// WithEvidenceProps adds props to every evidence the plugin sends. They are agent-owned: they
+// replace any prop the evidence carries with the same (ns, name). The agent uses it to stamp
+// the applied remote configuration revision (R38).
 func WithEvidenceProps(props ...types.Property) ApiHelperOption {
 	return func(h *apiHelper) {
 		h.evidenceProps = append(h.evidenceProps, props...)
@@ -199,10 +214,10 @@ func (s *apiEvidenceSender) Close() error {
 func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Evidence {
 	evid := EvidenceProtoToSdk(e)
 	evid.PolicyArtifacts = outcome.refs
-	// The agent owns the source props; any a plugin set are replaced.
+	// The agent owns the source and revision props; any a plugin set are replaced.
 	props := evid.Props[:0]
 	for _, prop := range evid.Props {
-		if !isSourceProp(prop.Name) {
+		if !isAgentProp(prop) {
 			props = append(props, prop)
 		}
 	}
@@ -231,19 +246,14 @@ func (h *apiHelper) toSdk(e *proto.Evidence, outcome evaluationOutcome) types.Ev
 	return *evid
 }
 
-// mergeProps appends each extra prop unless one with the same (ns, name) already exists.
+// mergeProps adds each extra prop, replacing any existing one with the same (ns, name): the
+// extra props are the agent's and win over the plugin's.
 func mergeProps(props []types.Property, extra []types.Property) []types.Property {
 	for _, p := range extra {
-		exists := false
-		for _, q := range props {
-			if q.Ns == p.Ns && q.Name == p.Name {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			props = append(props, p)
-		}
+		props = slices.DeleteFunc(props, func(q types.Property) bool {
+			return q.Ns == p.Ns && q.Name == p.Name
+		})
+		props = append(props, p)
 	}
 	return props
 }

@@ -89,5 +89,10 @@ volume).
 The agent looks the policy source up by the path it gave the plugin, which is the path the
 plugin reports the evaluation under.
 
-The agent owns these props: any a plugin sets itself are replaced. They are recorded whether
+Evidence produced under a remote configuration overlay also carries `agent-config-revision`
+(namespace `https://compliance-framework.github.io/ns`), the overlay revision the agent had
+applied. It is absent when the agent runs its configuration file alone.
+
+The agent owns these props: any a plugin sets itself are replaced, and a plugin's
+`agent-config-revision` is dropped even when the agent sets none. They are recorded whether
 or not the evaluation's artifacts could be stored.
