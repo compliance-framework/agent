@@ -182,7 +182,8 @@ cannot contain dots.
 A plugin `schedule` in the file that does not parse does not stop the agent: that plugin is skipped, the others run,
 and the problem is logged as a warning (R34). A few other file values that always loaded are also only
 warnings, and are kept unchanged: a negative `verbosity` (`-1` logs WARN and above) and a literal `${env:...}` outside
-`plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup.
+`plugins.*.config`. Every other invalid value in the file (for example a missing `api.url`) still fails startup, and on
+a live reload the agent keeps running its last good configuration.
 
 ## State directory and instance ID
 

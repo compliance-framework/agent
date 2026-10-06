@@ -37,13 +37,11 @@ import (
 	sdktypes "github.com/compliance-framework/api/sdk/types"
 	"github.com/coreos/go-systemd/v22/daemon"
 	oscalTypes_1_1_3 "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-3"
-	"github.com/fsnotify/fsnotify"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -288,38 +286,21 @@ func configureRunner(name string, runnerInstance runner.RunnerV2, config agentPl
 	return err
 }
 
-// loadConfig reads and validates the config file and builds its runtime form. Tolerated file
-// problems (R34) are logged; the plugins they affect are skipped.
-func loadConfig(cmd *cobra.Command, configPath string, logger hclog.Logger) (*agentConfig, error) {
-	base, err := loadBase(cmd, configPath)
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range base.warnings {
-		if isToleratedFileRule(w) {
-			logger.Warn("Ignoring a problem in the config file; the plugin is skipped", "path", w.Path, "error", w.Message)
-			continue
-		}
-		logger.Warn("Ignoring a problem in the config file; the value is kept unchanged", "path", w.Path, "error", w.Message)
-	}
-	return toRuntime(base.declared, base.skip)
-}
-
 // Main the entrypoint for the `agent` command
 //
 // It will read the configuration file, and then run the agent. Various command line flags can
 // be used to override the config file.
 func agentRunner(cmd *cobra.Command, args []string) error {
-	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
-	if err != nil {
-		return err
-	}
-
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "agent",
 		Output: os.Stdout,
 		Level:  hclog.Debug,
 	})
+
+	configPath, err := filepath.Abs(cmd.Flag("config").Value.String())
+	if err != nil {
+		return err
+	}
 
 	stateDir, stateDirSource, err := stateDirFrom(cmd, configPath)
 	if err != nil {
@@ -335,46 +316,27 @@ func agentRunner(cmd *cobra.Command, args []string) error {
 	// file silently creates a new instance. Say where state lives.
 	logger.Info("Agent state", "state_dir", stateDir, "state_dir_source", stateDirSource, "instance_id", id.String(), "instance_id_persisted", persisted)
 
-	agentRun := NewAgentRunner(WithInstanceID(id))
+	ar := NewAgentRunner(WithInstanceID(id))
+	rc := newReconciler(cmd, configPath, store, ar, logger)
+	rc.onStartupFailure = ar.ReportStartupFailure
 
-	ctx, configCancel := context.WithCancel(context.Background())
-	defer configCancel()
-
-	// The watcher only signals; every load builds a fresh viper (loadBase).
-	w := viper.New()
-	w.SetConfigFile(configPath)
-	w.OnConfigChange(func(in fsnotify.Event) {
-		// We want to wait for any running agent processes to finish first.
-		logger.Debug("config file changed", "path", in.Name)
-		configCancel()
-	})
-	w.WatchConfig()
-
-	// For the daemon, we run the agent continuously.
-	// It will exit as soon as the config changes, and then start again with new configs set.
-	for {
-		ctx, configCancel = context.WithCancel(context.Background())
-		config, err := loadConfig(cmd, configPath, logger)
-		if err != nil {
-			logger.Error("Error loading new config", "error", err)
-			panic(err)
-		}
-		agentRun.UpdateConfig(config)
-		err = agentRun.Run(ctx)
-
-		if err != nil {
-			logger.Error("Error running agent", "error", err)
-			os.Exit(1)
-		}
-
-		if !config.Daemon {
-			break
-		}
+	active, err := rc.startup(context.Background())
+	if err != nil {
+		// An unusable local configuration at startup exits 1, as it always has.
+		return err
 	}
 
-	configCancel()
+	rootCtx, stopLoop := context.WithCancel(context.Background())
+	defer stopLoop()
+	if active.runtime.Daemon {
+		defer rc.watchFile()()
+		go rc.loop(rootCtx)
+	}
 
-	return nil
+	return rc.run(active, func(ctx context.Context, cfg *agentConfig) error {
+		ar.UpdateConfig(cfg)
+		return ar.Run(ctx)
+	})
 }
 
 // stateDirFrom resolves the state directory: --state-dir, then CCF_STATE_DIR, then the
