@@ -21,9 +21,15 @@ Versions are coupled:
 - plugins pin this module;
 - the UI depends on the API's JSON shapes.
 
-Releases are tags (`vX.Y.Z`, or `vX.Y.Z-rcN`). CI publishes the `agent`, `agent-ci` and
-`agent-custodian` images to ghcr.io. A mixed-version rollout must keep working: a new
-agent with old plugins, an old agent with new plugins, and either with an older API.
+Releases are tags (`vX.Y.Z`, or `vX.Y.Z-rcN`), created by release-please (`release-please.yml`)
+or, for an rc, by the `cut-prerelease` workflow; nobody pushes `v*` tags by hand. A published
+release runs `release.yml`, which publishes the `agent`, `agent-ci` and `agent-custodian`
+images to ghcr.io (`X.Y.Z`, `X.Y`, `X` and `latest`; an rc gets `X.Y.Z-rcN` only).
+`preview.yml` publishes `:main` and `:sha-<7>` from `main`, and `:pr-<n>` for a PR labelled
+`preview`. The shared workflows pass the `VERSION` build arg: `X.Y.Z` or `X.Y.Z-rcN` for a
+release, `main-<sha7>` or `pr-<n>-<sha7>` for a preview. A mixed-version rollout must keep
+working: a new agent with old plugins, an old agent with new plugins, and either with an
+older API.
 
 ## Commands
 
