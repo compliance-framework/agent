@@ -3,6 +3,7 @@ name: ci
 on:
   pull_request:
     # edited: the PR title check re-runs after a title edit.
+    # labeled/unlabeled: release-checks reads the PR's labels from the event.
     # closed: notify marks the PR's needs-human card handled and closes its CI incident.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled, closed]
   push:
@@ -24,8 +25,13 @@ jobs:
       security-events: write
     secrets: inherit
 
+  release-checks:
+    uses: compliance-framework/workflows/.github/workflows/release-checks.yml@55c549bf712163152173b398e297fba0f907ceca # v1.4.0
+    permissions:
+      contents: read
+
   notify:
-    needs: [ci]
+    needs: [ci, release-checks]
     if: always()
     uses: compliance-framework/workflows/.github/workflows/notify-failure.yml@899dbe5d7dac02de5fd60a92d764b189259e03dd # v1.5.0
     with:
