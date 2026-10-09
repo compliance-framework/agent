@@ -1,0 +1,6 @@
+lisa-design:
+- release.yml / preview.yml / cut-prerelease.yml copy mock-agent's callers exactly (triggers, concurrency group keyed by PR number, permissions, secrets), with image names agent/agent-ci/agent-custodian and the existing Dockerfiles, pinned at workflows v1.4.0.
+- VERSION: workflows v1.4.0 publish-image.yml has no build-args input, so "keep the VERSION build arg" is met in the Dockerfiles: ARG VERSION defaults to empty; when empty, `git describe --tags --exact-match --match 'v[0-9]*'` on the build context's .git (actions/checkout fetches the release tag into refs/tags/<tag> on a release event; .dockerignore does not exclude .git, and COPY . . already copied it) sets it, minus the "v"; else "dev". Rejected: a build-args input in workflows (outside this repo) and a release-please version file (an rc would report the final version).
+- Preview images (:main, :sha-<7>, :pr-<n>) report version "dev": there is no tag at HEAD. The old workflow published no preview images.
+- Release images lose the old `sha-<7>` tag (release-go-image publishes X.Y.Z, X.Y, X, latest); preview.yml on main publishes :sha-<7> for the same commit (a different build/digest). OCI labels shrink from metadata-action's set to source + revision (+ index annotations).
+- AGENTS.md's release paragraph now describes release-please, cut-prerelease, the tags and the VERSION derivation.
