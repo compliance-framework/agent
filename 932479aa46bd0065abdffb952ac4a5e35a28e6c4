@@ -1,0 +1,2 @@
+lisa-addressed:
+Coordinator follow-up: re-pinned ci.yml's ci-go-service and notify-failure callers from workflows v1.4.0 (55c549b) to v1.5.0 (899dbe5). v1.5.0 passes VERSION to image builds centrally; no caller input changes for ci-go-service.
