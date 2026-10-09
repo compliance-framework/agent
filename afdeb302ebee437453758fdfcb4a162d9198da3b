@@ -1,0 +1,7 @@
+lisa-design:
+- ci.yml mirrors mock-agent's caller (trigger types, permissions, notify with secrets: inherit); release-checks is added in T02, not here.
+- make-targets is "check-opa-version check-proto", not mock-agent's "build": the shared go job already runs go build ./..., and the plan names these two checks for agent.
+- check-proto scopes drift to `git status --porcelain -- '*.pb.go'` instead of a whole-tree `git diff --exit-code`: a whole-tree diff fails on unrelated local edits, and status also catches newly generated untracked files.
+- check-proto exits 0 with a warning when buf is missing (plan: "skipped when buf is unavailable"). The shared runners have no buf, so in CI it is a no-op today; installing buf in CI was not done because buf generate needs the remote buf.build plugins.
+- The old go-fmt-check (go fmt ./... + git status) is covered by the shared go job's `gofmt -l .`, which checks every .go file, not only package files.
+- AGENTS.md's Commands section is updated to describe the shared CI, since it named main.yml.
