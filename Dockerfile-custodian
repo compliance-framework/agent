@@ -8,8 +8,13 @@ RUN go mod download
 
 COPY . .
 
-ARG VERSION=dev
-RUN go build -ldflags "-X main.version=${VERSION}" -o concom main.go
+# The shared release workflows pass no build args. Without VERSION, the release tag checked
+# out at HEAD (vX.Y.Z or vX.Y.Z-rcN) sets it, without the "v", as the old VERSION arg did.
+ARG VERSION=
+RUN if [ -z "$VERSION" ]; then \
+      VERSION="$(git describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null)" && VERSION="${VERSION#v}" || VERSION=dev; \
+    fi; \
+    go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 
 # 0.9.49.0

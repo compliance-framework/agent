@@ -1,13 +1,22 @@
-name: New Release
+name: release
 
 on:
-  push:
-    tags:
-      - '*'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
 
 jobs:
   release:
+    uses: compliance-framework/workflows/.github/workflows/release-go-image.yml@55c549bf712163152173b398e297fba0f907ceca # v1.4.0
+    with:
+      # ghcr.io/compliance-framework/agent, agent-ci and agent-custodian, as released before.
+      images: >-
+        [{"name": "agent", "dockerfile": "Dockerfile", "context": "."},
+         {"name": "agent-ci", "dockerfile": "Dockerfile-ci", "context": "."},
+         {"name": "agent-custodian", "dockerfile": "Dockerfile-custodian", "context": "."}]
     permissions:
+      contents: read
       packages: write
-      contents: write
-    uses: ./.github/workflows/build-and-upload.yml
+    secrets: inherit
