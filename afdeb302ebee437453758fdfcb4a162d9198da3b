@@ -5,3 +5,8 @@ lisa-design:
 - check-proto exits 0 with a warning when buf is missing (plan: "skipped when buf is unavailable"). The shared runners have no buf, so in CI it is a no-op today; installing buf in CI was not done because buf generate needs the remote buf.build plugins.
 - The old go-fmt-check (go fmt ./... + git status) is covered by the shared go job's `gofmt -l .`, which checks every .go file, not only package files.
 - AGENTS.md's Commands section is updated to describe the shared CI, since it named main.yml.
+
+lisa-selfreview:
+pass 1 (strict): verdict approve, no findings. Checked CORE-CI-001 (reusable workflows SHA-pinned, top-level permissions: {}), CORE-DOC-001 (AGENTS.md updated), CORE-VERIFY-001 (gofmt, vet, tidy, build, go test -race, check-opa-version, check-proto with and without buf, actionlint v1.7.12, golangci-lint v2.11.4 shared config new-from-merge-base: all pass). check-proto negative test fails on a .proto change without regeneration.
+Question (not fixed): buf is not installed on the shared runners, so check-proto skips in CI; should CI install buf?
+Note: old main.yml also ran on pushes to release-* branches; none exist, and the baseline triggers on main only.
