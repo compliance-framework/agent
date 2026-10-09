@@ -1,0 +1,2 @@
+lisa-addressed:
+Coordinator follow-up: re-pinned release.yml, preview.yml and cut-prerelease.yml to workflows v1.5.0 (899dbe5). v1.5.0's publish-image.yml passes --build-arg VERSION (release: tag minus prefix; preview: main-<sha7> / pr-<n>-<sha7>), so the git-describe VERSION workaround is removed: Dockerfile, Dockerfile-ci, Dockerfile-custodian are byte-identical to main again. AGENTS.md now says the shared workflows pass VERSION. This supersedes the lisa-design note's VERSION bullet.
