@@ -35,6 +35,22 @@ help-all: ## Display all help items, ie including plumbing targets.
 proto-gen: ## Generate objects from proto definitions
 	@buf generate
 
+.PHONY: check-proto
+check-proto: ## Check the committed generated proto code matches buf generate (skipped without buf)
+	@if ! command -v buf >/dev/null 2>&1; then \
+		$(WARN) "buf is not installed; skipping the proto drift check"; \
+		exit 0; \
+	fi; \
+	buf generate; \
+	drift=$$(git status --porcelain -- '*.pb.go'); \
+	if [ -n "$$drift" ]; then \
+		$(ERR) "Generated proto code is out of date: run make proto-gen and commit the result"; \
+		echo "$$drift"; \
+		git --no-pager diff -- '*.pb.go'; \
+		exit 1; \
+	fi; \
+	$(OK) "Generated proto code is up to date"
+
 ##@ Test
 .PHONY: test
 test:  ## Run tests

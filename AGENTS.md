@@ -27,10 +27,11 @@ agent with old plugins, an old agent with new plugins, and either with an older 
 
 ## Commands
 
-There is no lint target. CI (`.github/workflows/main.yml`) runs a build, the tests, the OPA
-check, and a gofmt check. The gofmt check fails on *any* change in the tree after `go fmt`,
-so commit everything, including new files, before relying on it. `go vet` is not in CI but
-costs nothing.
+There is no lint target. CI (`.github/workflows/ci.yml`) calls the shared `ci-go-service.yml`
+from compliance-framework/workflows. It runs gofmt, `go vet`, a `go mod tidy` check, the tests
+with `-race`, a build, golangci-lint (only issues the change adds), actionlint, the PR title
+check and a vulnerability scan, plus the make targets `check-opa-version` and `check-proto`.
+Its `required` job is the one status check to require.
 
 ```sh
 make build                 # go build -o dist/concom main.go
@@ -39,6 +40,7 @@ gofmt -l .                 # must print nothing: CI fails on any diff after go f
 go vet ./...
 make check-opa-version     # the agent's OPA version must equal the one compliance-framework/api requires
 make proto-gen             # buf generate; needs the buf CLI and network access to buf.build
+make check-proto           # proto-gen, then fail on any diff; skipped when buf is not installed
 ```
 
 - **Committed generated files.** `runner/proto/*.pb.go` and `*_grpc.pb.go` are generated
