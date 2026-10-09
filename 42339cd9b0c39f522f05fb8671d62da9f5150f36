@@ -1,0 +1,2 @@
+lisa-addressed:
+Coordinator follow-up: re-pinned release-please.yml and ci.yml's release-checks caller from workflows v1.4.0 to v1.5.0 (899dbe5). release-please/defaults.json is unchanged between them, so release-please-config.json still has no drift.
