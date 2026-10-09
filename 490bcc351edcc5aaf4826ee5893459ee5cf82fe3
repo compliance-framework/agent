@@ -4,3 +4,7 @@ lisa-design:
 - release-please.yml and the release-checks job copy mock-agent's callers exactly, pinned at workflows v1.4.0.
 - No CHANGELOG.md is added: release-please creates it in its first release PR.
 - AGENTS.md's release paragraph is updated in T03, where publishing changes, not here.
+
+lisa-selfreview:
+pass 1 (strict): verdict approve, no findings. actionlint v1.7.12 ok; config/manifest valid JSON; defaults drift check empty; bootstrap-sha is a commit on main; release-checks inputs default (module-path true; module path github.com/compliance-framework/agent has no /vN, right for 0.x).
+Context for reviewers (not a defect): release-please on main needs the agent repo's `release` environment secrets (agent isn't in the org RELEASE_BOT_* scope), so repo-settings must apply before this merges (W1-S2-PRE order). Between T02 and T03 merging, the old release.yml (push: tags '*') would still publish on release-please's tag; merge T03 right after.
