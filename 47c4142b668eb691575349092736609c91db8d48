@@ -4,3 +4,7 @@ lisa-design:
 - Preview images (:main, :sha-<7>, :pr-<n>) report version "dev": there is no tag at HEAD. The old workflow published no preview images.
 - Release images lose the old `sha-<7>` tag (release-go-image publishes X.Y.Z, X.Y, X, latest); preview.yml on main publishes :sha-<7> for the same commit (a different build/digest). OCI labels shrink from metadata-action's set to source + revision (+ index annotations).
 - AGENTS.md's release paragraph now describes release-please, cut-prerelease, the tags and the VERSION derivation.
+
+lisa-selfreview:
+pass 1 (strict): verdict approve, no findings. actionlint v1.7.12 ok. Docker-tested all three Dockerfiles' builder stage in a shallow checkout shaped like actions/checkout on a release event: rc tag -> main.version=0.10.0-rc1; --build-arg VERSION=1.2.3 -> 1.2.3; no tag -> dev; full Dockerfile-ci build ok. build-and-upload.yml was referenced only by the old release.yml (both removed). CORE-CI-001: top-level permissions on every new caller, reusable workflows SHA-pinned. Dockerfile `|| VERSION=dev` is the documented default, not a swallowed failure (CORE-ERR-001 n/a).
+Deferred/for reviewers: release images no longer carry sha-<7> (preview on main does); OCI labels reduced to source+revision; old release.yml fired on any tag push ('*'), now only on a published release.
