@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/compliance-framework/api v0.21.0
-	github.com/compliance-framework/gooci v0.0.6
+	github.com/compliance-framework/gooci v0.0.8
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/defenseunicorns/go-oscal v0.7.0
 	github.com/fsnotify/fsnotify v1.9.0
