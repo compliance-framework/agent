@@ -1,0 +1,7 @@
+lisa-design:
+- The probe's code is built from the workflows SHA that ci.yml's ci-go-service.yml call is pinned to, read at run time, so ccf-bump moving the uses: pins moves the probe too (a hard-coded checkout ref: would not be moved by ccf-bump).
+- The plugin list comes from repos.yaml on workflows' main, not the pinned SHA: v1.5.0 (pinned) and v1.5.2 have no plugins in repos.yaml; batches are activated on main. Selection mirrors manifest.ActiveRepos: kind go-plugin, release true, batch 0 or in active_batches. Empty list fails the job.
+- One plugin-probe invocation takes the whole list (the probe loops over it and reports every plugin), rather than a shell loop of one-plugin runs, so the job summary is one table.
+- The diff uses git (merge commit vs its first parent for PRs, before..HEAD for pushes) instead of dorny/paths-filter: no extra third-party action to pin.
+- Probe also runs on pushes to main that change runner/: notify-failure only posts for main pushes and bot PRs, so that is when a failure reaches #ccf-ci-failures.
+- changes and plugin-probe are separate caller jobs, outside the shared ci-go-service workflow, so `ci / required` is unaffected; plugin-probe shows as skipped when runner/ is unchanged.
