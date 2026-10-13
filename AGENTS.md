@@ -105,6 +105,10 @@ change here must keep working with them.
   `Unimplemented` as "not supported". `GRPCServer.Init` in `runner/grpc.go` is the model
   (v1 plugins don't implement `RunnerV2`).
 - When adding an agent-owned prop, add it to the list under "Domain rules" below too.
+- **CI checks this.** When a PR (or a push to `main`) changes `runner/`, the `plugin-probe` job
+  in `ci.yml` builds compliance-framework/workflows' plugin-probe against that agent, then loads
+  the `:latest` release of every active plugin in workflows' `repos.yaml`. It fails if any of
+  them no longer loads. To run it yourself, see workflows' `docs/plugin-probe.md`.
 
 ## Change together
 

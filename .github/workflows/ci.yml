@@ -30,8 +30,156 @@ jobs:
     permissions:
       contents: read
 
+  # Does this run change the plugin contract (runner/, which holds runner/proto/)? A pull request
+  # compares its test merge commit with the base; a push to main compares the pushed range.
+  changes:
+    name: changes
+    if: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.state == 'closed') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      runner: ${{ steps.diff.outputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the base, or the pushed range, must be in the clone
+          persist-credentials: false
+      - name: Diff runner/
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            base="HEAD^1" # the test merge commit's first parent is the base branch
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          else
+            echo "No base for this push; probing to be safe."
+            echo "runner=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD -- runner/)"
+          if [ -n "$changed" ]; then
+            echo "The plugin contract changed:"
+            echo "$changed"
+            echo "runner=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "runner/ is unchanged; plugin-probe is skipped."
+            echo "runner=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # New agent, old plugins (AGENTS.md, "The plugin contract"): load the latest release of every
+  # active plugin in the workflows manifest through this commit's runner.
+  plugin-probe:
+    name: plugin-probe
+    needs: [changes]
+    if: ${{ needs.changes.outputs.runner == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      AGENT_DIR: ${{ github.workspace }}/agent
+      TOOLS_DIR: ${{ github.workspace }}/.ccf-workflows
+      MANIFEST_DIR: ${{ github.workspace }}/.ccf-manifest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: agent
+          persist-credentials: false
+      # The workflows release this file's shared-workflow calls are pinned to (ccf-bump moves the
+      # pins), so the probe's code moves with them.
+      - name: Find the workflows pin
+        id: pin
+        run: |
+          sha="$(sed -nE 's#^[[:space:]]*uses:[[:space:]]*compliance-framework/workflows/\.github/workflows/ci-go-service\.yml@([0-9a-f]{40}).*#\1#p' "$AGENT_DIR/.github/workflows/ci.yml" | head -n 1)"
+          if [ -z "$sha" ]; then
+            echo "::error::no ci-go-service.yml@<sha> pin in .github/workflows/ci.yml"
+            exit 1
+          fi
+          echo "Building plugin-probe from compliance-framework/workflows@$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: compliance-framework/workflows
+          ref: ${{ steps.pin.outputs.sha }}
+          path: .ccf-workflows
+          persist-credentials: false
+      # The plugin list is the live manifest on workflows' main: the batches the release tools act
+      # on (active_batches) are switched on there, ahead of any workflows release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: compliance-framework/workflows
+          ref: main
+          path: .ccf-manifest
+          sparse-checkout: repos.yaml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: List the plugins
+        id: plugins
+        run: |
+          # Released go-plugin repos that are core (no batch) or in an active batch, as
+          # manifest.ActiveRepos selects them; each is probed at its :latest release.
+          # shellcheck disable=SC2016 # $active and $b are yq variables
+          names="$(yq -r '(.active_batches // []) as $active | .repos[]
+            | select(.kind == "go-plugin" and .release == true)
+            | select((.batch // 0) == 0 or (.batch as $b | $active | any_c(. == $b)))
+            | .name' "$MANIFEST_DIR/repos.yaml")"
+          if [ -z "$names" ]; then
+            echo "::error::no active go-plugin repos in workflows' repos.yaml"
+            exit 1
+          fi
+          {
+            echo "list<<EOF"
+            for name in $names; do
+              echo "ghcr.io/compliance-framework/$name:latest"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          rm -rf "$MANIFEST_DIR"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+      - name: Build plugin-probe against this agent
+        run: |
+          # The replace lives only in this throwaway clone of workflows; nothing is committed.
+          cd "$TOOLS_DIR"
+          go mod edit -replace "github.com/compliance-framework/agent=$AGENT_DIR"
+          # Check with the OPA this agent requires, as plugin-probe.yml does for an agent-ref.
+          opa="$(go mod edit -json "$AGENT_DIR/go.mod" | jq -r '.Require[] | select(.Path == "github.com/open-policy-agent/opa") | .Version')"
+          if [ -z "$opa" ]; then
+            echo "::error::the agent's go.mod does not require github.com/open-policy-agent/opa"
+            exit 1
+          fi
+          go get "github.com/open-policy-agent/opa@$opa"
+          go mod tidy
+          selected="$(go list -m -f '{{.Version}}' github.com/open-policy-agent/opa)"
+          if [ "$selected" != "$opa" ]; then
+            echo "::error::OPA $selected is selected, but the agent requires $opa"
+            exit 1
+          fi
+          go build -o "$RUNNER_TEMP/plugin-probe" ./cmd/plugin-probe
+          cd "$GITHUB_WORKSPACE"
+          rm -rf "$TOOLS_DIR"
+      - name: Probe
+        env:
+          PLUGINS: ${{ steps.plugins.outputs.list }}
+        run: |
+          # One run loops over every plugin and reports each, then fails if any didn't load.
+          status=0
+          "$RUNNER_TEMP/plugin-probe" --plugins "$PLUGINS" \
+            --json "$RUNNER_TEMP/report.json" --markdown "$GITHUB_STEP_SUMMARY" || status=$?
+          if [ -s "$RUNNER_TEMP/report.json" ]; then
+            cat "$RUNNER_TEMP/report.json"
+          fi
+          exit "$status"
+
   notify:
-    needs: [ci, release-checks]
+    needs: [ci, release-checks, changes, plugin-probe]
     if: always()
     uses: compliance-framework/workflows/.github/workflows/notify-failure.yml@899dbe5d7dac02de5fd60a92d764b189259e03dd # v1.5.0
     with:
