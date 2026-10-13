@@ -5,3 +5,8 @@ lisa-design:
 - The diff uses git (merge commit vs its first parent for PRs, before..HEAD for pushes) instead of dorny/paths-filter: no extra third-party action to pin.
 - Probe also runs on pushes to main that change runner/: notify-failure only posts for main pushes and bot PRs, so that is when a failure reaches #ccf-ci-failures.
 - changes and plugin-probe are separate caller jobs, outside the shared ci-go-service workflow, so `ci / required` is unaffected; plugin-probe shows as skipped when runner/ is unchanged.
+
+lisa-selfreview:
+Pass 1 (approve). Checked CORE-CI-001 (actions SHA-pinned, contents: read only, no secrets in the probe job), CORE-SEC-003 (all ${{ }} via env; the pin read from ci.yml is constrained to 40 hex), CORE-ERR-001 (git diff / yq / probe failures fail their step under bash -eo pipefail; empty plugin list fails), actionlint v1.7.7 clean.
+Deferred (should-fix, CORE-DUP-001): the yq selection duplicates manifest.ActiveRepos + kind/release filters. Unavoidable at the pinned workflows v1.5.0 (no batch support, no list CLI); a `cmd/manifest` list mode in workflows would remove it.
+Not testable as a unit test in this repo: verified by running the list and diff steps' scripts locally, building plugin-probe with the replace, and probing the 10 batch-1 plugins locally.
