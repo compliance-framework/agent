@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/compliance-framework/agent/compare/v0.9.2...v0.9.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **deps:** bump gooci to v0.0.10 ([#131](https://github.com/compliance-framework/agent/issues/131)) ([41a4043](https://github.com/compliance-framework/agent/commit/41a40435b1c1f57c9727e3b0fcf4c19de0b0e582))
+
 ## [0.9.2](https://github.com/compliance-framework/agent/compare/v0.9.1...v0.9.2) (2026-10-14)
 
 
