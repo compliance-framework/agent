@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/compliance-framework/agent/compare/v0.9.3...v0.9.4) (2026-10-22)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#134](https://github.com/compliance-framework/agent/issues/134)) ([34a1cb9](https://github.com/compliance-framework/agent/commit/34a1cb9943a0f1e8a3f2fee6ad4556472755bbf2))
+
 ## [0.9.3](https://github.com/compliance-framework/agent/compare/v0.9.2...v0.9.3) (2026-10-14)
 
 
