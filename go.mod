@@ -6,7 +6,7 @@ require (
 	github.com/compliance-framework/api v0.21.1
 	github.com/compliance-framework/gooci v0.0.10
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/defenseunicorns/go-oscal v0.7.1
+	github.com/defenseunicorns/go-oscal v0.7.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-containerregistry v0.22.1

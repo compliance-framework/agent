@@ -93,8 +93,8 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 h1:5RVFMOWjMyRy8cARdy79nAmgYw3hK/4HUq48LQ6Wwqo=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
-github.com/defenseunicorns/go-oscal v0.7.1 h1:L2kUisuGU5q2GbWvhxPQpNTZtOELpqc/tpd2hgE5gck=
-github.com/defenseunicorns/go-oscal v0.7.1/go.mod h1:2VGbt7jOZ8VfcmWg7Mg9m9NKpLtl/LXAqTWDzcH0qms=
+github.com/defenseunicorns/go-oscal v0.7.2 h1:nsokNYpDAopub3R0QQOKQuH28jfm62iA4NPy68bIQFA=
+github.com/defenseunicorns/go-oscal v0.7.2/go.mod h1:2VGbt7jOZ8VfcmWg7Mg9m9NKpLtl/LXAqTWDzcH0qms=
 github.com/dgraph-io/badger/v4 v4.9.1 h1:DocZXZkg5JJHJPtUErA0ibyHxOVUDVoXLSCV6t8NC8w=
 github.com/dgraph-io/badger/v4 v4.9.1/go.mod h1:5/MEx97uzdPUHR4KtkNt8asfI2T4JiEiQlV7kWUo8c0=
 github.com/dgraph-io/ristretto/v2 v2.2.0 h1:bkY3XzJcXoMuELV8F+vS8kzNgicwQFAaGINAEJdWGOM=
