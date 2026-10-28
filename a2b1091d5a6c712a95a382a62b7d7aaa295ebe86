@@ -1,0 +1,2 @@
+lisa-selfreview:
+pass 1 (strict): approve, no findings (checked: toolchain survives tidy; all three images build, golang:1.26.1 builder downloads and builds with go1.26.10; goreleaser and release-go-image run after setup-go go-version-file; golangci-lint version check is minor-only; check-opa-version, build, vet, unit tests pass).
