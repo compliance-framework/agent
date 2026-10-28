@@ -2,6 +2,8 @@ module github.com/compliance-framework/agent
 
 go 1.26.1
 
+toolchain go1.26.10
+
 require (
 	github.com/compliance-framework/api v0.22.0
 	github.com/compliance-framework/gooci v0.0.10

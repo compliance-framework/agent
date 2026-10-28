@@ -1,4 +1,6 @@
 FROM golang:1.26.1 AS builder
+# Build with the go.mod toolchain line (Renovate bumps it for Go security fixes), downloading it when this image's Go is older.
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 

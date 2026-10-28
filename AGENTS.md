@@ -138,3 +138,6 @@ change here must keep working with them.
 
 - Commit the root build outputs `concom` or `agent`, `dist/`, `cover.out`, `.config/`, or a `go.work`.
 - Change the generated `*.pb.go` files by hand.
+- Remove or lower the `toolchain` line in `go.mod`, or `ENV GOTOOLCHAIN=auto` in the Dockerfiles'
+  golang stages. Renovate ships Go security fixes by bumping that line, and CI, releases and the
+  images build with at least that Go. The `go` line is only the minimum language version.
