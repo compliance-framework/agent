@@ -1,0 +1,2 @@
+lisa-addressed:
+- CORE-DUP-001 (12480535cdea) should-fix, .github/workflows/release.yml:13: added a comment pointing at ci.yml's images list so the two stay equal.
