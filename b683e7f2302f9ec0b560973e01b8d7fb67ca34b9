@@ -1,0 +1,4 @@
+lisa-design:
+- toolchain go1.26.10 = newest stable 1.26 patch on go.dev, strictly above the go line (1.26.1), which stays as the minimum language version; confirmed it survives `go mod tidy`.
+- ENV GOTOOLCHAIN=auto in the builder stage of all three images (Dockerfile, Dockerfile-ci, Dockerfile-custodian): the official image sets GOTOOLCHAIN=local, which ignores the toolchain line and silently builds with the image's Go (verified: golang:1.26.1 + auto downloads go1.26.10 and the binary reports go1.26.10). FROM lines are left to Renovate/ccf-bump.
+- Commit type is fix(deps) on purpose so release-please cuts a release built with the patched Go.
