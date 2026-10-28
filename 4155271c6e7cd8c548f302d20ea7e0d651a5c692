@@ -1,2 +1,5 @@
 lisa-addressed:
 - CORE-DUP-001 (12480535cdea) should-fix, .github/workflows/release.yml:13: added a comment pointing at ci.yml's images list so the two stay equal.
+
+lisa-selfreview:
+- pass 2: approve, no findings (images list equals release.yml's, all three Dockerfiles exist with VERSION defaulted; pins are the v1.9.0 tag commit; YAML parses; actionlint not installed)
