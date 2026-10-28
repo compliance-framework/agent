@@ -1,3 +1,6 @@
 lisa-design:
 - ci.yml passes `images` as a literal copy of release.yml's list (agent, agent-ci, agent-custodian; context .) rather than relying on the `[{}]` default, which would scan only Dockerfile as `agent`. The two lists must stay equal; a comment in ci.yml points at release.yml. Reusable-workflow inputs can't be shared across caller files, so the duplication is deliberate.
 - AGENTS.md's Commands paragraph names the non-gating image check.
+
+lisa-selfreview:
+- pass 1: request_changes. CORE-DUP-001 should-fix (12480535cdea) .github/workflows/release.yml:13: image list sync documented only on the ci.yml side; add a pointer back from release.yml.
