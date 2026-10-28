@@ -1,2 +1,5 @@
 lisa-design:
 - c7n base image is pinned as tag@digest (0.9.49.0@sha256:275e79ff...) so Renovate can read the version; the digest is unchanged and was verified against the Docker Hub tags API. The version bump (0.9.52.0) is intentionally left to Renovate, not this PR.
+
+lisa-selfreview:
+- pass 1/4: approve, no findings (packs core,go,repo/agent). Verified: digest matches Hub tag 0.9.49.0; tag@digest resolves via imagetools; `docker build --check` clean; no other repo references to the digest or version.
