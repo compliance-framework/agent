@@ -12,6 +12,7 @@ jobs:
     uses: compliance-framework/workflows/.github/workflows/release-go-image.yml@1e188815a0e8036da1bea4e637a9973ecdc3ae1c # v1.9.0
     with:
       # ghcr.io/compliance-framework/agent, agent-ci and agent-custodian, as released before.
+      # ci.yml passes the same list to its image check: change both together.
       images: >-
         [{"name": "agent", "dockerfile": "Dockerfile", "context": "."},
          {"name": "agent-ci", "dockerfile": "Dockerfile-ci", "context": "."},
