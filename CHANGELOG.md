@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.4](https://github.com/compliance-framework/agent/compare/v0.9.3...v0.9.4) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deps:** bump api to v0.22.0 ([#137](https://github.com/compliance-framework/agent/issues/137)) ([44d2f85](https://github.com/compliance-framework/agent/commit/44d2f859fc342d416c15b34b4c911c5819399869))
+* **deps:** update all non-major dependencies ([#134](https://github.com/compliance-framework/agent/issues/134)) ([34a1cb9](https://github.com/compliance-framework/agent/commit/34a1cb9943a0f1e8a3f2fee6ad4556472755bbf2))
+* **deps:** update module github.com/defenseunicorns/go-oscal to v0.7.2 ([#136](https://github.com/compliance-framework/agent/issues/136)) ([ef7d3a3](https://github.com/compliance-framework/agent/commit/ef7d3a370eb311431e68369a40ec663911abf3c6))
+
 ## [0.9.3](https://github.com/compliance-framework/agent/compare/v0.9.2...v0.9.3) (2026-10-14)
 
 
