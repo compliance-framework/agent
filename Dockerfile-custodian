@@ -1,4 +1,4 @@
-FROM golang:1.26.10 AS builder
+FROM golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS builder
 # Build with the go.mod toolchain line (Renovate bumps it for Go security fixes), downloading it when this image's Go is older.
 ENV GOTOOLCHAIN=auto
 
@@ -14,7 +14,7 @@ ARG VERSION=dev
 RUN go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 
-FROM cloudcustodian/c7n:0.9.49.0@sha256:275e79ff9fc4650f2aa7029a371beeab1a4101dcb975f2b29038e391880de902
+FROM cloudcustodian/c7n:0.9.52.0@sha256:44cb9106961e57363b190be0bb6a07010a08f9e8a192ecc3273c5d58e7fcc131
 
 COPY --from=builder /app/concom /app/concom
 
