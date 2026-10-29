@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.5](https://github.com/compliance-framework/agent/compare/v0.9.4...v0.9.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** build with the go1.26.10 toolchain so Renovate can ship Go security fixes ([#141](https://github.com/compliance-framework/agent/issues/141)) ([8f4ec3d](https://github.com/compliance-framework/agent/commit/8f4ec3d18bc2a8060224a9089c36e32eb9cbe817))
+* **deps:** bump api to v0.22.1, golang to 1.26.10 ([#142](https://github.com/compliance-framework/agent/issues/142)) ([ed2086e](https://github.com/compliance-framework/agent/commit/ed2086e35de048864beefcc41c9e867565b519b4))
+* **docker:** build agent static on distroless/static and patch the custodian image ([#144](https://github.com/compliance-framework/agent/issues/144)) ([8725824](https://github.com/compliance-framework/agent/commit/87258245d82c592c1eab2f06e445ad25f3300665))
+* **docker:** tag the c7n base image so Renovate can update it ([#139](https://github.com/compliance-framework/agent/issues/139)) ([b683e7f](https://github.com/compliance-framework/agent/commit/b683e7f2302f9ec0b560973e01b8d7fb67ca34b9))
+
 ## [0.9.4](https://github.com/compliance-framework/agent/compare/v0.9.3...v0.9.4) (2026-10-28)
 
 
