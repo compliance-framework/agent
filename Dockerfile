@@ -1,4 +1,4 @@
-FROM golang:1.26.10 AS builder
+FROM golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS builder
 # Build with the go.mod toolchain line (Renovate bumps it for Go security fixes), downloading it when this image's Go is older.
 ENV GOTOOLCHAIN=auto
 

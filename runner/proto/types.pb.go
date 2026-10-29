@@ -2337,18 +2337,18 @@ func file_runner_proto_types_proto_rawDescGZIP() []byte {
 var file_runner_proto_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_runner_proto_types_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_runner_proto_types_proto_goTypes = []any{
-	(EvidenceStatusState)(0),                  // 0: proto.EvidenceStatusState
-	(SubjectType)(0),                          // 1: proto.SubjectType
-	(*Property)(nil),                          // 2: proto.Property
-	(*Link)(nil),                              // 3: proto.Link
-	(*OriginActor)(nil),                       // 4: proto.OriginActor
-	(*Origin)(nil),                            // 5: proto.Origin
-	(*Step)(nil),                              // 6: proto.Step
-	(*Activity)(nil),                          // 7: proto.Activity
-	(*EvidenceStatus)(nil),                    // 8: proto.EvidenceStatus
-	(*PortRange)(nil),                         // 9: proto.PortRange
-	(*Protocol)(nil),                          // 10: proto.Protocol
-	(*Component)(nil),                         // 11: proto.Component
+	(EvidenceStatusState)(0), // 0: proto.EvidenceStatusState
+	(SubjectType)(0),         // 1: proto.SubjectType
+	(*Property)(nil),         // 2: proto.Property
+	(*Link)(nil),             // 3: proto.Link
+	(*OriginActor)(nil),      // 4: proto.OriginActor
+	(*Origin)(nil),           // 5: proto.Origin
+	(*Step)(nil),             // 6: proto.Step
+	(*Activity)(nil),         // 7: proto.Activity
+	(*EvidenceStatus)(nil),   // 8: proto.EvidenceStatus
+	(*PortRange)(nil),        // 9: proto.PortRange
+	(*Protocol)(nil),         // 10: proto.Protocol
+	(*Component)(nil),        // 11: proto.Component
 	(*InventoryItemImplementedComponent)(nil), // 12: proto.InventoryItemImplementedComponent
 	(*InventoryItem)(nil),                     // 13: proto.InventoryItem
 	(*Subject)(nil),                           // 14: proto.Subject
