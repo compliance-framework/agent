@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-# Static binary: nothing in the agent needs cgo, and the plugins it runs are static too.
+# Static binary, as .goreleaser.yaml builds it: nothing in the agent needs cgo, and CCF's plugins are static too.
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 # distroless/static has no libc or libssl to patch (agent-action copies /app/concom out of this image).
