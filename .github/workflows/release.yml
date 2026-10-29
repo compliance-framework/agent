@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   release:
-    uses: compliance-framework/workflows/.github/workflows/release-go-image.yml@aafa1649ac6f33c02c581486c50f9cf04cc0eb54 # v1.9.1
+    uses: compliance-framework/workflows/.github/workflows/release-go-image.yml@dc7434879fbd0db1d1df9f590ed8bc13789bd320 # v1.9.2
     with:
       # ghcr.io/compliance-framework/agent, agent-ci and agent-custodian, as released before.
       # ci.yml passes the same list to its image check: change both together.
