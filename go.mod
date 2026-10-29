@@ -5,7 +5,7 @@ go 1.26.1
 toolchain go1.26.10
 
 require (
-	github.com/compliance-framework/api v0.22.0
+	github.com/compliance-framework/api v0.22.1
 	github.com/compliance-framework/gooci v0.0.10
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/defenseunicorns/go-oscal v0.7.2
