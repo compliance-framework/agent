@@ -13,11 +13,17 @@ permissions: {}
 
 jobs:
   ci:
-    uses: compliance-framework/workflows/.github/workflows/ci-go-service.yml@e85d35af2af2ddfcd4b92061d2063e665c1831f6 # v1.7.0
+    uses: compliance-framework/workflows/.github/workflows/ci-go-service.yml@dc7434879fbd0db1d1df9f590ed8bc13789bd320 # v1.9.2
     with:
       # check-opa-version: the agent and the API must evaluate policies with the same OPA.
       # check-proto: the committed generated code matches `buf generate` (skipped without buf).
       make-targets: check-opa-version check-proto
+      # The image check scans the same list release.yml publishes: agent, agent-ci and
+      # agent-custodian.
+      images: >-
+        [{"name": "agent", "dockerfile": "Dockerfile", "context": "."},
+         {"name": "agent-ci", "dockerfile": "Dockerfile-ci", "context": "."},
+         {"name": "agent-custodian", "dockerfile": "Dockerfile-custodian", "context": "."}]
     permissions:
       actions: read
       contents: read
@@ -26,14 +32,14 @@ jobs:
     secrets: inherit
 
   release-checks:
-    uses: compliance-framework/workflows/.github/workflows/release-checks.yml@e85d35af2af2ddfcd4b92061d2063e665c1831f6 # v1.7.0
+    uses: compliance-framework/workflows/.github/workflows/release-checks.yml@dc7434879fbd0db1d1df9f590ed8bc13789bd320 # v1.9.2
     permissions:
       contents: read
 
   notify:
     needs: [ci, release-checks]
     if: always()
-    uses: compliance-framework/workflows/.github/workflows/notify-failure.yml@e85d35af2af2ddfcd4b92061d2063e665c1831f6 # v1.7.0
+    uses: compliance-framework/workflows/.github/workflows/notify-failure.yml@dc7434879fbd0db1d1df9f590ed8bc13789bd320 # v1.9.2
     with:
       needs: ${{ toJSON(needs) }}
     permissions:

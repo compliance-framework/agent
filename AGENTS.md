@@ -37,7 +37,8 @@ There is no lint target. CI (`.github/workflows/ci.yml`) calls the shared `ci-go
 from compliance-framework/workflows. It runs gofmt, `go vet`, a `go mod tidy` check, the tests
 with `-race`, a build, golangci-lint (only issues the change adds), actionlint, the PR title
 check and a vulnerability scan, plus the make targets `check-opa-version` and `check-proto`.
-Its `required` job is the one status check to require.
+It also checks the three built images for fixable HIGH or CRITICAL vulnerabilities, outside
+the required check. Its `required` job is the one status check to require.
 
 ```sh
 make build                 # go build -o dist/concom main.go
