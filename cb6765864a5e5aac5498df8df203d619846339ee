@@ -1,2 +1,9 @@
 lisa-addressed:
 Reworded the agent Dockerfile comment: CCF's plugins are static (not every plugin), as .goreleaser.yaml builds the agent.
+
+lisa-design:
+- agent image: CGO_ENABLED=0 + gcr.io/distroless/static-debian12 (tag+digest). Static binary needs no libc/libssl; removes the 5 libssl3 HIGH/CRITICAL findings Google hasn't rebuilt base-debian12 for. WORKDIR /app, /app/concom, CMD unchanged (agent-action copies /app/concom).
+- custodian: patch block sits AFTER `COPY --from=builder` on purpose, so the c7n FROM line change is identical to Renovate's #143 and Dockerfile-custodian merges cleanly with it (verified with git merge-tree). Cost: the ~2s uv layer reruns per build.
+- uv is a RUN --mount=from=<pinned image> (Renovate's dockerfile manager tracks RUN --mount=from), not a stage, for the same merge reason; nothing of uv stays in the image.
+- certifi pinned to 2026.10.19 (PYSEC-2026-4320 lists 10.19 as fixed even though the GHSA says 10.18).
+- pip/setuptools findings came from Ubuntu's python3-pip-whl/python3-setuptools-whl (ensurepip wheels for python3 -m venv); purged (takes python3-venv/python3.12-venv along). c7n's venv is uv-managed and unaffected.
