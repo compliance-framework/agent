@@ -1,0 +1,2 @@
+lisa-addressed:
+Reworded the agent Dockerfile comment: CCF's plugins are static (not every plugin), as .goreleaser.yaml builds the agent.
