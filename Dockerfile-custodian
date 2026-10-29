@@ -11,12 +11,28 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN go build -ldflags "-X main.version=${VERSION}" -o concom main.go
+# Static binary, so it doesn't depend on the c7n image's glibc (Ubuntu's, older than the builder's Debian).
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 
 FROM cloudcustodian/c7n:0.9.52.0@sha256:44cb9106961e57363b190be0bb6a07010a08f9e8a192ecc3273c5d58e7fcc131
 
 COPY --from=builder /app/concom /app/concom
+
+# Patch the fixable HIGH/CRITICAL Python findings c7n's image ships (the CI image check lists them).
+# c7n's venv is uv's and has no pip, so uv is mounted for this step only. Drop each pin once a c7n
+# release ships that version or newer. Ubuntu's pip/setuptools wheels only serve `python3 -m venv`.
+USER root
+RUN --mount=from=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --python /src/.venv/bin/python --no-cache \
+      aiohttp==3.14.4 \
+      certifi==2026.10.19 \
+      oauthlib==4.0.0 \
+      pyjwt==2.15.0 \
+      urllib3==2.8.0 \
+  && apt-get purge -y python3-pip-whl python3-setuptools-whl \
+  && rm -rf /var/lib/apt/lists/*
+USER custodian
 
 WORKDIR /app
 ENTRYPOINT ["/app/concom"]
