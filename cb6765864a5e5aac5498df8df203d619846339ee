@@ -7,3 +7,6 @@ lisa-design:
 - uv is a RUN --mount=from=<pinned image> (Renovate's dockerfile manager tracks RUN --mount=from), not a stage, for the same merge reason; nothing of uv stays in the image.
 - certifi pinned to 2026.10.19 (PYSEC-2026-4320 lists 10.19 as fixed even though the GHSA says 10.18).
 - pip/setuptools findings came from Ubuntu's python3-pip-whl/python3-setuptools-whl (ensurepip wheels for python3 -m venv); purged (takes python3-venv/python3.12-venv along). c7n's venv is uv-managed and unaffected.
+
+lisa-selfreview:
+Pass 2: approve, no findings.
