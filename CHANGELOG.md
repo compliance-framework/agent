@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.6](https://github.com/compliance-framework/agent/compare/v0.9.5...v0.9.6) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** bump api to v0.22.2, gooci to v0.0.11 ([#146](https://github.com/compliance-framework/agent/issues/146)) ([d98e161](https://github.com/compliance-framework/agent/commit/d98e161027192398e9369b4d9709511dc22b70a5))
+
 ## [0.9.5](https://github.com/compliance-framework/agent/compare/v0.9.4...v0.9.5) (2026-10-29)
 
 
