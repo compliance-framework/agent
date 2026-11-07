@@ -15,7 +15,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o concom main.go
 
 # distroless/static has no libc or libssl to patch (agent-action copies /app/concom out of this image).
-FROM gcr.io/distroless/static-debian12:latest@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2 AS final
+FROM gcr.io/distroless/static-debian13:latest@sha256:448810357cc8e67b7208988abdba0f5ec3d3aebee0a5b13eb624979792cffc0f AS final
 
 WORKDIR /app
 COPY --from=builder /app/concom /app/concom
