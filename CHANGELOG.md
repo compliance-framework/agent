@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.7](https://github.com/compliance-framework/agent/compare/v0.9.6...v0.9.7) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#148](https://github.com/compliance-framework/agent/issues/148)) ([7e1e23a](https://github.com/compliance-framework/agent/commit/7e1e23a44e70f0439e73db562fd0e5372ceb6d80))
+* **deps:** update module github.com/klauspost/compress to v1.20.2 [security] ([#152](https://github.com/compliance-framework/agent/issues/152)) ([4c75279](https://github.com/compliance-framework/agent/commit/4c7527915ca4970474c09d769e35f5c879da1d78))
+
 ## [0.9.6](https://github.com/compliance-framework/agent/compare/v0.9.5...v0.9.6) (2026-11-02)
 
 
