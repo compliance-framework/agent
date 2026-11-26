@@ -3,7 +3,7 @@ package internal
 import (
 	"fmt"
 	"github.com/open-policy-agent/opa/ast"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 	"strings"
 )
 
