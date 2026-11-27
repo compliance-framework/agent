@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.7](https://github.com/compliance-framework/agent/compare/v0.9.6...v0.9.7) (2026-11-27)
+
+
+### Bug Fixes
+
+* **deps:** bump api to v0.22.5 ([#155](https://github.com/compliance-framework/agent/issues/155)) ([9b325d6](https://github.com/compliance-framework/agent/commit/9b325d63ecb9a809b4d57ecd8eb9efd1d6fdfcbb))
+* **deps:** patch OS packages in debian:bookworm-slim (DEBIAN-CVE-2025-6020) ([#163](https://github.com/compliance-framework/agent/issues/163)) ([f5d9f47](https://github.com/compliance-framework/agent/commit/f5d9f4720172ebb9a6a8f346e60eb75a994e649e))
+* **deps:** update all non-major dependencies ([#148](https://github.com/compliance-framework/agent/issues/148)) ([7e1e23a](https://github.com/compliance-framework/agent/commit/7e1e23a44e70f0439e73db562fd0e5372ceb6d80))
+* **deps:** update all non-major dependencies ([#156](https://github.com/compliance-framework/agent/issues/156)) ([4b84c3f](https://github.com/compliance-framework/agent/commit/4b84c3f1db4cdab35f427a8092296ec8d728a8f6))
+* **deps:** update module github.com/klauspost/compress to v1.20.2 [security] ([#152](https://github.com/compliance-framework/agent/issues/152)) ([4c75279](https://github.com/compliance-framework/agent/commit/4c7527915ca4970474c09d769e35f5c879da1d78))
+* **deps:** update module gopkg.in/yaml.v2 to v3 ([#145](https://github.com/compliance-framework/agent/issues/145)) ([7a998bf](https://github.com/compliance-framework/agent/commit/7a998bf6f59df1baf1de0c8430d42fb5e8275d25))
+* **deps:** update security fixes (gomod) [security] ([#157](https://github.com/compliance-framework/agent/issues/157)) ([c0de3c5](https://github.com/compliance-framework/agent/commit/c0de3c5f15f09224837b40351f5ae09002c4c44f))
+
 ## [0.9.6](https://github.com/compliance-framework/agent/compare/v0.9.5...v0.9.6) (2026-11-02)
 
 
